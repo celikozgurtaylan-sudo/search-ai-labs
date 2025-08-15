@@ -4,6 +4,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, ArrowRight, MessageSquare, BarChart3, Users, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { AnimatedHeadline } from "@/components/ui/animated-headline";
 const templates = [{
   id: "ad-testing",
   title: "Reklam Testi ve Geri Bildirim",
@@ -73,9 +74,7 @@ const Index = () => {
       {/* Main Content */}
       <main className="max-w-4xl mx-auto px-6 py-16">
         <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-text-primary mb-6 leading-tight">
-            Projeniz hakkında bize bilgi verin
-          </h1>
+          <AnimatedHeadline />
           <p className="text-xl text-text-secondary mb-8 max-w-2xl mx-auto">Araştırmanızı haftalarca beklemeyin. AI destekli görüşme ve analizlerle saatler içinde derin içgörülere ulaşın.</p>
         </div>
 
