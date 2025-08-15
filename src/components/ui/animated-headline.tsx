@@ -33,9 +33,9 @@ export const AnimatedHeadline = () => {
         setTimeout(() => {
           setIsAnimating(false);
         }, 100);
-      }, 600); // Smoother 0.6s pull duration
+      }, 600);
       
-    }, 2800); // Total cycle: 0.6s pull + 0.2s snap + 2s reading pause
+    }, 2800);
 
     return () => clearInterval(interval);
   }, []);
@@ -43,10 +43,10 @@ export const AnimatedHeadline = () => {
   return (
     <h1 className="text-5xl font-bold text-text-primary mb-6 leading-tight">
       Ürününüz hakkında sorunları keşfedin. Cevapları bulun.{' '}
-      <span className="relative inline-block overflow-hidden">
+      <span className="relative inline-block overflow-hidden w-[280px] text-left">
         <span 
           className={`
-            inline-block transition-all ease-in-out
+            inline-block transition-all ease-in-out whitespace-nowrap
             ${colors[currentWordIndex]}
             ${isAnimating 
               ? 'transform translate-y-full scale-y-75 opacity-0' 
