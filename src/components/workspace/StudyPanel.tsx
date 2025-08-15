@@ -60,7 +60,7 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
   const handleAddQuestion = (sectionId: string) => {
     if (!discussionGuide) return;
 
-    const newQuestion = "New question - click to edit";
+    const newQuestion = "Yeni soru - düzenlemek için tıklayın";
     const updatedGuide = {
       ...discussionGuide,
       sections: discussionGuide.sections.map((section: any) => {
@@ -78,17 +78,17 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
   };
 
   const getInterviewStatus = (participantId: string) => {
-    // Simulate interview progress
-    const statuses = ['Queued', 'In Progress', 'Complete'];
+    // Görüşme ilerlemesini simüle et
+    const statuses = ['Sırada', 'Devam Ediyor', 'Tamamlandı'];
     const hash = participantId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
     return statuses[hash % statuses.length];
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'Complete':
+      case 'Tamamlandı':
         return <CheckCircle2 className="w-4 h-4 text-status-success" />;
-      case 'In Progress':
+      case 'Devam Ediyor':
         return <PlayCircle className="w-4 h-4 text-brand-primary" />;
       default:
         return <Circle className="w-4 h-4 text-text-muted" />;
@@ -98,37 +98,37 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
   const renderAnalysisView = () => (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Key Themes</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Ana Temalar</h3>
         <div className="grid grid-cols-2 gap-4">
           <Card className="p-4">
-            <h4 className="font-medium text-text-primary mb-2">User Experience</h4>
-            <p className="text-sm text-text-secondary">86% positive sentiment</p>
+            <h4 className="font-medium text-text-primary mb-2">Kullanıcı Deneyimi</h4>
+            <p className="text-sm text-text-secondary">%86 pozitif görüş</p>
             <div className="mt-2">
-              <Badge variant="secondary" className="text-xs">Navigation</Badge>
-              <Badge variant="secondary" className="text-xs ml-2">Visual Design</Badge>
+              <Badge variant="secondary" className="text-xs">Navigasyon</Badge>
+              <Badge variant="secondary" className="text-xs ml-2">Görsel Tasarım</Badge>
             </div>
           </Card>
           <Card className="p-4">
-            <h4 className="font-medium text-text-primary mb-2">Feature Requests</h4>
-            <p className="text-sm text-text-secondary">12 unique suggestions</p>
+            <h4 className="font-medium text-text-primary mb-2">Özellik İstekleri</h4>
+            <p className="text-sm text-text-secondary">12 benzersiz öneri</p>
             <div className="mt-2">
-              <Badge variant="secondary" className="text-xs">Mobile App</Badge>
-              <Badge variant="secondary" className="text-xs ml-2">Integration</Badge>
+              <Badge variant="secondary" className="text-xs">Mobil Uygulama</Badge>
+              <Badge variant="secondary" className="text-xs ml-2">Entegrasyon</Badge>
             </div>
           </Card>
         </div>
       </div>
 
       <div>
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Top Quotes</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Öne Çıkan Alıntılar</h3>
         <div className="space-y-3">
           <Card className="p-4">
-            <p className="text-sm text-text-primary italic">"This could really streamline our research process"</p>
-            <p className="text-xs text-text-secondary mt-2">- Sarah M., Product Manager</p>
+            <p className="text-sm text-text-primary italic">"Bu gerçekten araştırma sürecimizi kolaylaştırabilir"</p>
+            <p className="text-xs text-text-secondary mt-2">- Sarah M., Ürün Müdürü</p>
           </Card>
           <Card className="p-4">
-            <p className="text-sm text-text-primary italic">"The AI analysis feature is impressive"</p>
-            <p className="text-xs text-text-secondary mt-2">- Mike D., UX Researcher</p>
+            <p className="text-sm text-text-primary italic">"AI analiz özelliği etkileyici"</p>
+            <p className="text-xs text-text-secondary mt-2">- Mike D., UX Araştırmacısı</p>
           </Card>
         </div>
       </div>
@@ -136,11 +136,11 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
       <div className="flex space-x-3">
         <Button variant="outline" className="flex items-center space-x-2">
           <BarChart3 className="w-4 h-4" />
-          <span>Export PDF</span>
+          <span>PDF Dışa Aktar</span>
         </Button>
         <Button variant="outline" className="flex items-center space-x-2">
           <BarChart3 className="w-4 h-4" />
-          <span>Export CSV</span>
+          <span>CSV Dışa Aktar</span>
         </Button>
       </div>
     </div>
@@ -153,7 +153,7 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
           <div className="w-12 h-12 bg-brand-primary-light rounded-lg flex items-center justify-center mx-auto mb-3">
             <Video className="w-6 h-6 text-brand-primary" />
           </div>
-          <p className="text-text-secondary">Generating discussion guide...</p>
+          <p className="text-text-secondary">Tartışma kılavuzu oluşturuluyor...</p>
         </div>
       </div>
     );
@@ -167,13 +167,13 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
           <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>
           <Badge variant="outline" className="flex items-center space-x-1">
             <Video className="w-3 h-3" />
-            <span>Screen recording</span>
+            <span>Ekran kaydı</span>
           </Badge>
         </div>
         
         {currentStep === 'run' && participants.length > 0 && (
           <div className="text-sm text-text-secondary">
-            {participants.filter(p => getInterviewStatus(p.id) === 'Complete').length} of {participants.length} interviews complete
+            {participants.filter(p => getInterviewStatus(p.id) === 'Tamamlandı').length} / {participants.length} görüşme tamamlandı
           </div>
         )}
       </div>
@@ -200,29 +200,29 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
                       
                       <div className="flex-1">
                         {editingQuestion === `${section.id}-${index}` ? (
-                          <div className="space-y-2">
-                            <Textarea
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              className="text-sm"
-                              autoFocus
-                            />
-                            <div className="flex space-x-2">
-                              <Button 
-                                size="sm" 
-                                onClick={() => handleSaveQuestion(section.id, index)}
-                              >
-                                Save
-                              </Button>
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                onClick={() => setEditingQuestion(null)}
-                              >
-                                Cancel
-                              </Button>
+                            <div className="space-y-2">
+                              <Textarea
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                className="text-sm"
+                                autoFocus
+                              />
+                              <div className="flex space-x-2">
+                                <Button 
+                                  size="sm" 
+                                  onClick={() => handleSaveQuestion(section.id, index)}
+                                >
+                                  Kaydet
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => setEditingQuestion(null)}
+                                >
+                                  İptal
+                                </Button>
+                              </div>
                             </div>
-                          </div>
                         ) : (
                           <div 
                             className="text-sm text-text-primary cursor-text hover:bg-surface rounded p-2 -m-2 transition-colors"
@@ -251,7 +251,7 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
                     className="flex items-center space-x-1 text-text-secondary hover:text-text-primary"
                   >
                     <Plus className="w-3 h-3" />
-                    <span>Add question</span>
+                    <span>Soru ekle</span>
                   </Button>
                 </CardContent>
               </Card>
@@ -263,7 +263,7 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
                 <CardHeader className="p-0 mb-4">
                   <CardTitle className="text-base font-semibold text-text-primary flex items-center space-x-2">
                     <User className="w-4 h-4" />
-                    <span>Participants ({participants.length})</span>
+                    <span>Katılımcılar ({participants.length})</span>
                   </CardTitle>
                 </CardHeader>
                 

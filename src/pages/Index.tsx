@@ -8,29 +8,29 @@ import { useNavigate } from "react-router-dom";
 const templates = [
   {
     id: "ad-testing",
-    title: "Ad Testing and Feedback",
-    description: "Get feedback on your advertising campaigns and creative assets",
+    title: "Reklam Testi ve Geri Bildirim",
+    description: "Reklam kampanyalarınız ve kreatif varlıklarınız hakkında geri bildirim alın",
     icon: BarChart3,
     color: "bg-blue-50 text-blue-600"
   },
   {
     id: "landing-page",
-    title: "Landing Page Test",
-    description: "Optimize your landing page for better conversion rates",
+    title: "Açılış Sayfası Testi",
+    description: "Daha iyi dönüşüm oranları için açılış sayfanızı optimize edin",
     icon: Search,
     color: "bg-green-50 text-green-600"
   },
   {
     id: "nps-feedback",
-    title: "NPS and Customer Feedback",
-    description: "Measure customer satisfaction and loyalty",
+    title: "NPS ve Müşteri Geri Bildirimi",
+    description: "Müşteri memnuniyeti ve sadakatini ölçün",
     icon: Users,
     color: "bg-purple-50 text-purple-600"
   },
   {
     id: "foundational",
-    title: "Foundational Research",
-    description: "Deep dive into user needs and market opportunities",
+    title: "Temel Araştırma",
+    description: "Kullanıcı ihtiyaçları ve pazar fırsatlarını derinlemesine analiz edin",
     icon: MessageSquare,
     color: "bg-orange-50 text-orange-600"
   }
@@ -54,10 +54,10 @@ const Index = () => {
 
   const handleTemplateSelect = (template: typeof templates[0]) => {
     const sampleDescriptions = {
-      "ad-testing": "Test our new video advertisement for sustainable clothing brand targeting millennials. We want to understand emotional response and purchase intent.",
-      "landing-page": "Evaluate our SaaS landing page at listenlabs.ai - we want to understand what marketing professionals think about our AI-powered user research platform.",
-      "nps-feedback": "Conduct NPS survey for our mobile banking app users to identify areas for improvement and understand what drives customer loyalty.",
-      "foundational": "Explore how remote workers manage their productivity and collaboration tools to identify opportunities for our new workspace platform."
+      "ad-testing": "Y kuşağını hedefleyen sürdürülebilir giyim markamız için yeni video reklamımızı test edin. Duygusal tepkileri ve satın alma niyetini anlamak istiyoruz.",
+      "landing-page": "listenlabs.ai adresindeki SaaS açılış sayfamızı değerlendirin - pazarlama profesyonellerinin AI destekli kullanıcı araştırma platformumuz hakkında ne düşündüğünü anlamak istiyoruz.",
+      "nps-feedback": "Mobil bankacılık uygulamamızın kullanıcıları için NPS anketi yapın, iyileştirme alanlarını belirleyin ve müşteri sadakatini neyin yönlendirdiğini anlayın.",
+      "foundational": "Uzaktan çalışanların verimlilik ve işbirliği araçlarını nasıl yönettiğini keşfedin, yeni çalışma alanı platformumuz için fırsatları belirleyin."
     };
     
     handleStartProject(template.id, sampleDescriptions[template.id as keyof typeof sampleDescriptions]);
@@ -76,7 +76,7 @@ const Index = () => {
               <span className="text-xl font-semibold text-text-primary">Search AI</span>
             </div>
             <Button variant="outline" size="sm">
-              Sign in
+              Giriş Yap
             </Button>
           </div>
         </div>
@@ -86,10 +86,10 @@ const Index = () => {
       <main className="max-w-4xl mx-auto px-6 py-16">
         <div className="text-center mb-12">
           <h1 className="text-5xl font-bold text-text-primary mb-6 leading-tight">
-            Tell us about your project
+            Projeniz hakkında bize bilgi verin
           </h1>
           <p className="text-xl text-text-secondary mb-8 max-w-2xl mx-auto">
-            Simulate end-to-end UX research in hours, not weeks. Get insights from AI-powered interviews and analysis.
+            Haftalarca değil, saatlerce uçtan uca UX araştırması simüle edin. AI destekli görüşmeler ve analizlerden içgörüler elde edin.
           </p>
         </div>
 
@@ -98,14 +98,14 @@ const Index = () => {
           <Textarea
             value={projectDescription}
             onChange={(e) => setProjectDescription(e.target.value)}
-            placeholder="Please describe your project in detail →"
+            placeholder="Lütfen projenizi detaylarıyla açıklayın →"
             className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary"
           />
           
           <div className="flex items-center justify-between mt-6">
             <Button variant="outline" className="flex items-center space-x-2">
               <Upload className="w-4 h-4" />
-              <span>Upload Discussion Guide</span>
+              <span>Tartışma Kılavuzu Yükle</span>
             </Button>
             
             <div className="flex items-center space-x-3">
@@ -114,14 +114,14 @@ const Index = () => {
                 onClick={() => handleStartProject()}
                 disabled={!projectDescription.trim()}
               >
-                Start from scratch
+                Sıfırdan başla
               </Button>
               <Button 
                 onClick={() => handleStartProject()}
                 disabled={!projectDescription.trim()}
                 className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6"
               >
-                Continue <ArrowRight className="w-4 h-4 ml-2" />
+                Devam Et <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
           </div>
@@ -130,7 +130,7 @@ const Index = () => {
         {/* Templates */}
         <div className="mb-12">
           <h2 className="text-2xl font-semibold text-text-primary mb-6 text-center">
-            Or start with a template
+            Veya bir şablonla başlayın
           </h2>
           
           <div className="grid md:grid-cols-2 gap-4">
@@ -164,7 +164,7 @@ const Index = () => {
 
         {/* Footer */}
         <div className="text-center text-text-muted">
-          <p>Trusted by 500+ research teams worldwide</p>
+          <p>Dünya çapında 500+ araştırma ekibi tarafından güveniliyor</p>
         </div>
       </main>
     </div>

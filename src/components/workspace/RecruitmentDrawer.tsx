@@ -39,68 +39,68 @@ interface RecruitmentDrawerProps {
 const generateParticipants = (): Participant[] => [
   {
     id: 'p1',
-    name: 'Sarah Martinez',
-    role: 'Product Marketing Manager',
+    name: 'Ayşe Demir',
+    role: 'Ürün Pazarlama Müdürü',
     company: 'TechFlow Inc',
-    experience: '5+ years',
-    location: 'San Francisco, CA',
-    timezone: 'PST',
+    experience: '5+ yıl',
+    location: 'İstanbul, TR',
+    timezone: 'TRT',
     rating: 4.9,
-    languages: ['English', 'Spanish'],
-    availability: 'Available now',
-    bio: 'Experienced in B2B marketing and user research. Led 20+ customer interview sessions.'
+    languages: ['Türkçe', 'İngilizce'],
+    availability: 'Şu anda müsait',
+    bio: 'B2B pazarlama ve kullanıcı araştırması konularında deneyimli. 20+ müşteri görüşmesi yönetti.'
   },
   {
     id: 'p2',
-    name: 'Michael Chen',
-    role: 'Marketing Director',
+    name: 'Mehmet Çelik',
+    role: 'Pazarlama Direktörü',
     company: 'StartupBase',
-    experience: '8+ years',
-    location: 'New York, NY',
-    timezone: 'EST',
+    experience: '8+ yıl',
+    location: 'Ankara, TR',
+    timezone: 'TRT',
     rating: 4.8,
-    languages: ['English', 'Mandarin'],
-    availability: 'Available in 2h',
-    bio: 'Growth marketing expert with extensive experience in SaaS platforms and user acquisition.'
+    languages: ['Türkçe', 'İngilizce'],
+    availability: '2 saat sonra müsait',
+    bio: 'SaaS platformları ve kullanıcı kazanımı konularında kapsamlı deneyime sahip büyüme pazarlama uzmanı.'
   },
   {
     id: 'p3',
-    name: 'Emily Rodriguez',
-    role: 'Senior Marketing Specialist',
+    name: 'Elif Kaya',
+    role: 'Kıdemli Pazarlama Uzmanı',
     company: 'Digital Solutions Co',
-    experience: '6+ years',
-    location: 'Austin, TX',
-    timezone: 'CST',
+    experience: '6+ yıl',
+    location: 'İzmir, TR',
+    timezone: 'TRT',
     rating: 4.7,
-    languages: ['English'],
-    availability: 'Available now',
-    bio: 'Specializes in digital marketing analytics and customer journey optimization.'
+    languages: ['Türkçe'],
+    availability: 'Şu anda müsait',
+    bio: 'Dijital pazarlama analitiği ve müşteri yolculuğu optimizasyonu konularında uzman.'
   },
   {
     id: 'p4',
-    name: 'David Kim',
-    role: 'VP of Marketing',
+    name: 'Can Özkan',
+    role: 'Pazarlama Genel Müdür Yardımcısı',
     company: 'CloudTech',
-    experience: '10+ years',
-    location: 'Seattle, WA',
-    timezone: 'PST',
+    experience: '10+ yıl',
+    location: 'Bursa, TR',
+    timezone: 'TRT',
     rating: 4.9,
-    languages: ['English', 'Korean'],
-    availability: 'Available in 1h',
-    bio: 'Marketing leader with deep experience in AI/ML products and enterprise sales.'
+    languages: ['Türkçe', 'İngilizce'],
+    availability: '1 saat sonra müsait',
+    bio: 'AI/ML ürünleri ve kurumsal satış konularında derin deneyime sahip pazarlama lideri.'
   },
   {
     id: 'p5',
-    name: 'Lisa Thompson',
-    role: 'Marketing Operations Manager',
+    name: 'Zeynep Aktaş',
+    role: 'Pazarlama Operasyonları Müdürü',
     company: 'InnovateCorp',
-    experience: '4+ years',
-    location: 'Chicago, IL',
-    timezone: 'CST',
+    experience: '4+ yıl',
+    location: 'Antalya, TR',
+    timezone: 'TRT',
     rating: 4.6,
-    languages: ['English'],
-    availability: 'Available now',
-    bio: 'Expert in marketing automation and data-driven decision making for B2B organizations.'
+    languages: ['Türkçe'],
+    availability: 'Şu anda müsait',
+    bio: 'B2B organizasyonları için pazarlama otomasyonu ve veri odaklı karar verme uzmanı.'
   }
 ];
 
@@ -142,10 +142,10 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
             <div className="flex items-center justify-between">
               <div>
                 <SheetTitle className="text-xl font-semibold text-text-primary">
-                  Recruit Participants
+                  Katılımcı Bulma
                 </SheetTitle>
                 <SheetDescription className="text-text-secondary mt-1">
-                  Access to millions of pre-qualified interviewees worldwide
+                  Dünya çapında milyonlarca ön nitelikli görüşmeciye erişim
                 </SheetDescription>
               </div>
               
@@ -154,7 +154,7 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
                 className="bg-brand-primary hover:bg-brand-primary-hover text-white flex items-center space-x-2"
               >
                 <Zap className="w-4 h-4" />
-                <span>Recruit 5 now</span>
+                <span>Şimdi 5 kişi bul</span>
               </Button>
             </div>
           </SheetHeader>
@@ -163,55 +163,55 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
           <div className="p-6 border-b border-border-light bg-surface">
             <div className="flex items-center space-x-2 mb-4">
               <Filter className="w-4 h-4 text-text-secondary" />
-              <span className="text-sm font-medium text-text-secondary">Filters</span>
+              <span className="text-sm font-medium text-text-secondary">Filtreler</span>
             </div>
             
             <div className="grid grid-cols-4 gap-4">
               <Select value={filters.country} onValueChange={(value) => setFilters({...filters, country: value})}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Country" />
+                  <SelectValue placeholder="Ülke" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Countries</SelectItem>
-                  <SelectItem value="us">United States</SelectItem>
-                  <SelectItem value="uk">United Kingdom</SelectItem>
-                  <SelectItem value="ca">Canada</SelectItem>
+                  <SelectItem value="all">Tüm Ülkeler</SelectItem>
+                  <SelectItem value="tr">Türkiye</SelectItem>
+                  <SelectItem value="us">Amerika Birleşik Devletleri</SelectItem>
+                  <SelectItem value="uk">Birleşik Krallık</SelectItem>
                 </SelectContent>
               </Select>
 
               <Select value={filters.language} onValueChange={(value) => setFilters({...filters, language: value})}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Language" />
+                  <SelectValue placeholder="Dil" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Languages</SelectItem>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="es">Spanish</SelectItem>
-                  <SelectItem value="fr">French</SelectItem>
+                  <SelectItem value="all">Tüm Diller</SelectItem>
+                  <SelectItem value="tr">Türkçe</SelectItem>
+                  <SelectItem value="en">İngilizce</SelectItem>
+                  <SelectItem value="es">İspanyolca</SelectItem>
                 </SelectContent>
               </Select>
 
               <Select value={filters.experience} onValueChange={(value) => setFilters({...filters, experience: value})}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Experience" />
+                  <SelectValue placeholder="Deneyim" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Levels</SelectItem>
-                  <SelectItem value="junior">1-3 years</SelectItem>
-                  <SelectItem value="mid">4-7 years</SelectItem>
-                  <SelectItem value="senior">8+ years</SelectItem>
+                  <SelectItem value="all">Tüm Seviyeler</SelectItem>
+                  <SelectItem value="junior">1-3 yıl</SelectItem>
+                  <SelectItem value="mid">4-7 yıl</SelectItem>
+                  <SelectItem value="senior">8+ yıl</SelectItem>
                 </SelectContent>
               </Select>
 
               <Select value={filters.role} onValueChange={(value) => setFilters({...filters, role: value})}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Role" />
+                  <SelectValue placeholder="Rol" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Roles</SelectItem>
-                  <SelectItem value="marketing">Marketing</SelectItem>
-                  <SelectItem value="product">Product</SelectItem>
-                  <SelectItem value="sales">Sales</SelectItem>
+                  <SelectItem value="all">Tüm Roller</SelectItem>
+                  <SelectItem value="marketing">Pazarlama</SelectItem>
+                  <SelectItem value="product">Ürün</SelectItem>
+                  <SelectItem value="sales">Satış</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -221,10 +221,10 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
           <div className="flex-1 overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-text-primary">
-                Marketing Professionals ({participants.length} available)
+                Pazarlama Profesyonelleri ({participants.length} müsait)
               </h3>
               <Badge variant="outline" className="text-brand-primary border-brand-primary">
-                {selectedParticipants.length} selected
+                {selectedParticipants.length} seçildi
               </Badge>
             </div>
 
@@ -253,7 +253,7 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
                             {participant.name}
                           </CardTitle>
                           <p className="text-sm text-text-secondary mt-1">
-                            {participant.role} at {participant.company}
+                            {participant.role} - {participant.company}
                           </p>
                           <div className="flex items-center space-x-4 mt-2 text-xs text-text-muted">
                             <div className="flex items-center space-x-1">
@@ -312,7 +312,7 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
           <div className="border-t border-border-light p-6">
             <div className="flex items-center justify-between">
               <div className="text-sm text-text-secondary">
-                {selectedParticipants.length} participants selected
+                {selectedParticipants.length} katılımcı seçildi
               </div>
               
               <div className="flex items-center space-x-3">
@@ -320,14 +320,14 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
                   variant="outline"
                   onClick={() => onOpenChange(false)}
                 >
-                  Cancel
+                  İptal
                 </Button>
                 <Button
                   onClick={handleConfirmSelection}
                   disabled={selectedParticipants.length === 0}
                   className="bg-brand-primary hover:bg-brand-primary-hover text-white"
                 >
-                  Add {selectedParticipants.length} participants
+                  {selectedParticipants.length} katılımcı ekle
                 </Button>
               </div>
             </div>

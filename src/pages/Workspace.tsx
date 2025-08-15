@@ -29,7 +29,7 @@ const Workspace = () => {
       const data = JSON.parse(stored);
       setProjectData(data);
       
-      // Auto-generate discussion guide
+      // Tartışma kılavuzunu otomatik oluştur
       setTimeout(() => {
         generateDiscussionGuide(data.description);
       }, 1000);
@@ -39,57 +39,57 @@ const Workspace = () => {
   }, [navigate]);
 
   const generateDiscussionGuide = (description: string) => {
-    // Simulate AI-generated discussion guide
+    // AI tarafından oluşturulan tartışma kılavuzunu simüle et
     const guide = {
       title: getProjectTitle(description),
       sections: [
         {
           id: 'background',
-          title: 'Professional Background',
+          title: 'Profesyonel Geçmiş',
           questions: [
-            'Can you tell me about your role and responsibilities?',
-            'How long have you been working in this field?',
-            'What tools do you currently use for [relevant context]?'
+            'Rolünüz ve sorumluluklarınız hakkında bana bilgi verebilir misiniz?',
+            'Bu alanda ne kadar süredir çalışıyorsunuz?',
+            '[İlgili bağlam] için şu anda hangi araçları kullanıyorsunuz?'
           ]
         },
         {
           id: 'first-impressions',
-          title: 'First Impressions',
+          title: 'İlk İzlenimler',
           questions: [
-            'What\'s your initial reaction to this?',
-            'What stands out to you most?',
-            'How does this compare to what you\'re used to?',
-            'What questions come to mind immediately?'
+            'Bu konudaki ilk tepkiniz nedir?',
+            'Size en çok ne dikkat çekiyor?',
+            'Bu alışık olduğunuz şeylerle nasıl karşılaştırılıyor?',
+            'Aklınıza hemen hangi sorular geliyor?'
           ]
         },
         {
           id: 'detailed-exploration',
-          title: 'Detailed Exploration',
+          title: 'Detaylı Keşif',
           questions: [
-            'Walk me through how you would typically approach this.',
-            'What would make this more valuable to you?',
-            'What concerns or hesitations do you have?',
-            'How would this fit into your current workflow?',
-            'What\'s missing that you\'d expect to see?'
+            'Bunu normalde nasıl yaklaşacağınızı anlatabilir misiniz?',
+            'Bu sizin için daha değerli kılacak şey nedir?',
+            'Hangi endişeleriniz veya tereddütleriniz var?',
+            'Bu mevcut iş akışınıza nasıl uyar?',
+            'Görmeyi beklediğiniz ama eksik olan şey nedir?'
           ]
         },
         {
           id: 'final-thoughts',
-          title: 'Final Thoughts & Recommendations',
+          title: 'Son Düşünceler ve Öneriler',
           questions: [
-            'Overall, how would you rate this?',
-            'What would you change if you could?',
-            'Would you recommend this to a colleague? Why?',
-            'Any final thoughts or suggestions?'
+            'Genel olarak bunu nasıl değerlendirirsiniz?',
+            'Elinizde olsa neyi değiştirirdiniz?',
+            'Bunu bir meslektaşınıza tavsiye eder misiniz? Neden?',
+            'Son düşünceleriniz veya önerileriniz var mı?'
           ]
         }
       ],
       suggestions: [
-        'Add pricing/competitor questions',
-        'Add AI-related questions',
-        'Add feature-specific questions',
-        'Add accessibility questions',
-        'Add mobile experience questions'
+        'Fiyatlandırma/rakip soruları ekle',
+        'AI ile ilgili sorular ekle',
+        'Özellik odaklı sorular ekle',
+        'Erişilebilirlik soruları ekle',
+        'Mobil deneyim soruları ekle'
       ]
     };
     
@@ -97,10 +97,10 @@ const Workspace = () => {
   };
 
   const getProjectTitle = (description: string) => {
-    if (description.includes('listenlabs.ai')) return 'ListenLabs Landing Page Research';
-    if (description.includes('advertisement') || description.includes('ad')) return 'Advertisement Testing Study';
-    if (description.includes('NPS') || description.includes('banking')) return 'Customer Satisfaction Research';
-    return 'User Experience Research Study';
+    if (description.includes('listenlabs.ai')) return 'ListenLabs Açılış Sayfası Araştırması';
+    if (description.includes('reklam') || description.includes('advertisement') || description.includes('ad')) return 'Reklam Test Çalışması';
+    if (description.includes('NPS') || description.includes('banking') || description.includes('bankacılık')) return 'Müşteri Memnuniyeti Araştırması';
+    return 'Kullanıcı Deneyimi Araştırma Çalışması';
   };
 
   const handleNextStep = () => {
@@ -122,7 +122,7 @@ const Workspace = () => {
             className="bg-brand-primary hover:bg-brand-primary-hover text-white"
           >
             <Users className="w-4 h-4 mr-2" />
-            Next: Add Participants →
+            Sonraki: Katılımcıları Ekle →
           </Button>
         );
       case 'recruit':
@@ -133,7 +133,7 @@ const Workspace = () => {
             disabled={participants.length === 0}
           >
             <Play className="w-4 h-4 mr-2" />
-            Start Interviews
+            Görüşmeleri Başlat
           </Button>
         );
       case 'run':
@@ -143,7 +143,7 @@ const Workspace = () => {
             className="bg-brand-primary hover:bg-brand-primary-hover text-white"
           >
             <BarChart3 className="w-4 h-4 mr-2" />
-            View Analysis
+            Analizi Görüntüle
           </Button>
         );
       default:
@@ -169,7 +169,7 @@ const Workspace = () => {
                 className="flex items-center space-x-2"
               >
                 <ArrowLeft className="w-4 h-4" />
-                <span>Back</span>
+                <span>Geri</span>
               </Button>
               
               <Separator orientation="vertical" className="h-6" />

@@ -32,12 +32,12 @@ const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelPro
         }
       ];
 
-      // Add AI response after a delay
+      // Gecikme sonrası AI yanıtı ekle
       setTimeout(() => {
         const aiResponse: ChatMessage = {
           id: '2',
           type: 'ai',
-          content: `Perfect! I've analyzed your project and created a comprehensive discussion guide. The study will focus on understanding user perspectives and gathering actionable insights.\n\nI've generated 4 main sections with targeted questions:\n• Professional Background\n• First Impressions\n• Detailed Exploration  \n• Final Thoughts & Recommendations\n\nYou can see the full guide in the right panel. Feel free to customize any questions or add new sections using the suggestion chips below.`,
+          content: `Mükemmel! Projenizi analiz ettim ve kapsamlı bir tartışma kılavuzu oluşturdum. Çalışma kullanıcı perspektiflerini anlamaya ve eylem planına yönelik içgörüler toplamaya odaklanacak.\n\n4 ana bölümde hedefli sorular oluşturdum:\n• Profesyonel Geçmiş\n• İlk İzlenimler\n• Detaylı Keşif\n• Son Düşünceler ve Öneriler\n\nKılavuzun tamamını sağ panelde görebilirsiniz. Aşağıdaki öneri çiplerini kullanarak soruları özelleştirmekten veya yeni bölümler eklemekten çekinmeyin.`,
           timestamp: new Date()
         };
         setMessages(prev => [...prev, aiResponse]);
@@ -67,11 +67,11 @@ const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelPro
 
     onGuideUpdate(updatedGuide);
 
-    // Add AI message about the addition
+    // Ekleme hakkında AI mesajı ekle
     const aiMessage: ChatMessage = {
       id: `ai-${Date.now()}`,
       type: 'ai',
-      content: `Great! I've added "${newQuestion}" to the Detailed Exploration section. This will help gather more specific insights about ${suggestion.toLowerCase()}.`,
+      content: `Harika! "${newQuestion}" sorusunu Detaylı Keşif bölümüne ekledim. Bu ${suggestion.toLowerCase()} hakkında daha spesifik içgörüler toplanmasına yardımcı olacak.`,
       timestamp: new Date()
     };
     setMessages(prev => [...prev, aiMessage]);
@@ -79,21 +79,21 @@ const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelPro
 
   const generateQuestionFromSuggestion = (suggestion: string): string => {
     const questionMap: Record<string, string> = {
-      'Add pricing/competitor questions': 'How does the pricing compare to alternatives you\'ve seen?',
-      'Add AI-related questions': 'What are your thoughts on AI-powered features in this context?',
-      'Add feature-specific questions': 'Which specific features would be most valuable to you?',
-      'Add accessibility questions': 'How important are accessibility features for your use case?',
-      'Add mobile experience questions': 'How would you expect this to work on mobile devices?'
+      'Fiyatlandırma/rakip soruları ekle': 'Fiyatlandırma gördüğünüz alternatiflerle nasıl karşılaştırılıyor?',
+      'AI ile ilgili sorular ekle': 'Bu bağlamda AI destekli özellikler hakkında düşünceleriniz nelerdir?',
+      'Özellik odaklı sorular ekle': 'Sizin için en değerli olacak belirli özellikler hangisidir?',
+      'Erişilebilirlik soruları ekle': 'Kullanım durumunuz için erişilebilirlik özellikleri ne kadar önemli?',
+      'Mobil deneyim soruları ekle': 'Bunun mobil cihazlarda nasıl çalışmasını beklersiniz?'
     };
-    return questionMap[suggestion] || 'Can you elaborate on this aspect?';
+    return questionMap[suggestion] || 'Bu konuyu biraz daha detaylandırabilir misiniz?';
   };
 
   return (
     <div className="h-full flex flex-col">
       {/* Chat Header */}
       <div className="border-b border-border-light p-6">
-        <h2 className="text-lg font-semibold text-text-primary">Research Assistant</h2>
-        <p className="text-sm text-text-secondary mt-1">AI-powered guide generation and optimization</p>
+        <h2 className="text-lg font-semibold text-text-primary">Araştırma Asistanı</h2>
+        <p className="text-sm text-text-secondary mt-1">AI destekli kılavuz oluşturma ve optimizasyon</p>
       </div>
 
       {/* Messages */}
@@ -134,7 +134,7 @@ const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelPro
         <div className="border-t border-border-light p-6">
           <div className="flex items-center space-x-2 mb-3">
             <Sparkles className="w-4 h-4 text-brand-primary" />
-            <span className="text-sm font-medium text-text-secondary">Suggested improvements</span>
+            <span className="text-sm font-medium text-text-secondary">Önerilen geliştirmeler</span>
           </div>
           
           <div className="flex flex-wrap gap-2">
