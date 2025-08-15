@@ -15,9 +15,9 @@ const colors = [
   'text-brand-secondary', 
   'text-accent',
   'text-success',
-  'text-brand-primary',
-  'text-brand-secondary',
-  'text-accent'
+  'text-warning',
+  'text-info',
+  'text-brand-primary'
 ];
 
 export const AnimatedHeadline = () => {
