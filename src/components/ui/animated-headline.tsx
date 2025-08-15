@@ -43,7 +43,7 @@ export const AnimatedHeadline = () => {
   return (
     <h1 className="text-5xl font-bold text-text-primary mb-6 leading-tight">
       Ürününüz hakkında sorunları keşfedin. Cevapları bulun.{' '}
-      <span className="relative inline-block overflow-hidden w-[180px] text-center align-bottom">
+      <span className="relative inline-block overflow-hidden w-[200px] text-center align-bottom">
         <span 
           className={`
             inline-block transition-all ease-in-out whitespace-nowrap
