@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 
 const words = [
-  'içgörü',
-  'fırsat', 
-  'bulgu',
-  'öncelik',
-  'rapor',
-  'senaryo',
-  'fikir'
+  'İçgörü',
+  'Fırsat', 
+  'Bulgu',
+  'Öncelik',
+  'Rapor',
+  'Senaryo',
+  'Fikir'
 ];
 
 const colors = [
@@ -43,7 +43,7 @@ export const AnimatedHeadline = () => {
   return (
     <h1 className="text-5xl font-bold text-text-primary mb-6 leading-tight">
       Ürününüz hakkında sorunları keşfedin. Cevapları bulun.{' '}
-      <span className="relative inline-block overflow-hidden w-[140px] text-left">
+      <span className="relative inline-block overflow-hidden w-[180px] text-left">
         <span 
           className={`
             inline-block transition-all ease-in-out whitespace-nowrap
