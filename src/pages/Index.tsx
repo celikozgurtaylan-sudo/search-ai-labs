@@ -105,7 +105,7 @@ const Index = () => {
           <div className="flex items-center justify-between mt-6">
             <Button variant="outline" className="flex items-center space-x-2">
               <Upload className="w-4 h-4" />
-              <span>Tartışma Kılavuzu Yükle</span>
+              <span>Araştırma planınızı ekleyin</span>
             </Button>
             
             <div className="flex items-center space-x-3">
