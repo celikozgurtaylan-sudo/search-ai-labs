@@ -47,7 +47,7 @@ const Index = () => {
   const handleTemplateSelect = (template: typeof templates[0]) => {
     const sampleDescriptions = {
       "ad-testing": "Y kuşağını hedefleyen sürdürülebilir giyim markamız için yeni video reklamımızı test edin. Duygusal tepkileri ve satın alma niyetini anlamak istiyoruz.",
-      "landing-page": "listenlabs.ai adresindeki SaaS açılış sayfamızı değerlendirin - pazarlama profesyonellerinin AI destekli kullanıcı araştırma platformumuz hakkında ne düşündüğünü anlamak istiyoruz.",
+      "landing-page": "Fibabanka.com.tr adresindeki SaaS açılış sayfamızı değerlendirin - pazarlama profesyonellerinin AI destekli kullanıcı araştırma platformumuz hakkında ne düşündüğünü anlamak istiyoruz.",
       "nps-feedback": "Mobil bankacılık uygulamamızın kullanıcıları için NPS anketi yapın, iyileştirme alanlarını belirleyin ve müşteri sadakatini neyin yönlendirdiğini anlayın.",
       "foundational": "Uzaktan çalışanların verimlilik ve işbirliği araçlarını nasıl yönettiğini keşfedin, yeni çalışma alanı platformumuz için fırsatları belirleyin."
     };

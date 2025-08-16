@@ -97,7 +97,7 @@ const Workspace = () => {
   };
 
   const getProjectTitle = (description: string) => {
-    if (description.includes('listenlabs.ai')) return 'ListenLabs Açılış Sayfası Araştırması';
+    if (description.includes('Fibabanka.com.tr')) return 'Fibabanka Açılış Sayfası Araştırması';
     if (description.includes('reklam') || description.includes('advertisement') || description.includes('ad')) return 'Reklam Test Çalışması';
     if (description.includes('NPS') || description.includes('banking') || description.includes('bankacılık')) return 'Müşteri Memnuniyeti Araştırması';
     return 'Kullanıcı Deneyimi Araştırma Çalışması';
