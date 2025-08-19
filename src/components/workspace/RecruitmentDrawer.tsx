@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,6 +91,7 @@ const RecruitmentDrawer = ({
   onOpenChange,
   onParticipantsSelect
 }: RecruitmentDrawerProps) => {
+  const navigate = useNavigate();
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [filters, setFilters] = useState({
     country: 'tr',
@@ -123,7 +125,11 @@ const RecruitmentDrawer = ({
               </div>
               
               <div className="flex items-center space-x-3">
-                <Button variant="outline" className="flex items-center space-x-2">
+                <Button 
+                  variant="outline" 
+                  className="flex items-center space-x-2"
+                  onClick={() => navigate('/subscriptions')}
+                >
                   <Users className="w-4 h-4" />
                   <span>Daha Fazla Organize Et</span>
                 </Button>
