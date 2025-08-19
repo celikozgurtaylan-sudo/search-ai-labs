@@ -170,7 +170,7 @@ const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelPro
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Araştırma kılavuzunuzu geliştirmek için sorular sorun..."
+            placeholder="Takip sorusu ekle..."
             className="flex-1"
           />
           <Button 
