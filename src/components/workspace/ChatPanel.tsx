@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Bot, User, Sparkles } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Bot, User, Sparkles, Send } from "lucide-react";
 
 interface ChatMessage {
   id: string;
@@ -19,6 +20,7 @@ interface ChatPanelProps {
 
 const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputMessage, setInputMessage] = useState('');
 
   useEffect(() => {
     if (projectData) {
@@ -77,6 +79,38 @@ const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelPro
     setMessages(prev => [...prev, aiMessage]);
   };
 
+  const handleSendMessage = () => {
+    if (!inputMessage.trim()) return;
+
+    // Add user message
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      type: 'user',
+      content: inputMessage,
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, userMessage]);
+    setInputMessage('');
+
+    // Simulate AI response
+    setTimeout(() => {
+      const aiMessage: ChatMessage = {
+        id: `ai-${Date.now()}`,
+        type: 'ai',
+        content: `Anladım! "${inputMessage}" hakkında düşünelim. Bu konuyu daha detaylı incelemek için araştırma kılavuzunuza yeni sorular ekleyebilirim. Hangi yönde ilerlemek istiyorsunuz?`,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, aiMessage]);
+    }, 1000);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
   const generateQuestionFromSuggestion = (suggestion: string): string => {
     const questionMap: Record<string, string> = {
       'Fiyatlandırma/rakip soruları ekle': 'Fiyatlandırma gördüğünüz alternatiflerle nasıl karşılaştırılıyor?',
@@ -127,6 +161,26 @@ const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelPro
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Chat Input */}
+      <div className="border-t border-border-light p-6">
+        <div className="flex space-x-3">
+          <Input
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="Araştırma kılavuzunuzu geliştirmek için sorular sorun..."
+            className="flex-1"
+          />
+          <Button 
+            onClick={handleSendMessage}
+            disabled={!inputMessage.trim()}
+            className="px-4"
+          >
+            <Send className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Suggestions */}
