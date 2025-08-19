@@ -92,7 +92,7 @@ const RecruitmentDrawer = ({
 }: RecruitmentDrawerProps) => {
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [filters, setFilters] = useState({
-    country: 'all',
+    country: 'tr',
     language: 'all',
     experience: 'all',
     role: 'all'
