@@ -11,6 +11,11 @@ export interface ProjectAnalysis {
 
 export const analyzeProject = async (description: string): Promise<ProjectAnalysis> => {
   try {
+    // Check if Supabase is available
+    if (!supabase) {
+      throw new Error('Supabase connection not available. Please connect to Supabase to enable LLM analysis.')
+    }
+
     const { data, error } = await supabase.functions.invoke('analyze-project', {
       body: { description }
     })
