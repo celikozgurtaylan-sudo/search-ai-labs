@@ -16,7 +16,7 @@ export const analyzeProject = async (description: string): Promise<ProjectAnalys
       throw new Error('Supabase connection not available. Please connect to Supabase to enable LLM analysis.')
     }
 
-    const { data, error } = await supabase.functions.invoke('analyze-project', {
+    const { data, error } = await supabase.functions.invoke('ux-research-planner', {
       body: { description }
     })
 
