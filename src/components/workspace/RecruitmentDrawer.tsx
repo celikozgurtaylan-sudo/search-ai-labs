@@ -5,17 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { 
-  Users, 
-  Globe, 
-  Briefcase, 
-  Clock, 
-  MapPin, 
-  Star,
-  Filter,
-  Zap
-} from "lucide-react";
-
+import { Users, Globe, Briefcase, Clock, MapPin, Star, Filter, Zap } from "lucide-react";
 interface Participant {
   id: string;
   name: string;
@@ -29,82 +19,77 @@ interface Participant {
   availability: string;
   bio: string;
 }
-
 interface RecruitmentDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onParticipantsSelect: (participants: Participant[]) => void;
 }
-
-const generateParticipants = (): Participant[] => [
-  {
-    id: 'p1',
-    name: 'Ayşe Demir',
-    role: 'Ürün Pazarlama Müdürü',
-    company: 'TechFlow Inc',
-    experience: '5+ yıl',
-    location: 'İstanbul, TR',
-    timezone: 'TRT',
-    rating: 4.9,
-    languages: ['Türkçe', 'İngilizce'],
-    availability: 'Şu anda müsait',
-    bio: 'B2B pazarlama ve kullanıcı araştırması konularında deneyimli. 20+ müşteri görüşmesi yönetti.'
-  },
-  {
-    id: 'p2',
-    name: 'Mehmet Çelik',
-    role: 'Pazarlama Direktörü',
-    company: 'StartupBase',
-    experience: '8+ yıl',
-    location: 'Ankara, TR',
-    timezone: 'TRT',
-    rating: 4.8,
-    languages: ['Türkçe', 'İngilizce'],
-    availability: '2 saat sonra müsait',
-    bio: 'SaaS platformları ve kullanıcı kazanımı konularında kapsamlı deneyime sahip büyüme pazarlama uzmanı.'
-  },
-  {
-    id: 'p3',
-    name: 'Elif Kaya',
-    role: 'Kıdemli Pazarlama Uzmanı',
-    company: 'Digital Solutions Co',
-    experience: '6+ yıl',
-    location: 'İzmir, TR',
-    timezone: 'TRT',
-    rating: 4.7,
-    languages: ['Türkçe'],
-    availability: 'Şu anda müsait',
-    bio: 'Dijital pazarlama analitiği ve müşteri yolculuğu optimizasyonu konularında uzman.'
-  },
-  {
-    id: 'p4',
-    name: 'Can Özkan',
-    role: 'Pazarlama Genel Müdür Yardımcısı',
-    company: 'CloudTech',
-    experience: '10+ yıl',
-    location: 'Bursa, TR',
-    timezone: 'TRT',
-    rating: 4.9,
-    languages: ['Türkçe', 'İngilizce'],
-    availability: '1 saat sonra müsait',
-    bio: 'AI/ML ürünleri ve kurumsal satış konularında derin deneyime sahip pazarlama lideri.'
-  },
-  {
-    id: 'p5',
-    name: 'Zeynep Aktaş',
-    role: 'Pazarlama Operasyonları Müdürü',
-    company: 'InnovateCorp',
-    experience: '4+ yıl',
-    location: 'Antalya, TR',
-    timezone: 'TRT',
-    rating: 4.6,
-    languages: ['Türkçe'],
-    availability: 'Şu anda müsait',
-    bio: 'B2B organizasyonları için pazarlama otomasyonu ve veri odaklı karar verme uzmanı.'
-  }
-];
-
-const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: RecruitmentDrawerProps) => {
+const generateParticipants = (): Participant[] => [{
+  id: 'p1',
+  name: 'Ayşe Demir',
+  role: 'Ürün Pazarlama Müdürü',
+  company: 'TechFlow Inc',
+  experience: '5+ yıl',
+  location: 'İstanbul, TR',
+  timezone: 'TRT',
+  rating: 4.9,
+  languages: ['Türkçe', 'İngilizce'],
+  availability: 'Şu anda müsait',
+  bio: 'B2B pazarlama ve kullanıcı araştırması konularında deneyimli. 20+ müşteri görüşmesi yönetti.'
+}, {
+  id: 'p2',
+  name: 'Mehmet Çelik',
+  role: 'Pazarlama Direktörü',
+  company: 'StartupBase',
+  experience: '8+ yıl',
+  location: 'Ankara, TR',
+  timezone: 'TRT',
+  rating: 4.8,
+  languages: ['Türkçe', 'İngilizce'],
+  availability: '2 saat sonra müsait',
+  bio: 'SaaS platformları ve kullanıcı kazanımı konularında kapsamlı deneyime sahip büyüme pazarlama uzmanı.'
+}, {
+  id: 'p3',
+  name: 'Elif Kaya',
+  role: 'Kıdemli Pazarlama Uzmanı',
+  company: 'Digital Solutions Co',
+  experience: '6+ yıl',
+  location: 'İzmir, TR',
+  timezone: 'TRT',
+  rating: 4.7,
+  languages: ['Türkçe'],
+  availability: 'Şu anda müsait',
+  bio: 'Dijital pazarlama analitiği ve müşteri yolculuğu optimizasyonu konularında uzman.'
+}, {
+  id: 'p4',
+  name: 'Can Özkan',
+  role: 'Pazarlama Genel Müdür Yardımcısı',
+  company: 'CloudTech',
+  experience: '10+ yıl',
+  location: 'Bursa, TR',
+  timezone: 'TRT',
+  rating: 4.9,
+  languages: ['Türkçe', 'İngilizce'],
+  availability: '1 saat sonra müsait',
+  bio: 'AI/ML ürünleri ve kurumsal satış konularında derin deneyime sahip pazarlama lideri.'
+}, {
+  id: 'p5',
+  name: 'Zeynep Aktaş',
+  role: 'Pazarlama Operasyonları Müdürü',
+  company: 'InnovateCorp',
+  experience: '4+ yıl',
+  location: 'Antalya, TR',
+  timezone: 'TRT',
+  rating: 4.6,
+  languages: ['Türkçe'],
+  availability: 'Şu anda müsait',
+  bio: 'B2B organizasyonları için pazarlama otomasyonu ve veri odaklı karar verme uzmanı.'
+}];
+const RecruitmentDrawer = ({
+  open,
+  onOpenChange,
+  onParticipantsSelect
+}: RecruitmentDrawerProps) => {
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [filters, setFilters] = useState({
     country: 'all',
@@ -112,29 +97,19 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
     experience: 'all',
     role: 'all'
   });
-
   const participants = generateParticipants();
-
   const handleParticipantToggle = (participantId: string) => {
-    setSelectedParticipants(prev => 
-      prev.includes(participantId)
-        ? prev.filter(id => id !== participantId)
-        : [...prev, participantId]
-    );
+    setSelectedParticipants(prev => prev.includes(participantId) ? prev.filter(id => id !== participantId) : [...prev, participantId]);
   };
-
   const handleQuickRecruit = () => {
     const quickSelect = participants.slice(0, 5).map(p => p.id);
     setSelectedParticipants(quickSelect);
   };
-
   const handleConfirmSelection = () => {
     const selected = participants.filter(p => selectedParticipants.includes(p.id));
     onParticipantsSelect(selected);
   };
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+  return <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[800px] sm:max-w-[800px] p-0">
         <div className="h-full flex flex-col">
           {/* Header */}
@@ -144,24 +119,16 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
                 <SheetTitle className="text-xl font-semibold text-text-primary">
                   Katılımcı Bulma
                 </SheetTitle>
-                <SheetDescription className="text-text-secondary mt-1">
-                  Dünya çapında milyonlarca ön nitelikli görüşmeciye erişim
-                </SheetDescription>
+                <SheetDescription className="text-text-secondary mt-1">Dünya çapında milyonlarca ön nitelikli görüşmeciye erişim</SheetDescription>
               </div>
               
               <div className="flex items-center space-x-3">
-                <Button
-                  variant="outline"
-                  className="flex items-center space-x-2"
-                >
+                <Button variant="outline" className="flex items-center space-x-2">
                   <Users className="w-4 h-4" />
                   <span>Daha Fazla Organize Et</span>
                 </Button>
                 
-                <Button
-                  onClick={handleQuickRecruit}
-                  className="bg-brand-primary hover:bg-brand-primary-hover text-white flex items-center space-x-2"
-                >
+                <Button onClick={handleQuickRecruit} className="bg-brand-primary hover:bg-brand-primary-hover text-white flex items-center space-x-2">
                   <Zap className="w-4 h-4" />
                   <span>Şimdi 5 kişi bul</span>
                 </Button>
@@ -177,7 +144,10 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
             </div>
             
             <div className="grid grid-cols-4 gap-4">
-              <Select value={filters.country} onValueChange={(value) => setFilters({...filters, country: value})}>
+              <Select value={filters.country} onValueChange={value => setFilters({
+              ...filters,
+              country: value
+            })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Ülke" />
                 </SelectTrigger>
@@ -189,7 +159,10 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
                 </SelectContent>
               </Select>
 
-              <Select value={filters.language} onValueChange={(value) => setFilters({...filters, language: value})}>
+              <Select value={filters.language} onValueChange={value => setFilters({
+              ...filters,
+              language: value
+            })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Dil" />
                 </SelectTrigger>
@@ -201,7 +174,10 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
                 </SelectContent>
               </Select>
 
-              <Select value={filters.experience} onValueChange={(value) => setFilters({...filters, experience: value})}>
+              <Select value={filters.experience} onValueChange={value => setFilters({
+              ...filters,
+              experience: value
+            })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Deneyim" />
                 </SelectTrigger>
@@ -213,7 +189,10 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
                 </SelectContent>
               </Select>
 
-              <Select value={filters.role} onValueChange={(value) => setFilters({...filters, role: value})}>
+              <Select value={filters.role} onValueChange={value => setFilters({
+              ...filters,
+              role: value
+            })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Rol" />
                 </SelectTrigger>
@@ -239,16 +218,7 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
             </div>
 
             <div className="space-y-4">
-              {participants.map((participant) => (
-                <Card 
-                  key={participant.id}
-                  className={`cursor-pointer transition-all duration-200 ${
-                    selectedParticipants.includes(participant.id)
-                      ? 'ring-2 ring-brand-primary border-brand-primary'
-                      : 'hover:border-brand-primary'
-                  }`}
-                  onClick={() => handleParticipantToggle(participant.id)}
-                >
+              {participants.map(participant => <Card key={participant.id} className={`cursor-pointer transition-all duration-200 ${selectedParticipants.includes(participant.id) ? 'ring-2 ring-brand-primary border-brand-primary' : 'hover:border-brand-primary'}`} onClick={() => handleParticipantToggle(participant.id)}>
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div className="flex items-start space-x-3">
@@ -286,16 +256,10 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
                         </div>
                       </div>
                       
-                      <div className={`w-5 h-5 rounded-full border-2 transition-colors ${
-                        selectedParticipants.includes(participant.id)
-                          ? 'bg-brand-primary border-brand-primary'
-                          : 'border-border'
-                      }`}>
-                        {selectedParticipants.includes(participant.id) && (
-                          <div className="w-full h-full flex items-center justify-center">
+                      <div className={`w-5 h-5 rounded-full border-2 transition-colors ${selectedParticipants.includes(participant.id) ? 'bg-brand-primary border-brand-primary' : 'border-border'}`}>
+                        {selectedParticipants.includes(participant.id) && <div className="w-full h-full flex items-center justify-center">
                             <div className="w-2 h-2 bg-white rounded-full" />
-                          </div>
-                        )}
+                          </div>}
                       </div>
                     </div>
                   </CardHeader>
@@ -306,15 +270,12 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
                     </p>
                     
                     <div className="flex items-center space-x-2 mt-3">
-                      {participant.languages.map((lang) => (
-                        <Badge key={lang} variant="secondary" className="text-xs">
+                      {participant.languages.map(lang => <Badge key={lang} variant="secondary" className="text-xs">
                           {lang}
-                        </Badge>
-                      ))}
+                        </Badge>)}
                     </div>
                   </CardContent>
-                </Card>
-              ))}
+                </Card>)}
             </div>
           </div>
 
@@ -326,17 +287,10 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
               </div>
               
               <div className="flex items-center space-x-3">
-                <Button 
-                  variant="outline"
-                  onClick={() => onOpenChange(false)}
-                >
+                <Button variant="outline" onClick={() => onOpenChange(false)}>
                   İptal
                 </Button>
-                <Button
-                  onClick={handleConfirmSelection}
-                  disabled={selectedParticipants.length === 0}
-                  className="bg-brand-primary hover:bg-brand-primary-hover text-white"
-                >
+                <Button onClick={handleConfirmSelection} disabled={selectedParticipants.length === 0} className="bg-brand-primary hover:bg-brand-primary-hover text-white">
                   {selectedParticipants.length} katılımcı ekle
                 </Button>
               </div>
@@ -344,8 +298,6 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
           </div>
         </div>
       </SheetContent>
-    </Sheet>
-  );
+    </Sheet>;
 };
-
 export default RecruitmentDrawer;
