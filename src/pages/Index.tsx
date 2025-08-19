@@ -84,7 +84,18 @@ const Index = () => {
 
         {/* Project Input */}
         <div className="bg-card border border-border rounded-xl p-8 mb-8 shadow-sm">
-          <Textarea value={projectDescription} onChange={e => setProjectDescription(e.target.value)} placeholder="Lütfen projenizi detaylarıyla açıklayın →" className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary" />
+          <Textarea 
+            value={projectDescription} 
+            onChange={e => setProjectDescription(e.target.value)} 
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && projectDescription.trim()) {
+                e.preventDefault();
+                handleStartProject();
+              }
+            }}
+            placeholder="Lütfen projenizi detaylarıyla açıklayın →" 
+            className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary" 
+          />
           
           <div className="flex items-center justify-between mt-6">
             <Button variant="outline" className="flex items-center space-x-2">
