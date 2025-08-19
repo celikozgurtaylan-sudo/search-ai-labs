@@ -15,8 +15,11 @@ import {
   Circle,
   User,
   PlayCircle,
-  BarChart3
+  BarChart3,
+  Camera,
+  Monitor
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 interface StudyPanelProps {
   discussionGuide: any;
@@ -28,6 +31,8 @@ interface StudyPanelProps {
 const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate }: StudyPanelProps) => {
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [isScreenRecording, setIsScreenRecording] = useState(false);
+  const [isCameraRecording, setIsCameraRecording] = useState(false);
 
   const handleEditQuestion = (questionId: string, currentValue: string) => {
     setEditingQuestion(questionId);
@@ -163,12 +168,36 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
     <div className="h-full flex flex-col">
       {/* Study Header */}
       <div className="border-b border-border-light p-6">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
           <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>
-          <Badge variant="outline" className="flex items-center space-x-1">
-            <Video className="w-3 h-3" />
-            <span>Ekran kaydı</span>
-          </Badge>
+          
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+            {/* Screen Recording Toggle */}
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-2">
+                <Monitor className={`w-4 h-4 ${isScreenRecording ? 'text-status-success' : 'text-text-muted'}`} />
+                <span className="text-sm font-medium text-text-primary">Ekran Kaydı</span>
+              </div>
+              <Switch 
+                checked={isScreenRecording} 
+                onCheckedChange={setIsScreenRecording}
+                className="data-[state=checked]:bg-status-success"
+              />
+            </div>
+            
+            {/* Camera Recording Toggle */}
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-2">
+                <Camera className={`w-4 h-4 ${isCameraRecording ? 'text-status-success' : 'text-text-muted'}`} />
+                <span className="text-sm font-medium text-text-primary">Kamera</span>
+              </div>
+              <Switch 
+                checked={isCameraRecording} 
+                onCheckedChange={setIsCameraRecording}
+                className="data-[state=checked]:bg-status-success"
+              />
+            </div>
+          </div>
         </div>
         
         {currentStep === 'run' && participants.length > 0 && (
