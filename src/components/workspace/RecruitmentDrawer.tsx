@@ -93,7 +93,7 @@ const RecruitmentDrawer = ({
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [filters, setFilters] = useState({
     country: 'tr',
-    language: 'all',
+    language: 'tr',
     experience: 'all',
     role: 'all'
   });
