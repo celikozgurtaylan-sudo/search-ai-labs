@@ -42,6 +42,10 @@ const Index = () => {
 
     // Store project data for the workspace
     localStorage.setItem('searchai-project', JSON.stringify(projectData));
+    
+    // Set flag to trigger LLM analysis on workspace page
+    localStorage.setItem('searchai-analyze-request', 'true');
+    
     navigate('/workspace');
   };
   const handleTemplateSelect = (template: typeof templates[0]) => {

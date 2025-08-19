@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Bot, User, Sparkles, Send } from "lucide-react";
+import { Bot, User, Sparkles, Send, Loader2 } from "lucide-react";
+import { analyzeProject, ProjectAnalysis } from "@/services/projectAnalysisService";
 
 interface ChatMessage {
   id: string;
@@ -21,6 +22,7 @@ interface ChatPanelProps {
 const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
     if (projectData) {
@@ -34,20 +36,86 @@ const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelPro
         }
       ];
 
-      // Gecikme sonrası AI yanıtı ekle
-      setTimeout(() => {
-        const aiResponse: ChatMessage = {
-          id: '2',
-          type: 'ai',
-          content: `Mükemmel! Projenizi analiz ettim ve kapsamlı bir tartışma kılavuzu oluşturdum. Çalışma kullanıcı perspektiflerini anlamaya ve eylem planına yönelik içgörüler toplamaya odaklanacak.\n\n4 ana bölümde hedefli sorular oluşturdum:\n• Profesyonel Geçmiş\n• İlk İzlenimler\n• Detaylı Keşif\n• Son Düşünceler ve Öneriler\n\nKılavuzun tamamını sağ panelde görebilirsiniz. Aşağıdaki öneri çiplerini kullanarak soruları özelleştirmekten veya yeni bölümler eklemekten çekinmeyin.`,
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, aiResponse]);
-      }, 1500);
-
       setMessages(initialMessages);
+
+      // Check if LLM analysis was requested
+      const shouldAnalyze = localStorage.getItem('searchai-analyze-request');
+      if (shouldAnalyze === 'true') {
+        localStorage.removeItem('searchai-analyze-request');
+        performProjectAnalysis(projectData.description);
+      } else {
+        // Default AI response if no analysis requested
+        setTimeout(() => {
+          const aiResponse: ChatMessage = {
+            id: '2',
+            type: 'ai',
+            content: `Mükemmel! Projenizi analiz ettim ve kapsamlı bir tartışma kılavuzu oluşturdum. Çalışma kullanıcı perspektiflerini anlamaya ve eylem planına yönelik içgörüler toplamaya odaklanacak.\n\n4 ana bölümde hedefli sorular oluşturdum:\n• Profesyonel Geçmiş\n• İlk İzlenimler\n• Detaylı Keşif\n• Son Düşünceler ve Öneriler\n\nKılavuzun tamamını sağ panelde görebilirsiniz. Aşağıdaki öneri çiplerini kullanarak soruları özelleştirmekten veya yeni bölümler eklemekten çekinmeyin.`,
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, aiResponse]);
+        }, 1500);
+      }
     }
   }, [projectData]);
+
+  const performProjectAnalysis = async (description: string) => {
+    setIsAnalyzing(true);
+    
+    // Add loading message
+    const loadingMessage: ChatMessage = {
+      id: `ai-loading-${Date.now()}`,
+      type: 'ai',
+      content: 'Projenizi analiz ediyorum ve detaylı araştırma planı oluşturuyorum...',
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, loadingMessage]);
+
+    try {
+      const analysis = await analyzeProject(description);
+      
+      // Remove loading message and add analysis result
+      setMessages(prev => {
+        const filtered = prev.filter(msg => !msg.id.includes('loading'));
+        const analysisMessage: ChatMessage = {
+          id: `ai-analysis-${Date.now()}`,
+          type: 'ai',
+          content: `📊 **Proje Analizi Tamamlandı**
+
+**Özet:** ${analysis.summary}
+
+**Önerilen Araştırma Yöntemleri:**
+${analysis.researchMethods.map(method => `• ${method}`).join('\n')}
+
+**Hedef Kitle:** ${analysis.targetAudience}
+
+**Anahtar Sorular:**
+${analysis.keyQuestions.map(q => `• ${q}`).join('\n')}
+
+**Tahmini Süre:** ${analysis.timeline}
+
+**Önemli İçgörüler:** ${analysis.insights}
+
+Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları ekleyebilirsiniz.`,
+          timestamp: new Date()
+        };
+        return [...filtered, analysisMessage];
+      });
+    } catch (error) {
+      // Remove loading message and add error message
+      setMessages(prev => {
+        const filtered = prev.filter(msg => !msg.id.includes('loading'));
+        const errorMessage: ChatMessage = {
+          id: `ai-error-${Date.now()}`,
+          type: 'ai',
+          content: 'Analiz sırasında bir hata oluştu. Varsayılan araştırma kılavuzu ile devam edebilirsiniz.',
+          timestamp: new Date()
+        };
+        return [...filtered, errorMessage];
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const handleSuggestionClick = (suggestion: string) => {
     if (!discussionGuide) return;
