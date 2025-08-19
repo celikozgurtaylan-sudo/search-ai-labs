@@ -119,7 +119,7 @@ const RecruitmentDrawer = ({
                 <SheetTitle className="text-xl font-semibold text-text-primary">
                   Katılımcı Bulma
                 </SheetTitle>
-                <SheetDescription className="text-text-secondary mt-1">Dünya çapında milyonlarca ön nitelikli görüşmeciye erişim</SheetDescription>
+                <SheetDescription className="text-text-secondary mt-1">Türkiye ve Dünya çapında milyonlarca ön nitelikli görüşmeciye erişim sağlayın.</SheetDescription>
               </div>
               
               <div className="flex items-center space-x-3">
