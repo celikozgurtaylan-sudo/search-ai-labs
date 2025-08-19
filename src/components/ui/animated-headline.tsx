@@ -45,7 +45,7 @@ export const AnimatedHeadline = () => {
       <span
         // inline-flex + items-baseline keep baseline aligned with the sentence
         // min-w-[8ch] reserves just enough space across words without a big gap
-        className="relative inline-flex items-baseline justify-center overflow-hidden min-w-[8ch] text-center align-baseline"
+        className="relative inline-flex items-baseline justify-center overflow-hidden min-w-[6ch] text-center align-baseline"
         aria-live="polite"
       >
         <span
