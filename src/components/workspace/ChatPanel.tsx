@@ -127,7 +127,7 @@ const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelPro
       {/* Chat Header */}
       <div className="border-b border-border-light p-6">
         <h2 className="text-lg font-semibold text-text-primary">Araştırma Asistanı</h2>
-        <p className="text-sm text-text-secondary mt-1">AI destekli kılavuz oluşturma ve optimizasyon</p>
+        <p className="text-sm text-text-secondary mt-1">AI destekli araştırma planı oluşturma ve optimizasyon</p>
       </div>
 
       {/* Messages */}
