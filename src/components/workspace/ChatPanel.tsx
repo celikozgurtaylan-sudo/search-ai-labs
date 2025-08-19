@@ -147,7 +147,7 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
     setMessages(prev => [...prev, aiMessage]);
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
     // Add user message
@@ -158,18 +158,47 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
       timestamp: new Date()
     };
     setMessages(prev => [...prev, userMessage]);
+    
+    const currentInput = inputMessage;
     setInputMessage('');
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiMessage: ChatMessage = {
-        id: `ai-${Date.now()}`,
-        type: 'ai',
-        content: `Anladım! "${inputMessage}" hakkında düşünelim. Bu konuyu daha detaylı incelemek için araştırma kılavuzunuza yeni sorular ekleyebilirim. Hangi yönde ilerlemek istiyorsunuz?`,
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, aiMessage]);
-    }, 1000);
+    // Add loading message
+    const loadingMessage: ChatMessage = {
+      id: `ai-loading-${Date.now()}`,
+      type: 'ai',
+      content: 'Düşünüyorum...',
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, loadingMessage]);
+
+    try {
+      // Use the UX research planner to generate dynamic responses
+      const analysis = await analyzeProject(`Kullanıcı sorusu: "${currentInput}"\n\nMevcut proje bağlamı: ${projectData?.description || 'Genel araştırma'}`);
+      
+      // Remove loading message and add AI response based on analysis
+      setMessages(prev => {
+        const filtered = prev.filter(msg => !msg.id.includes('loading'));
+        const aiMessage: ChatMessage = {
+          id: `ai-${Date.now()}`,
+          type: 'ai',
+          content: `${analysis.insights}\n\n**Önerilen yaklaşım:**\n${analysis.researchMethods.slice(0, 2).map(method => `• ${method}`).join('\n')}\n\nBu konuda araştırma kılavuzunuza yeni sorular eklemek ister misiniz?`,
+          timestamp: new Date()
+        };
+        return [...filtered, aiMessage];
+      });
+    } catch (error) {
+      // Fallback to contextual response if API fails
+      setMessages(prev => {
+        const filtered = prev.filter(msg => !msg.id.includes('loading'));
+        const aiMessage: ChatMessage = {
+          id: `ai-${Date.now()}`,
+          type: 'ai',
+          content: `"${currentInput}" hakkında çok iyi bir nokta! Bu konuyu araştırma kılavuzunuza dahil etmek için özel sorular oluşturabilirim. Hangi açıdan yaklaşmak istiyorsunuz - kullanıcı deneyimi, işlevsellik yoksa başka bir perspektif mi?`,
+          timestamp: new Date()
+        };
+        return [...filtered, aiMessage];
+      });
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
