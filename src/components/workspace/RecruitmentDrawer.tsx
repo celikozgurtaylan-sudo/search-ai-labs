@@ -149,13 +149,23 @@ const RecruitmentDrawer = ({ open, onOpenChange, onParticipantsSelect }: Recruit
                 </SheetDescription>
               </div>
               
-              <Button
-                onClick={handleQuickRecruit}
-                className="bg-brand-primary hover:bg-brand-primary-hover text-white flex items-center space-x-2"
-              >
-                <Zap className="w-4 h-4" />
-                <span>Şimdi 5 kişi bul</span>
-              </Button>
+              <div className="flex items-center space-x-3">
+                <Button
+                  variant="outline"
+                  className="flex items-center space-x-2"
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Daha Fazla Organize Et</span>
+                </Button>
+                
+                <Button
+                  onClick={handleQuickRecruit}
+                  className="bg-brand-primary hover:bg-brand-primary-hover text-white flex items-center space-x-2"
+                >
+                  <Zap className="w-4 h-4" />
+                  <span>Şimdi 5 kişi bul</span>
+                </Button>
+              </div>
             </div>
           </SheetHeader>
 
