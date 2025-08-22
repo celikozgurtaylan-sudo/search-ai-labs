@@ -260,49 +260,52 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
         ))}
       </div>
 
-      {/* Chat Input */}
-      <div className="border-t border-border-light p-4">
-        <div className="flex space-x-3">
-          <Input
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Takip sorusu ekle..."
-            className="flex-1"
-          />
-          <Button 
-            onClick={handleSendMessage}
-            disabled={!inputMessage.trim()}
-            className="px-4"
-          >
-            <Send className="w-4 h-4" />
-          </Button>
+      {/* Bottom Section - Suggestions and Input */}
+      <div className="flex-shrink-0 bg-white border-t border-border-light">
+        {/* Suggestions */}
+        {discussionGuide && discussionGuide.suggestions && discussionGuide.suggestions.length > 0 && (
+          <div className="p-4 border-b border-border-light">
+            <div className="flex items-center space-x-2 mb-3">
+              <Sparkles className="w-4 h-4 text-brand-primary" />
+              <span className="text-sm font-medium text-text-secondary">Önerilen geliştirmeler</span>
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              {discussionGuide.suggestions.map((suggestion: string, index: number) => (
+                <Button
+                  key={index}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  className="text-xs hover:bg-brand-primary-light hover:border-brand-primary hover:text-brand-primary"
+                >
+                  + {suggestion}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Chat Input */}
+        <div className="p-4">
+          <div className="flex space-x-3">
+            <Input
+              value={inputMessage}
+              onChange={(e) => setInputMessage(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Takip sorusu ekle..."
+              className="flex-1"
+            />
+            <Button 
+              onClick={handleSendMessage}
+              disabled={!inputMessage.trim()}
+              className="px-4"
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </div>
-
-      {/* Suggestions */}
-      {discussionGuide && discussionGuide.suggestions && discussionGuide.suggestions.length > 0 && (
-        <div className="border-t border-border-light p-4">
-          <div className="flex items-center space-x-2 mb-2">
-            <Sparkles className="w-4 h-4 text-brand-primary" />
-            <span className="text-sm font-medium text-text-secondary">Önerilen geliştirmeler</span>
-          </div>
-          
-          <div className="flex flex-wrap gap-2">
-            {discussionGuide.suggestions.map((suggestion: string, index: number) => (
-              <Button
-                key={index}
-                variant="outline"
-                size="sm"
-                onClick={() => handleSuggestionClick(suggestion)}
-                className="text-xs hover:bg-brand-primary-light hover:border-brand-primary hover:text-brand-primary"
-              >
-                + {suggestion}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 };
