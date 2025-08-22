@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Search, ArrowLeft, Video, Users, Play, BarChart3 } from "lucide-react";
 import ChatPanel from "@/components/workspace/ChatPanel";
 import StudyPanel from "@/components/workspace/StudyPanel";
@@ -190,26 +191,28 @@ const Workspace = () => {
       </header>
 
       {/* Main Workspace */}
-      <div className="flex h-[calc(100vh-73px)]">
+      <ResizablePanelGroup direction="horizontal" className="h-[calc(100vh-73px)]">
         {/* Left Panel - Chat */}
-        <div className="w-1/2 border-r border-border-light">
+        <ResizablePanel defaultSize={45} minSize={25} maxSize={75}>
           <ChatPanel 
             projectData={projectData}
             discussionGuide={discussionGuide}
             onGuideUpdate={setDiscussionGuide}
           />
-        </div>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
 
         {/* Right Panel - Study */}
-        <div className="w-1/2">
+        <ResizablePanel defaultSize={55} minSize={25} maxSize={75}>
           <StudyPanel 
             discussionGuide={discussionGuide}
             participants={participants}
             currentStep={currentStep}
             onGuideUpdate={setDiscussionGuide}
           />
-        </div>
-      </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       {/* Recruitment Drawer */}
       <RecruitmentDrawer 
