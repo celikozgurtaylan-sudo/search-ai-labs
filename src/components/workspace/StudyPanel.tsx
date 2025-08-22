@@ -5,20 +5,27 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import { 
-  Video, 
-  Edit3, 
-  Plus, 
-  Trash2, 
-  Clock, 
-  CheckCircle2, 
+import {
+  Plus,
+  Edit3,
+  Check,
+  X,
+  FileText,
+  Download,
+  Share,
+  CheckCircle2,
+  Clock,
   Circle,
-  User,
   PlayCircle,
   BarChart3,
   Camera,
   Monitor,
-  Loader2
+  Loader2,
+  TrendingUp,
+  AlertTriangle,
+  Users,
+  Video,
+  User
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
@@ -101,96 +108,245 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
     }
   };
 
-  const renderStartingView = () => (
-    <div className="h-full flex items-center justify-center">
-      <div className="text-center max-w-md">
-        <div className="w-16 h-16 bg-status-success-light rounded-full flex items-center justify-center mx-auto mb-6">
-          <CheckCircle2 className="w-8 h-8 text-status-success" />
-        </div>
-        
-        <h3 className="text-xl font-semibold text-text-primary mb-2">
-          Görüşmeler Başlatıldı!
-        </h3>
-        
-        <p className="text-text-secondary mb-6">
-          Katılımcılarınız hazırlanıyor. Kısa süre içinde görüşmelere başlayabileceksiniz.
-        </p>
-        
-        <div className="space-y-3 mb-6">
-          {participants.map((participant, index) => (
-            <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
-                  <span className="text-xs font-medium text-brand-primary">
-                    {participant.name.split(' ').map((n: string) => n[0]).join('')}
-                  </span>
-                </div>
-                <span className="text-sm font-medium text-text-primary">{participant.name}</span>
-              </div>
+  const renderStartingView = () => {
+    const completedInterviews = Math.floor(Math.random() * 3) + 2; // Simulate progress
+    const totalInterviews = participants.length;
+    
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-status-success-light rounded-full flex items-center justify-center mx-auto mb-6">
+            <PlayCircle className="w-8 h-8 text-status-success" />
+          </div>
+          
+          <h3 className="text-xl font-semibold text-text-primary mb-2">
+            Araştırma Devam Ediyor
+          </h3>
+          
+          <p className="text-text-secondary mb-6">
+            {completedInterviews} / {totalInterviews} görüşme tamamlandı
+          </p>
+          
+          <div className="space-y-3 mb-6">
+            {participants.map((participant, index) => {
+              const isCompleted = index < completedInterviews;
+              const isActive = index === completedInterviews;
               
+              return (
+                <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
+                      <span className="text-xs font-medium text-brand-primary">
+                        {participant.name.split(' ').map((n: string) => n[0]).join('')}
+                      </span>
+                    </div>
+                    <span className="text-sm font-medium text-text-primary">{participant.name}</span>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    {isCompleted ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-status-success" />
+                        <span className="text-xs text-status-success">Tamamlandı</span>
+                      </>
+                    ) : isActive ? (
+                      <>
+                        <Circle className="w-4 h-4 text-brand-primary animate-pulse" />
+                        <span className="text-xs text-brand-primary">Görüşmede</span>
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="w-4 h-4 text-text-muted" />
+                        <span className="text-xs text-text-muted">Bekliyor</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          <div className="bg-surface p-4 rounded-lg">
+            <div className="flex items-center justify-center space-x-4 text-sm">
               <div className="flex items-center space-x-2">
-                <Loader2 className="w-4 h-4 text-brand-primary animate-spin" />
-                <span className="text-xs text-text-secondary">Hazırlanıyor...</span>
+                <div className="w-3 h-3 bg-status-success rounded-full"></div>
+                <span className="text-text-secondary">Ekran kaydı aktif</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-status-success rounded-full"></div>
+                <span className="text-text-secondary">Kamera aktif</span>
               </div>
             </div>
-          ))}
-        </div>
-        
-        <div className="flex items-center justify-center space-x-2 text-sm text-text-secondary">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          <span>Görüşme odasına yönlendiriliyor...</span>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderAnalysisView = () => (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Ana Temalar</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <Card className="p-4">
-            <h4 className="font-medium text-text-primary mb-2">Kullanıcı Deneyimi</h4>
-            <p className="text-sm text-text-secondary">%86 pozitif görüş</p>
-            <div className="mt-2">
-              <Badge variant="secondary" className="text-xs">Navigasyon</Badge>
-              <Badge variant="secondary" className="text-xs ml-2">Görsel Tasarım</Badge>
-            </div>
-          </Card>
-          <Card className="p-4">
-            <h4 className="font-medium text-text-primary mb-2">Özellik İstekleri</h4>
-            <p className="text-sm text-text-secondary">12 benzersiz öneri</p>
-            <div className="mt-2">
-              <Badge variant="secondary" className="text-xs">Mobil Uygulama</Badge>
-              <Badge variant="secondary" className="text-xs ml-2">Entegrasyon</Badge>
-            </div>
-          </Card>
+      {/* Research Summary */}
+      <div className="bg-surface p-6 rounded-lg">
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Araştırma Özeti</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-brand-primary">5</div>
+            <div className="text-sm text-text-secondary">Toplam Görüşme</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-brand-primary">42</div>
+            <div className="text-sm text-text-secondary">Dakika</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-brand-primary">8</div>
+            <div className="text-sm text-text-secondary">Ana Tema</div>
+          </div>
         </div>
       </div>
 
-      <div>
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Öne Çıkan Alıntılar</h3>
+      {/* Asked Questions */}
+      <div className="bg-surface p-6 rounded-lg">
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Sorulan Sorular</h3>
         <div className="space-y-3">
-          <Card className="p-4">
-            <p className="text-sm text-text-primary italic">"Bu gerçekten araştırma sürecimizi kolaylaştırabilir"</p>
-            <p className="text-xs text-text-secondary mt-2">- Sarah M., Ürün Müdürü</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-sm text-text-primary italic">"AI analiz özelliği etkileyici"</p>
-            <p className="text-xs text-text-secondary mt-2">- Mike D., UX Araştırmacısı</p>
-          </Card>
+          {discussionGuide?.sections?.map((section: any) => (
+            <div key={section.id} className="border-l-2 border-brand-primary-light pl-4">
+              <h4 className="font-medium text-text-primary mb-2">{section.title}</h4>
+              <ul className="space-y-1">
+                {section.questions.slice(0, 2).map((question: string, index: number) => (
+                  <li key={index} className="text-sm text-text-secondary">• {question}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       </div>
 
-      <div className="flex space-x-3">
-        <Button variant="outline" className="flex items-center space-x-2">
-          <BarChart3 className="w-4 h-4" />
-          <span>PDF Dışa Aktar</span>
-        </Button>
-        <Button variant="outline" className="flex items-center space-x-2">
-          <BarChart3 className="w-4 h-4" />
-          <span>CSV Dışa Aktar</span>
-        </Button>
+      {/* Given Answers */}
+      <div className="bg-surface p-6 rounded-lg">
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Verilen Cevaplar</h3>
+        <div className="space-y-4">
+          <div className="p-4 bg-canvas rounded-lg">
+            <div className="flex items-center space-x-2 mb-2">
+              <div className="w-6 h-6 bg-brand-primary-light rounded-full flex items-center justify-center">
+                <span className="text-xs font-medium text-brand-primary">AK</span>
+              </div>
+              <span className="text-sm font-medium text-text-primary">Ahmet Kılıç</span>
+            </div>
+            <p className="text-sm text-text-secondary">"Mevcut bankacılık uygulamaları çok karmaşık. Daha basit bir arayüz isterdim..."</p>
+          </div>
+          <div className="p-4 bg-canvas rounded-lg">
+            <div className="flex items-center space-x-2 mb-2">
+              <div className="w-6 h-6 bg-brand-primary-light rounded-full flex items-center justify-center">
+                <span className="text-xs font-medium text-brand-primary">MÖ</span>
+              </div>
+              <span className="text-sm font-medium text-text-primary">Merve Özkan</span>
+            </div>
+            <p className="text-sm text-text-secondary">"Güvenlik çok önemli ama kullanılabilirlik de ihmal edilmemeli..."</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Common Points & Trends */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-surface p-6 rounded-lg">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">Ortak Noktalar</h3>
+          <div className="space-y-3">
+            <div className="flex items-start space-x-3">
+              <div className="w-2 h-2 bg-status-success rounded-full mt-2"></div>
+              <div>
+                <p className="text-sm font-medium text-text-primary">Basitlik İsteği</p>
+                <p className="text-xs text-text-secondary">5/5 katılımcı daha basit arayüz istiyor</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <div className="w-2 h-2 bg-status-success rounded-full mt-2"></div>
+              <div>
+                <p className="text-sm font-medium text-text-primary">Güvenlik Endişesi</p>
+                <p className="text-xs text-text-secondary">4/5 katılımcı güvenlik önceliği vurguluyor</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <div className="w-2 h-2 bg-status-warning rounded-full mt-2"></div>
+              <div>
+                <p className="text-sm font-medium text-text-primary">Mobil Öncelik</p>
+                <p className="text-xs text-text-secondary">3/5 katılımcı mobil odaklı çözüm istiyor</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-surface p-6 rounded-lg">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">Genel Eğilimler</h3>
+          <div className="space-y-3">
+            <div className="flex items-start space-x-3">
+              <TrendingUp className="w-4 h-4 text-status-success mt-1" />
+              <div>
+                <p className="text-sm font-medium text-text-primary">Pozitif Geri Bildirim</p>
+                <p className="text-xs text-text-secondary">Genel konsept %80 olumlu karşılandı</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className="w-4 h-4 text-status-warning mt-1" />
+              <div>
+                <p className="text-sm font-medium text-text-primary">İyileştirme Alanları</p>
+                <p className="text-xs text-text-secondary">Navigasyon ve filtreleme özellikleri</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <Users className="w-4 h-4 text-brand-primary mt-1" />
+              <div>
+                <p className="text-sm font-medium text-text-primary">Hedef Kitle</p>
+                <p className="text-xs text-text-secondary">25-45 yaş arası profesyoneller odaklı</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Key Insights */}
+      <div className="bg-surface p-6 rounded-lg">
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Ana Temalar</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <div className="p-4 bg-canvas rounded-lg">
+              <h4 className="font-medium text-text-primary mb-2">🎯 Kullanılabilirlik</h4>
+              <p className="text-sm text-text-secondary">Katılımcılar mevcut çözümlerin çok karmaşık olduğunu düşünüyor ve daha sezgisel arayüzler istiyor.</p>
+            </div>
+            <div className="p-4 bg-canvas rounded-lg">
+              <h4 className="font-medium text-text-primary mb-2">🔒 Güvenlik</h4>
+              <p className="text-sm text-text-secondary">Finansal işlemlerde güvenlik en önemli faktör olarak görülüyor ancak kullanıcı deneyimini engellemeden.</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="p-4 bg-canvas rounded-lg">
+              <h4 className="font-medium text-text-primary mb-2">📱 Mobil Odaklılık</h4>
+              <p className="text-sm text-text-secondary">Kullanıcılar çoğunlukla mobil cihazlarından işlem yapıyor ve masaüstü deneyimine göre öncelik veriyor.</p>
+            </div>
+            <div className="p-4 bg-canvas rounded-lg">
+              <h4 className="font-medium text-text-primary mb-2">⚡ Hız</h4>
+              <p className="text-sm text-text-secondary">Yavaş loading süreler ve çok adımlı işlemler kullanıcı memnuniyetsizliğinin ana kaynağı.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Export Options */}
+      <div className="bg-surface p-6 rounded-lg">
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Rapor Dışa Aktarma</h3>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="outline" size="sm">
+            <FileText className="w-4 h-4 mr-2" />
+            PDF Rapor
+          </Button>
+          <Button variant="outline" size="sm">
+            <Download className="w-4 h-4 mr-2" />
+            CSV Verileri
+          </Button>
+          <Button variant="outline" size="sm">
+            <Share className="w-4 h-4 mr-2" />
+            Paylaš
+          </Button>
+        </div>
       </div>
     </div>
   );

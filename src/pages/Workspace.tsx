@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { Search, ArrowLeft, Video, Users, Play, BarChart3 } from "lucide-react";
+import { Search, ArrowLeft, Video, Users, Play, BarChart3, Square } from "lucide-react";
 import ChatPanel from "@/components/workspace/ChatPanel";
 import StudyPanel from "@/components/workspace/StudyPanel";
 import RecruitmentDrawer from "@/components/workspace/RecruitmentDrawer";
@@ -111,10 +111,8 @@ const Workspace = () => {
       setShowRecruitment(true);
     } else if (currentStep === 'recruit') {
       setCurrentStep('starting');
-      // Auto-transition to 'run' after 3 seconds
-      setTimeout(() => {
-        setCurrentStep('run');
-      }, 3000);
+    } else if (currentStep === 'starting') {
+      setCurrentStep('analyze');
     } else if (currentStep === 'run') {
       setCurrentStep('analyze');
     }
@@ -146,11 +144,11 @@ const Workspace = () => {
       case 'starting':
         return (
           <Button 
-            disabled
-            className="bg-brand-primary hover:bg-brand-primary-hover text-white opacity-50"
+            onClick={handleNextStep}
+            className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
           >
-            <Play className="w-4 h-4 mr-2" />
-            Görüşmeler Başlatılıyor...
+            <Square className="w-4 h-4 mr-2" />
+            Araştırmayı Durdur
           </Button>
         );
       case 'run':
