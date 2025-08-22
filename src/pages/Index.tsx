@@ -71,9 +71,9 @@ const Index = () => {
             <div className="flex items-center space-x-3">
               <div className="flex items-center space-x-2 bg-surface px-3 py-2 rounded-full border border-border-light">
                 <div className="w-6 h-6 bg-brand-primary rounded-full flex items-center justify-center">
-                  <span className="text-xs font-medium text-white">JD</span>
+                  <span className="text-xs font-medium text-white">AY</span>
                 </div>
-                <span className="text-sm font-medium text-text-primary">John Doe</span>
+                <span className="text-sm font-medium text-text-primary">Ayşe Yılmaz</span>
               </div>
             </div>
           </div>
