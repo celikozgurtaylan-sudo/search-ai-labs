@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { Search, ArrowLeft, Video, Users, Play, BarChart3, Square } from "lucide-react";
+import { Search, ArrowLeft, Video, Users, Play, BarChart3, Square, ChevronLeft, ChevronRight } from "lucide-react";
 import ChatPanel from "@/components/workspace/ChatPanel";
 import StudyPanel from "@/components/workspace/StudyPanel";
 import RecruitmentDrawer from "@/components/workspace/RecruitmentDrawer";
@@ -25,6 +25,7 @@ const Workspace = () => {
   const [showRecruitment, setShowRecruitment] = useState(false);
   const [discussionGuide, setDiscussionGuide] = useState<any>(null);
   const [participants, setParticipants] = useState<any[]>([]);
+  const [isChatCollapsed, setIsChatCollapsed] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('searchai-project');
@@ -211,26 +212,42 @@ const Workspace = () => {
       >
         {/* Left Panel - Chat */}
         <ResizablePanel 
-          defaultSize={25} 
-          minSize={20} 
-          maxSize={75}
-          className="min-h-0 min-w-0 overflow-hidden"
+          defaultSize={isChatCollapsed ? 3 : 25} 
+          minSize={isChatCollapsed ? 3 : 20} 
+          maxSize={isChatCollapsed ? 3 : 75}
+          className="min-h-0 min-w-0 overflow-hidden transition-all duration-300"
         >
-          <ChatPanel 
-            projectData={projectData}
-            discussionGuide={discussionGuide}
-            onGuideUpdate={setDiscussionGuide}
-          />
+          {isChatCollapsed ? (
+            <div className="h-full bg-white border-r border-border-light flex flex-col items-center justify-start pt-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsChatCollapsed(false)}
+                className="w-10 h-10 p-0 hover:bg-surface"
+                aria-label="Expand chat"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          ) : (
+            <ChatPanel 
+              projectData={projectData}
+              discussionGuide={discussionGuide}
+              onGuideUpdate={setDiscussionGuide}
+              isCollapsed={isChatCollapsed}
+              onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
+            />
+          )}
         </ResizablePanel>
 
-        <ResizableHandle withHandle />
+        {!isChatCollapsed && <ResizableHandle withHandle />}
 
         {/* Right Panel - Study */}
         <ResizablePanel 
-          defaultSize={75} 
-          minSize={25} 
-          maxSize={80}
-          className="min-h-0 min-w-0 overflow-hidden"
+          defaultSize={isChatCollapsed ? 97 : 75} 
+          minSize={isChatCollapsed ? 97 : 25} 
+          maxSize={isChatCollapsed ? 97 : 80}
+          className="min-h-0 min-w-0 overflow-hidden transition-all duration-300"
         >
           <StudyPanel 
             discussionGuide={discussionGuide}

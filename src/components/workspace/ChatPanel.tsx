@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Bot, User, Sparkles, Send, Loader2 } from "lucide-react";
+import { Bot, User, Sparkles, Send, Loader2, ChevronLeft } from "lucide-react";
 import { analyzeProject, ProjectAnalysis } from "@/services/projectAnalysisService";
 
 interface ChatMessage {
@@ -17,9 +17,11 @@ interface ChatPanelProps {
   projectData: any;
   discussionGuide: any;
   onGuideUpdate: (guide: any) => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelProps) => {
+const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate, isCollapsed = false, onToggleCollapse }: ChatPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -233,8 +235,23 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
     <div className="h-full flex flex-col overflow-hidden">
       {/* Chat Header */}
       <div className="border-b border-border-light p-4">
-        <h2 className="text-lg font-semibold text-text-primary">Araştırma Asistanı</h2>
-        <p className="text-sm text-text-secondary mt-1">AI destekli araştırma planı oluşturma ve optimizasyon</p>
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold text-text-primary">Araştırma Asistanı</h2>
+            <p className="text-sm text-text-secondary mt-1">AI destekli araştırma planı oluşturma ve optimizasyon</p>
+          </div>
+          {onToggleCollapse && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggleCollapse}
+              className="ml-2 p-2 hover:bg-surface"
+              aria-label="Collapse chat"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
