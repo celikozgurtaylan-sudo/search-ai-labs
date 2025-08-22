@@ -230,7 +230,7 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
 
   return (
     // Ensure full-height on mobile (no browser chrome gaps)
-    <div className="min-h-[100dvh] flex flex-col">
+    <div className="h-full flex flex-col">
       {/* Chat Header */}
       <div className="border-b border-border-light p-4">
         <h2 className="text-lg font-semibold text-text-primary">Araştırma Asistanı</h2>
