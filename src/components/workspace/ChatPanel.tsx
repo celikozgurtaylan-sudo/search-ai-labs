@@ -238,7 +238,7 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-2 md:px-4 py-2 md:py-3 min-h-0 scroll-smooth">
+      <div className="overflow-y-auto px-2 py-1 min-h-0 scroll-smooth max-h-[40vh] h-[40vh]">
         {messages.map((message) => (
           <div
             key={message.id}
