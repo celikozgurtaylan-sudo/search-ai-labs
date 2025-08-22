@@ -230,7 +230,7 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
 
   return (
     // Ensure full-height on mobile (no browser chrome gaps)
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Chat Header */}
       <div className="border-b border-border-light p-4">
         <h2 className="text-lg font-semibold text-text-primary">Araştırma Asistanı</h2>
@@ -238,7 +238,7 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
       </div>
 
       {/* Messages */}
-      <div className="overflow-y-auto px-2 py-1 min-h-0 scroll-smooth max-h-[40vh] h-[40vh]">
+      <div className="flex-1 overflow-y-auto px-2 py-1 min-h-0 scroll-smooth">
         {messages.map((message) => (
           <div
             key={message.id}
@@ -273,7 +273,7 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
       </div>
 
       {/* Bottom Section - Suggestions and Input */}
-      <div className="flex-shrink-0 bg-white border-t border-border-light sticky bottom-0 pb-[env(safe-area-inset-bottom)]">
+      <div className="flex-shrink-0 bg-white border-t border-border-light pb-[env(safe-area-inset-bottom)]">
         {/* Suggestions */}
         {discussionGuide && discussionGuide.suggestions && discussionGuide.suggestions.length > 0 && (
           <div className="p-4 border-b border-border-light">
