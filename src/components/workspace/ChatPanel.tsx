@@ -222,13 +222,13 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
   return (
     <div className="h-full flex flex-col">
       {/* Chat Header */}
-      <div className="border-b border-border-light p-6">
+      <div className="border-b border-border-light p-4">
         <h2 className="text-lg font-semibold text-text-primary">Araştırma Asistanı</h2>
         <p className="text-sm text-text-secondary mt-1">AI destekli araştırma planı oluşturma ve optimizasyon</p>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+      <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-0">
         {messages.map((message) => (
           <div
             key={message.id}
@@ -261,7 +261,7 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
       </div>
 
       {/* Chat Input */}
-      <div className="border-t border-border-light p-6">
+      <div className="border-t border-border-light p-4">
         <div className="flex space-x-3">
           <Input
             value={inputMessage}
@@ -282,8 +282,8 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
 
       {/* Suggestions */}
       {discussionGuide && discussionGuide.suggestions && discussionGuide.suggestions.length > 0 && (
-        <div className="border-t border-border-light p-6">
-          <div className="flex items-center space-x-2 mb-3">
+        <div className="border-t border-border-light p-4">
+          <div className="flex items-center space-x-2 mb-2">
             <Sparkles className="w-4 h-4 text-brand-primary" />
             <span className="text-sm font-medium text-text-secondary">Önerilen geliştirmeler</span>
           </div>
