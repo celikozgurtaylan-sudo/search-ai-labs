@@ -17,14 +17,15 @@ import {
   PlayCircle,
   BarChart3,
   Camera,
-  Monitor
+  Monitor,
+  Loader2
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
 interface StudyPanelProps {
   discussionGuide: any;
   participants: any[];
-  currentStep: 'guide' | 'recruit' | 'run' | 'analyze';
+  currentStep: 'guide' | 'recruit' | 'starting' | 'run' | 'analyze';
   onGuideUpdate: (guide: any) => void;
 }
 
@@ -99,6 +100,49 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
         return <Circle className="w-4 h-4 text-text-muted" />;
     }
   };
+
+  const renderStartingView = () => (
+    <div className="h-full flex items-center justify-center">
+      <div className="text-center max-w-md">
+        <div className="w-16 h-16 bg-status-success-light rounded-full flex items-center justify-center mx-auto mb-6">
+          <CheckCircle2 className="w-8 h-8 text-status-success" />
+        </div>
+        
+        <h3 className="text-xl font-semibold text-text-primary mb-2">
+          Görüşmeler Başlatıldı!
+        </h3>
+        
+        <p className="text-text-secondary mb-6">
+          Katılımcılarınız hazırlanıyor. Kısa süre içinde görüşmelere başlayabileceksiniz.
+        </p>
+        
+        <div className="space-y-3 mb-6">
+          {participants.map((participant, index) => (
+            <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
+                  <span className="text-xs font-medium text-brand-primary">
+                    {participant.name.split(' ').map((n: string) => n[0]).join('')}
+                  </span>
+                </div>
+                <span className="text-sm font-medium text-text-primary">{participant.name}</span>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <Loader2 className="w-4 h-4 text-brand-primary animate-spin" />
+                <span className="text-xs text-text-secondary">Hazırlanıyor...</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        
+        <div className="flex items-center justify-center space-x-2 text-sm text-text-secondary">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span>Görüşme odasına yönlendiriliyor...</span>
+        </div>
+      </div>
+    </div>
+  );
 
   const renderAnalysisView = () => (
     <div className="space-y-6">
@@ -209,7 +253,8 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 min-h-0">
-        {currentStep === 'analyze' ? renderAnalysisView() : (
+        {currentStep === 'starting' ? renderStartingView() : 
+         currentStep === 'analyze' ? renderAnalysisView() : (
           <div className="space-y-6">
             {/* Discussion Guide Sections */}
             {discussionGuide.sections.map((section: any) => (

@@ -21,7 +21,7 @@ const Workspace = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [projectData, setProjectData] = useState<ProjectData | null>(null);
-  const [currentStep, setCurrentStep] = useState<'guide' | 'recruit' | 'run' | 'analyze'>('guide');
+  const [currentStep, setCurrentStep] = useState<'guide' | 'recruit' | 'starting' | 'run' | 'analyze'>('guide');
   const [showRecruitment, setShowRecruitment] = useState(false);
   const [discussionGuide, setDiscussionGuide] = useState<any>(null);
   const [participants, setParticipants] = useState<any[]>([]);
@@ -110,7 +110,11 @@ const Workspace = () => {
     if (currentStep === 'guide') {
       setShowRecruitment(true);
     } else if (currentStep === 'recruit') {
-      setCurrentStep('run');
+      setCurrentStep('starting');
+      // Auto-transition to 'run' after 3 seconds
+      setTimeout(() => {
+        setCurrentStep('run');
+      }, 3000);
     } else if (currentStep === 'run') {
       setCurrentStep('analyze');
     }
@@ -137,6 +141,16 @@ const Workspace = () => {
           >
             <Play className="w-4 h-4 mr-2" />
             Görüşmeleri Başlat
+          </Button>
+        );
+      case 'starting':
+        return (
+          <Button 
+            disabled
+            className="bg-brand-primary hover:bg-brand-primary-hover text-white opacity-50"
+          >
+            <Play className="w-4 h-4 mr-2" />
+            Görüşmeler Başlatılıyor...
           </Button>
         );
       case 'run':
