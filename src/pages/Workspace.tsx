@@ -9,6 +9,7 @@ import { Search, ArrowLeft, Video, Users, Play, BarChart3 } from "lucide-react";
 import ChatPanel from "@/components/workspace/ChatPanel";
 import StudyPanel from "@/components/workspace/StudyPanel";
 import RecruitmentDrawer from "@/components/workspace/RecruitmentDrawer";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface ProjectData {
   description: string;
@@ -18,6 +19,7 @@ interface ProjectData {
 
 const Workspace = () => {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [projectData, setProjectData] = useState<ProjectData | null>(null);
   const [currentStep, setCurrentStep] = useState<'guide' | 'recruit' | 'run' | 'analyze'>('guide');
   const [showRecruitment, setShowRecruitment] = useState(false);
@@ -157,9 +159,9 @@ const Workspace = () => {
   }
 
   return (
-    <div className="min-h-screen bg-canvas">
+    <div className="min-h-[100dvh] overflow-hidden bg-canvas">
       {/* Header */}
-      <header className="border-b border-border-light bg-white">
+      <header className="border-b border-border-light bg-white flex-shrink-0">
         <div className="max-w-full mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -191,9 +193,17 @@ const Workspace = () => {
       </header>
 
       {/* Main Workspace */}
-      <ResizablePanelGroup direction="horizontal" className="h-[calc(100vh-73px)]">
+      <ResizablePanelGroup 
+        direction={isMobile ? "vertical" : "horizontal"}
+        className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden"
+      >
         {/* Left Panel - Chat */}
-        <ResizablePanel defaultSize={45} minSize={25} maxSize={75}>
+        <ResizablePanel 
+          defaultSize={45} 
+          minSize={25} 
+          maxSize={75}
+          className="min-h-0 min-w-0 overflow-hidden"
+        >
           <ChatPanel 
             projectData={projectData}
             discussionGuide={discussionGuide}
@@ -204,7 +214,12 @@ const Workspace = () => {
         <ResizableHandle withHandle />
 
         {/* Right Panel - Study */}
-        <ResizablePanel defaultSize={55} minSize={25} maxSize={75}>
+        <ResizablePanel 
+          defaultSize={55} 
+          minSize={25} 
+          maxSize={75}
+          className="min-h-0 min-w-0 overflow-hidden"
+        >
           <StudyPanel 
             discussionGuide={discussionGuide}
             participants={participants}

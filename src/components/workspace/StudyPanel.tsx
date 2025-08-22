@@ -165,9 +165,9 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Study Header */}
-      <div className="border-b border-border-light p-6">
+      <div className="border-b border-border-light p-6 flex-shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
           <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>
           
@@ -208,7 +208,7 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6 min-h-0">
         {currentStep === 'analyze' ? renderAnalysisView() : (
           <div className="space-y-6">
             {/* Discussion Guide Sections */}
