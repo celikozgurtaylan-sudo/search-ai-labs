@@ -106,7 +106,7 @@ const Index = () => {
                 handleStartProject();
               }
             }}
-            placeholder="Lütfen araştırma projenizi detaylarıyla açıklayın" 
+            placeholder="Lütfen araştırma projenizi detaylarıyla açıklayın →" 
             className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary" 
           />
           
