@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,14 @@ const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate }: ChatPanelPro
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // sentinel for auto-scroll-to-bottom
+  const endRef = useRef<HTMLDivElement | null>(null);
+
+  // always scroll to bottom when messages change
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages]);
 
   useEffect(() => {
     if (projectData) {
@@ -201,7 +209,8 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  // replace deprecated onKeyPress; keep Enter-to-send
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -220,7 +229,8 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
   };
 
   return (
-    <div className="h-full flex flex-col">
+    // Ensure full-height on mobile (no browser chrome gaps)
+    <div className="min-h-[100dvh] flex flex-col">
       {/* Chat Header */}
       <div className="border-b border-border-light p-4">
         <h2 className="text-lg font-semibold text-text-primary">Araştırma Asistanı</h2>
@@ -228,7 +238,7 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-2 py-1 space-y-1 min-h-0">
+      <div className="flex-1 overflow-y-auto px-2 md:px-4 py-2 md:py-3 min-h-0 scroll-smooth">
         {messages.map((message) => (
           <div
             key={message.id}
@@ -258,10 +268,12 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
             </div>
           </div>
         ))}
+        {/* sentinel keeps view pinned to the latest message */}
+        <div ref={endRef} />
       </div>
 
       {/* Bottom Section - Suggestions and Input */}
-      <div className="flex-shrink-0 bg-white border-t border-border-light">
+      <div className="flex-shrink-0 bg-white border-t border-border-light sticky bottom-0 pb-[env(safe-area-inset-bottom)]">
         {/* Suggestions */}
         {discussionGuide && discussionGuide.suggestions && discussionGuide.suggestions.length > 0 && (
           <div className="p-4 border-b border-border-light">
@@ -292,14 +304,14 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
             <Input
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyDown}
               placeholder="Takip sorusu ekle..."
               className="flex-1"
             />
             <Button 
               onClick={handleSendMessage}
               disabled={!inputMessage.trim()}
-              className="px-4"
+              className="px-4 h-10 md:h-9"
             >
               <Send className="w-4 h-4" />
             </Button>
