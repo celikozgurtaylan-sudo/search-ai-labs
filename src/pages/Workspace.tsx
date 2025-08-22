@@ -42,6 +42,15 @@ const Workspace = () => {
     }
   }, [navigate]);
 
+  // Auto-collapse chat panel when reaching run stage
+  useEffect(() => {
+    if (currentStep === 'run') {
+      setTimeout(() => {
+        setIsChatCollapsed(true);
+      }, 200);
+    }
+  }, [currentStep]);
+
   const generateDiscussionGuide = (description: string) => {
     // AI tarafından oluşturulan tartışma kılavuzunu simüle et
     const guide = {
@@ -113,7 +122,7 @@ const Workspace = () => {
     } else if (currentStep === 'recruit') {
       setCurrentStep('starting');
     } else if (currentStep === 'starting') {
-      setCurrentStep('analyze');
+      setCurrentStep('run');
     } else if (currentStep === 'run') {
       setCurrentStep('analyze');
     }
