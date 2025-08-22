@@ -104,12 +104,6 @@ const Workspace = () => {
         <div className="max-w-full mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm" onClick={() => navigate('/')} className="flex items-center space-x-2">
-                <ArrowLeft className="w-4 h-4" />
-                <span>Geri</span>
-              </Button>
-              
-              <Separator orientation="vertical" className="h-6" />
               
               
             </div>
