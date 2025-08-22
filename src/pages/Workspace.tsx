@@ -120,8 +120,6 @@ const Workspace = () => {
     if (currentStep === 'guide') {
       setShowRecruitment(true);
     } else if (currentStep === 'recruit') {
-      setCurrentStep('starting');
-    } else if (currentStep === 'starting') {
       setCurrentStep('run');
     } else if (currentStep === 'run') {
       setCurrentStep('analyze');
@@ -151,7 +149,7 @@ const Workspace = () => {
             Görüşmeleri Başlat
           </Button>
         );
-      case 'starting':
+      case 'run':
         return (
           <Button 
             onClick={handleNextStep}
@@ -159,16 +157,6 @@ const Workspace = () => {
           >
             <Square className="w-4 h-4 mr-2" />
             Araştırmayı Durdur
-          </Button>
-        );
-      case 'run':
-        return (
-          <Button 
-            onClick={handleNextStep}
-            className="bg-brand-primary hover:bg-brand-primary-hover text-white"
-          >
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Analizi Görüntüle
           </Button>
         );
       default:
