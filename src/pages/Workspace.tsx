@@ -42,9 +42,9 @@ const Workspace = () => {
     }
   }, [navigate]);
 
-  // Auto-collapse chat panel when reaching run stage
+  // Auto-collapse chat panel when reaching starting stage
   useEffect(() => {
-    if (currentStep === 'run') {
+    if (currentStep === 'starting') {
       setTimeout(() => {
         setIsChatCollapsed(true);
       }, 200);
@@ -120,8 +120,8 @@ const Workspace = () => {
     if (currentStep === 'guide') {
       setShowRecruitment(true);
     } else if (currentStep === 'recruit') {
-      setCurrentStep('run');
-    } else if (currentStep === 'run') {
+      setCurrentStep('starting');
+    } else if (currentStep === 'starting') {
       setCurrentStep('analyze');
     }
   };
@@ -149,7 +149,7 @@ const Workspace = () => {
             Görüşmeleri Başlat
           </Button>
         );
-      case 'run':
+      case 'starting':
         return (
           <Button 
             onClick={handleNextStep}
