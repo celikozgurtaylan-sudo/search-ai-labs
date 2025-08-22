@@ -199,8 +199,8 @@ const Workspace = () => {
       >
         {/* Left Panel - Chat */}
         <ResizablePanel 
-          defaultSize={45} 
-          minSize={25} 
+          defaultSize={25} 
+          minSize={20} 
           maxSize={75}
           className="min-h-0 min-w-0 overflow-hidden"
         >
@@ -215,9 +215,9 @@ const Workspace = () => {
 
         {/* Right Panel - Study */}
         <ResizablePanel 
-          defaultSize={55} 
+          defaultSize={75} 
           minSize={25} 
-          maxSize={75}
+          maxSize={80}
           className="min-h-0 min-w-0 overflow-hidden"
         >
           <StudyPanel 
