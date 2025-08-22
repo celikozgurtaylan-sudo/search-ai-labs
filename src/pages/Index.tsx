@@ -68,7 +68,15 @@ const Index = () => {
               </div>
               <span className="text-xl font-semibold text-text-primary">Search AI</span>
             </div>
-            <div className="flex items-center space-x-3">
+            
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-2 text-text-secondary hover:text-text-primary cursor-pointer transition-colors">
+                <span className="text-sm font-medium">Projelerim</span>
+                <div className="w-6 h-6 bg-brand-primary-light rounded-full flex items-center justify-center">
+                  <span className="text-xs font-bold text-brand-primary">3</span>
+                </div>
+              </div>
+              
               <div className="flex items-center space-x-2 bg-surface px-3 py-2 rounded-full border border-border-light">
                 <div className="w-6 h-6 bg-brand-primary rounded-full flex items-center justify-center">
                   <span className="text-xs font-medium text-white">AY</span>
