@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Bot, User, Sparkles, Send, Loader2, ChevronLeft } from "lucide-react";
 import { analyzeProject, ProjectAnalysis } from "@/services/projectAnalysisService";
+import userAvatar from "@/assets/user-avatar.jpg";
 
 interface ChatMessage {
   id: string;
@@ -261,12 +262,20 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
             key={message.id}
             className={`flex space-x-3 ${message.type === 'user' ? 'justify-start' : 'justify-start'}`}
           >
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden ${
               message.type === 'user' 
                 ? 'bg-surface text-text-secondary' 
                 : 'bg-brand-primary-light text-brand-primary'
             }`}>
-              {message.type === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+              {message.type === 'user' ? (
+                <img 
+                  src={userAvatar} 
+                  alt="User avatar" 
+                  className="w-full h-full object-cover rounded-full"
+                />
+              ) : (
+                <Bot className="w-4 h-4" />
+              )}
             </div>
             
             <div className="flex-1 max-w-lg">
