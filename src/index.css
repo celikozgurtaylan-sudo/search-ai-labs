@@ -26,24 +26,24 @@
     --text-muted: 0 0% 60%;
     --text-disabled: 0 0% 75%;
     
-    /* Brand colors - Soft green accent system */
-    --brand-primary: 142 76% 36%;
-    --brand-primary-hover: 142 76% 32%;
-    --brand-primary-light: 142 76% 94%;
-    --brand-secondary: 142 25% 50%;
+    /* Brand colors - Soft purple accent system */
+    --brand-primary: 263 77% 43%;
+    --brand-primary-hover: 263 77% 38%;
+    --brand-primary-light: 263 77% 94%;
+    --brand-secondary: 263 25% 50%;
     
     /* Status colors */
-    --success: 142 76% 36%;
-    --success-light: 142 76% 94%;
+    --success: 263 77% 43%;
+    --success-light: 263 77% 94%;
     --warning: 38 92% 50%;
     --warning-light: 38 92% 95%;
     --error: 0 84% 60%;
     --error-light: 0 84% 97%;
     
     /* Interactive elements */
-    --interactive: 142 76% 36%;
-    --interactive-hover: 142 76% 32%;
-    --interactive-light: 142 76% 94%;
+    --interactive: 263 77% 43%;
+    --interactive-hover: 263 77% 38%;
+    --interactive-light: 263 77% 94%;
     
     /* Borders and dividers */
     --border: 0 0% 90%;
@@ -62,14 +62,14 @@
     --secondary-foreground: 0 0% 9%;
     --muted: 0 0% 96%;
     --muted-foreground: 0 0% 45%;
-    --accent: 142 76% 94%;
-    --accent-foreground: 142 76% 36%;
+    --accent: 263 77% 94%;
+    --accent-foreground: 263 77% 43%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 9%;
     --input: 0 0% 90%;
-    --ring: 142 76% 36%;
+    --ring: 263 77% 43%;
 
     --radius: 0.5rem;
 
