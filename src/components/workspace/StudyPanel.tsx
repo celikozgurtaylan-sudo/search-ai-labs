@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,9 +25,13 @@ import {
   AlertTriangle,
   Users,
   Video,
-  User
+  User,
+  Sparkles,
+  RefreshCw
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { supabase } from "@/integrations/supabase/client";
+import TypewriterText from "@/components/ui/typewriter-text";
 
 interface StudyPanelProps {
   discussionGuide: any;
@@ -41,6 +45,9 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
   const [editValue, setEditValue] = useState("");
   const [isScreenRecording, setIsScreenRecording] = useState(false);
   const [isCameraRecording, setIsCameraRecording] = useState(false);
+  const [loadingQuestions, setLoadingQuestions] = useState<{[key: string]: boolean}>({});
+  const [generatingQuestions, setGeneratingQuestions] = useState<{[key: string]: boolean}>({});
+  const [typewriterQuestions, setTypewriterQuestions] = useState<{[key: string]: string[]}>({});
 
   const handleEditQuestion = (questionId: string, currentValue: string) => {
     setEditingQuestion(questionId);
@@ -88,6 +95,71 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
     };
 
     onGuideUpdate(updatedGuide);
+  };
+
+  const generateAIQuestions = async (sectionId: string, sectionTitle: string) => {
+    setGeneratingQuestions(prev => ({ ...prev, [sectionId]: true }));
+    
+    try {
+      // Get current questions for this section
+      const currentSection = discussionGuide?.sections?.find((s: any) => s.id === sectionId);
+      const existingQuestions = currentSection?.questions || [];
+      
+      // Random delay between 5-10 seconds
+      const delay = Math.random() * 5000 + 5000;
+      setLoadingQuestions(prev => ({ ...prev, [sectionId]: true }));
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      const { data, error } = await supabase.functions.invoke('generate-questions', {
+        body: {
+          sectionTitle,
+          sectionId,
+          projectDescription: localStorage.getItem('searchai-project') ? 
+            JSON.parse(localStorage.getItem('searchai-project')!).description : 
+            'Kullanıcı deneyimi araştırması',
+          existingQuestions
+        }
+      });
+
+      if (error) {
+        console.error('Error generating questions:', error);
+        throw error;
+      }
+
+      const questions = data?.questions || [];
+      setLoadingQuestions(prev => ({ ...prev, [sectionId]: false }));
+      
+      // Set up typewriter effect for each question
+      setTypewriterQuestions(prev => ({ ...prev, [sectionId]: questions }));
+      
+      // Add questions one by one with typewriter effect
+      for (let i = 0; i < questions.length; i++) {
+        await new Promise(resolve => setTimeout(resolve, i * 2000)); // Stagger the questions
+        
+        const updatedGuide = {
+          ...discussionGuide,
+          sections: discussionGuide.sections.map((section: any) => {
+            if (section.id === sectionId) {
+              const newQuestions = [...section.questions, questions[i]];
+              return {
+                ...section,
+                questions: newQuestions
+              };
+            }
+            return section;
+          })
+        };
+        
+        onGuideUpdate(updatedGuide);
+      }
+      
+    } catch (error) {
+      console.error('Error generating AI questions:', error);
+      setLoadingQuestions(prev => ({ ...prev, [sectionId]: false }));
+    } finally {
+      setGeneratingQuestions(prev => ({ ...prev, [sectionId]: false }));
+    }
   };
 
   const getInterviewStatus = (participantId: string) => {
@@ -422,67 +494,105 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
                 </CardHeader>
                 
                 <CardContent className="p-0 space-y-3">
-                  {section.questions.map((question: string, index: number) => (
-                    <div key={`${section.id}-${index}`} className="group flex items-start space-x-2">
-                      <span className="text-xs text-text-muted mt-2 w-5">
-                        {index + 1}.
-                      </span>
-                      
-                      <div className="flex-1">
-                        {editingQuestion === `${section.id}-${index}` ? (
-                            <div className="space-y-2">
-                              <Textarea
-                                value={editValue}
-                                onChange={(e) => setEditValue(e.target.value)}
-                                className="text-sm"
-                                autoFocus
-                              />
-                              <div className="flex space-x-2">
-                                <Button 
-                                  size="sm" 
-                                  onClick={() => handleSaveQuestion(section.id, index)}
-                                >
-                                  Kaydet
-                                </Button>
-                                <Button 
-                                  size="sm" 
-                                  variant="outline"
-                                  onClick={() => setEditingQuestion(null)}
-                                >
-                                  İptal
-                                </Button>
+                  {section.questions.map((question: string, index: number) => {
+                    const isRecentlyAdded = typewriterQuestions[section.id]?.includes(question);
+                    
+                    return (
+                      <div key={`${section.id}-${index}`} className="group flex items-start space-x-2">
+                        <span className="text-xs text-text-muted mt-2 w-5">
+                          {index + 1}.
+                        </span>
+                        
+                        <div className="flex-1">
+                          {editingQuestion === `${section.id}-${index}` ? (
+                              <div className="space-y-2">
+                                <Textarea
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  className="text-sm"
+                                  autoFocus
+                                />
+                                <div className="flex space-x-2">
+                                  <Button 
+                                    size="sm" 
+                                    onClick={() => handleSaveQuestion(section.id, index)}
+                                  >
+                                    Kaydet
+                                  </Button>
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => setEditingQuestion(null)}
+                                  >
+                                    İptal
+                                  </Button>
+                                </div>
                               </div>
+                          ) : (
+                            <div 
+                              className="text-sm text-text-primary cursor-text hover:bg-surface rounded p-2 -m-2 transition-colors"
+                              onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}
+                            >
+                              {isRecentlyAdded ? (
+                                <TypewriterText 
+                                  text={question} 
+                                  speed={30}
+                                  className="text-text-primary"
+                                />
+                              ) : (
+                                question
+                              )}
                             </div>
-                        ) : (
-                          <div 
-                            className="text-sm text-text-primary cursor-text hover:bg-surface rounded p-2 -m-2 transition-colors"
-                            onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}
-                          >
-                            {question}
-                          </div>
-                        )}
+                          )}
+                        </div>
+                        
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}
+                        >
+                          <Edit3 className="w-3 h-3" />
+                        </Button>
                       </div>
-                      
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}
-                      >
-                        <Edit3 className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                   
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleAddQuestion(section.id)}
-                    className="flex items-center space-x-1 text-text-secondary hover:text-text-primary"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>Soru ekle</span>
-                  </Button>
+                  {/* Loading State */}
+                  {loadingQuestions[section.id] && (
+                    <div className="flex items-center space-x-2 p-2 text-text-secondary">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">AI soruları oluşturuluyor...</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleAddQuestion(section.id)}
+                      className="flex items-center space-x-1 text-text-secondary hover:text-text-primary"
+                      disabled={generatingQuestions[section.id]}
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Soru ekle</span>
+                    </Button>
+                    
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => generateAIQuestions(section.id, section.title)}
+                      className="flex items-center space-x-1 text-brand-primary hover:text-brand-primary-hover"
+                      disabled={generatingQuestions[section.id] || loadingQuestions[section.id]}
+                    >
+                      {generatingQuestions[section.id] ? (
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3 h-3" />
+                      )}
+                      <span>AI soru üret</span>
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}
