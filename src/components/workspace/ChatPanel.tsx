@@ -20,12 +20,20 @@ interface ChatPanelProps {
   onGuideUpdate: (guide: any) => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  onMessagesChange?: (messages: ChatMessage[]) => void;
 }
 
-const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate, isCollapsed = false, onToggleCollapse }: ChatPanelProps) => {
+const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate, isCollapsed = false, onToggleCollapse, onMessagesChange }: ChatPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // Notify parent component when messages change
+  useEffect(() => {
+    if (onMessagesChange) {
+      onMessagesChange(messages);
+    }
+  }, [messages, onMessagesChange]);
 
   // sentinel for auto-scroll-to-bottom
   const endRef = useRef<HTMLDivElement | null>(null);

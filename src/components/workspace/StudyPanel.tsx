@@ -38,9 +38,10 @@ interface StudyPanelProps {
   participants: any[];
   currentStep: 'guide' | 'recruit' | 'starting' | 'run' | 'analyze';
   onGuideUpdate: (guide: any) => void;
+  chatMessages?: any[];
 }
 
-const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate }: StudyPanelProps) => {
+const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate, chatMessages = [] }: StudyPanelProps) => {
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [isScreenRecording, setIsScreenRecording] = useState(false);
@@ -105,6 +106,16 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
       const currentSection = discussionGuide?.sections?.find((s: any) => s.id === sectionId);
       const existingQuestions = currentSection?.questions || [];
       
+      // Get the latest user message from chat as project description
+      const userMessages = chatMessages.filter(msg => msg.type === 'user');
+      const latestUserInput = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
+      
+      // Fallback to stored project data if no chat messages
+      const projectDescription = latestUserInput || 
+        (localStorage.getItem('searchai-project') ? 
+          JSON.parse(localStorage.getItem('searchai-project')!).description : 
+          'Kullanıcı deneyimi araştırması');
+      
       // Random delay between 5-10 seconds
       const delay = Math.random() * 5000 + 5000;
       setLoadingQuestions(prev => ({ ...prev, [sectionId]: true }));
@@ -115,16 +126,25 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate 
         body: {
           sectionTitle,
           sectionId,
-          projectDescription: localStorage.getItem('searchai-project') ? 
-            JSON.parse(localStorage.getItem('searchai-project')!).description : 
-            'Kullanıcı deneyimi araştırması',
-          existingQuestions
+          projectDescription,
+          existingQuestions,
+          validateProject: true // Enable project validation
         }
       });
 
       if (error) {
         console.error('Error generating questions:', error);
         throw error;
+      }
+
+      // Check if validation failed
+      if (data?.needsElaboration) {
+        setLoadingQuestions(prev => ({ ...prev, [sectionId]: false }));
+        setGeneratingQuestions(prev => ({ ...prev, [sectionId]: false }));
+        
+        // Show a message asking for more elaboration
+        alert(`Lütfen daha detaylı bir araştırma projesi açıklaması yapın. Mevcut metin: "${projectDescription.substring(0, 100)}..." daha spesifik araştırma hedefleri içermiyor.`);
+        return;
       }
 
       const questions = data?.questions || [];

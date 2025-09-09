@@ -18,7 +18,7 @@ serve(async (req) => {
       throw new Error('OPENAI_API_KEY is not set');
     }
 
-    const { sectionTitle, sectionId, projectDescription, existingQuestions = [] } = await req.json();
+    const { sectionTitle, sectionId, projectDescription, existingQuestions = [], validateProject = false } = await req.json();
 
     const systemPrompt = `Sen bir kullanıcı deneyimi araştırması uzmanısın. Verilen proje açıklaması ve bölüm başlığına göre, o bölüm için uygun araştırma soruları oluştur.
 
@@ -47,6 +47,61 @@ Bu bölüm için 3 yeni, farklı ve yaratıcı soru üret. JSON formatında dön
 {"questions": ["soru1", "soru2", "soru3"]}`;
 
     console.log('Generating questions for section:', sectionTitle);
+
+    // Validate if the input is actually a research project
+    if (validateProject) {
+      const validationPrompt = `Bu metin bir araştırma projesi tanımı mı? Evet/Hayır ile yanıtla ve kısa açıklama yap.
+
+Metin: "${projectDescription}"
+
+Bir araştırma projesi için şunlar beklenir:
+- Kullanıcı deneyimi, pazar araştırması, ürün testi gibi araştırma konuları
+- Belirli bir hedef kitle veya problem tanımı
+- Test edilecek hipotez veya cevaplanacak sorular
+- Genel sohbet, kişisel konular, teknik sorular değil
+
+Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}`;
+
+      const validationResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'user', content: validationPrompt }
+          ],
+          temperature: 0.3,
+          max_tokens: 200,
+        }),
+      });
+
+      if (validationResponse.ok) {
+        const validationData = await validationResponse.json();
+        const validationText = validationData.choices[0].message.content;
+        
+        try {
+          const jsonMatch = validationText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const validation = JSON.parse(jsonMatch[0]);
+            if (!validation.isResearchProject) {
+              console.log('Input is not a research project:', validation.reason);
+              return new Response(JSON.stringify({ 
+                needsElaboration: true, 
+                reason: validation.reason,
+                message: 'Bu bir araştırma projesi gibi görünmüyor. Lütfen daha detaylı bir proje açıklaması yapın.'
+              }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
+            }
+          }
+        } catch (e) {
+          console.log('Validation parsing failed, proceeding with generation');
+        }
+      }
+    }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',

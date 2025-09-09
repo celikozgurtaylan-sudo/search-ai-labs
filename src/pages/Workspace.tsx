@@ -26,6 +26,7 @@ const Workspace = () => {
   const [discussionGuide, setDiscussionGuide] = useState<any>(null);
   const [participants, setParticipants] = useState<any[]>([]);
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
 
   useEffect(() => {
     const stored = localStorage.getItem('searchai-project');
@@ -230,6 +231,7 @@ const Workspace = () => {
               onGuideUpdate={setDiscussionGuide}
               isCollapsed={isChatCollapsed}
               onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
+              onMessagesChange={setChatMessages}
             />
           )}
         </ResizablePanel>
@@ -248,6 +250,7 @@ const Workspace = () => {
             participants={participants}
             currentStep={currentStep}
             onGuideUpdate={setDiscussionGuide}
+            chatMessages={chatMessages}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
