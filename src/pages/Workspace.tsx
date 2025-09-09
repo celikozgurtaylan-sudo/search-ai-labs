@@ -188,10 +188,7 @@ const Workspace = () => {
               <Separator orientation="vertical" className="h-6" />
               
               <div className="flex items-center space-x-2">
-                <div className="w-6 h-6 bg-brand-primary rounded flex items-center justify-center">
-                  <Search className="w-4 h-4 text-white" />
-                </div>
-                <span className="font-semibold text-text-primary">Search AI</span>
+                <span className="font-semibold text-text-primary">Searcho</span>
               </div>
             </div>
             
