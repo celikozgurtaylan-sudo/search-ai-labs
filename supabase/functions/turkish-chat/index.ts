@@ -212,9 +212,12 @@ Kullanıcının durumuna uygun 1-2 soru sor ve araştırma konusunu netleştirme
     
     console.log('Generated Turkish response:', reply);
 
+    // Only show research panel when we have a structured plan ready
+    const showResearchPanel = isResearchRelated && shouldGenerateResearchPlan;
+
     return new Response(JSON.stringify({ 
       reply,
-      isResearchRelated,
+      isResearchRelated: showResearchPanel,
       researchPlan,
       conversationHistory: [...conversationHistory, 
         { role: 'user', content: message },
