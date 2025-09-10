@@ -1,11 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Upload, ArrowRight, MessageSquare, BarChart3, Users, Search } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Upload, ArrowRight, MessageSquare, BarChart3, Users, Search, LogOut } from "lucide-react";
+import { useNavigate, Link } from "react-router-dom";
 import { AnimatedHeadline } from "@/components/ui/animated-headline";
+import { useAuth } from "@/contexts/AuthContext";
+import { projectService, Project } from "@/services/projectService";
+import { toast } from "sonner";
+
 const templates = [{
   id: "ad-testing",
   title: "Reklam Testi ve Geri Bildirim",
@@ -31,24 +35,75 @@ const templates = [{
   icon: MessageSquare,
   color: "bg-orange-50 text-orange-600"
 }];
+
 const Index = () => {
   const [projectDescription, setProjectDescription] = useState("");
+  const [userProjects, setUserProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const handleStartProject = (templateId?: string, description?: string) => {
-    const projectData = {
-      description: description || projectDescription,
-      template: templateId,
-      timestamp: Date.now()
-    };
+  const { user, signOut } = useAuth();
 
-    // Store project data for the workspace
-    localStorage.setItem('searchai-project', JSON.stringify(projectData));
-    
-    // Set flag to trigger LLM analysis on workspace page
-    localStorage.setItem('searchai-analyze-request', 'true');
-    
-    navigate('/workspace');
+  useEffect(() => {
+    if (user) {
+      loadUserProjects();
+    }
+  }, [user]);
+
+  const loadUserProjects = async () => {
+    try {
+      const projects = await projectService.getUserProjects();
+      setUserProjects(projects);
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+    }
   };
+
+  const handleStartProject = async (templateId?: string, description?: string) => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+
+    const projectDesc = description || projectDescription;
+    if (!projectDesc.trim()) {
+      toast.error('Please enter a project description');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const project = await projectService.createProject({
+        title: getProjectTitle(projectDesc),
+        description: projectDesc,
+        analysis: templateId ? { template: templateId } : null
+      });
+
+      // Store project data for the workspace
+      localStorage.setItem('searchai-project', JSON.stringify({
+        id: project.id,
+        description: projectDesc,
+        template: templateId,
+        timestamp: Date.now()
+      }));
+      
+      // Set flag to trigger LLM analysis on workspace page
+      localStorage.setItem('searchai-analyze-request', 'true');
+      
+      navigate('/workspace');
+    } catch (error: any) {
+      toast.error('Failed to create project: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getProjectTitle = (description: string) => {
+    if (description.includes('Fibabanka.com.tr')) return 'Fibabanka Açılış Sayfası Araştırması';
+    if (description.includes('reklam') || description.includes('advertisement') || description.includes('ad')) return 'Reklam Test Çalışması';
+    if (description.includes('NPS') || description.includes('banking') || description.includes('bankacılık')) return 'Müşteri Memnuniyeti Araştırması';
+    return 'Kullanıcı Deneyimi Araştırma Çalışması';
+  };
+
   const handleTemplateSelect = (template: typeof templates[0]) => {
     const sampleDescriptions = {
       "ad-testing": "Y kuşağını hedefleyen sürdürülebilir giyim markamız için yeni video reklamımızı test edin. Duygusal tepkileri ve satın alma niyetini anlamak istiyoruz.",
@@ -57,6 +112,15 @@ const Index = () => {
       "foundational": "Uzaktan çalışanların verimlilik ve işbirliği araçlarını nasıl yönettiğini keşfedin, yeni çalışma alanı platformumuz için fırsatları belirleyin."
     };
     handleStartProject(template.id, sampleDescriptions[template.id as keyof typeof sampleDescriptions]);
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      toast.success('Successfully signed out');
+    } catch (error) {
+      toast.error('Failed to sign out');
+    }
   };
   return <div className="min-h-screen bg-canvas">
       {/* Header */}
@@ -71,19 +135,41 @@ const Index = () => {
             </div>
             
             <div className="flex items-center space-x-6">
-              <div className="flex items-center space-x-2 text-text-secondary hover:text-text-primary cursor-pointer transition-colors">
-                <span className="text-sm font-medium">Projelerim</span>
-                <div className="w-6 h-6 bg-brand-primary-light rounded-full flex items-center justify-center">
-                  <span className="text-xs font-bold text-brand-primary">3</span>
+              {user ? (
+                <>
+                  <div className="flex items-center space-x-2 text-text-secondary hover:text-text-primary cursor-pointer transition-colors">
+                    <span className="text-sm font-medium">Projelerim</span>
+                    <div className="w-6 h-6 bg-brand-primary-light rounded-full flex items-center justify-center">
+                      <span className="text-xs font-bold text-brand-primary">{userProjects.length}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2 bg-surface px-3 py-2 rounded-full border border-border-light">
+                    <div className="w-6 h-6 bg-brand-primary rounded-full flex items-center justify-center">
+                      <span className="text-xs font-medium text-white">
+                        {user.email?.substring(0, 2).toUpperCase()}
+                      </span>
+                    </div>
+                    <span className="text-sm font-medium text-text-primary">
+                      {user.user_metadata?.display_name || 'Demo User'}
+                    </span>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={handleSignOut}
+                      className="ml-2 p-1 h-6 w-6 hover:bg-destructive/10"
+                    >
+                      <LogOut className="w-3 h-3 text-text-secondary hover:text-destructive" />
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center space-x-4">
+                  <Link to="/auth">
+                    <Button variant="outline">Sign In</Button>
+                  </Link>
                 </div>
-              </div>
-              
-              <div className="flex items-center space-x-2 bg-surface px-3 py-2 rounded-full border border-border-light">
-                <div className="w-6 h-6 bg-brand-primary rounded-full flex items-center justify-center">
-                  <span className="text-xs font-medium text-white">AY</span>
-                </div>
-                <span className="text-sm font-medium text-text-primary">Demo User</span>
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -118,11 +204,11 @@ const Index = () => {
             </Button>
             
             <div className="flex items-center space-x-3">
-              <Button variant="outline" onClick={() => handleStartProject()} disabled={!projectDescription.trim()}>
+              <Button variant="outline" onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading}>
                 Sıfırdan başla
               </Button>
-              <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim()} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6">
-                Sohbete Başla <ArrowRight className="w-4 h-4 ml-2" />
+              <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6">
+                {loading ? 'Oluşturuluyor...' : 'Sohbete Başla'} <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
           </div>

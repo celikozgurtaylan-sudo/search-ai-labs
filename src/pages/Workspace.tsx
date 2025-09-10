@@ -11,8 +11,12 @@ import StudyPanel from "@/components/workspace/StudyPanel";
 import RecruitmentDrawer from "@/components/workspace/RecruitmentDrawer";
 import { Stepper } from "@/components/ui/stepper";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useAuth } from "@/contexts/AuthContext";
+import { projectService } from "@/services/projectService";
 
 interface ProjectData {
+  id?: string;
   description: string;
   template?: string;
   timestamp: number;
@@ -21,6 +25,7 @@ interface ProjectData {
 const Workspace = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { user } = useAuth();
   const [projectData, setProjectData] = useState<ProjectData | null>(null);
   const [currentStep, setCurrentStep] = useState<'guide' | 'recruit' | 'starting' | 'run' | 'analyze'>('guide');
   const [showRecruitment, setShowRecruitment] = useState(false);
@@ -39,6 +44,30 @@ const Workspace = () => {
       navigate('/');
     }
   }, [navigate]);
+
+  // Update project in database when research is detected
+  useEffect(() => {
+    if (isResearchRelated && projectData?.id && discussionGuide) {
+      updateProjectInDatabase();
+    }
+  }, [isResearchRelated, discussionGuide, projectData]);
+
+  const updateProjectInDatabase = async () => {
+    if (!projectData?.id) return;
+    
+    try {
+      await projectService.updateProject(projectData.id, {
+        analysis: {
+          ...projectData,
+          discussionGuide,
+          isResearchRelated: true,
+          updatedAt: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error('Failed to update project:', error);
+    }
+  };
 
   // Generate discussion guide when research conversation starts
   useEffect(() => {
@@ -204,7 +233,8 @@ const Workspace = () => {
   }
 
   return (
-    <div className="min-h-[100dvh] overflow-hidden bg-canvas">
+    <ProtectedRoute>
+      <div className="min-h-[100dvh] overflow-hidden bg-canvas">
       {/* Header */}
       <header className="border-b border-border-light bg-white flex-shrink-0">
         <div className="max-w-full mx-auto px-6 py-4">
@@ -315,7 +345,8 @@ const Workspace = () => {
           setShowRecruitment(false);
         }}
       />
-    </div>
+      </div>
+    </ProtectedRoute>
   );
 };
 
