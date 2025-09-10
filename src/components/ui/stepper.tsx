@@ -15,14 +15,14 @@ interface StepperProps {
 
 export const Stepper: React.FC<StepperProps> = ({ steps, className }) => {
   return (
-    <div className={cn("flex items-center space-x-4", className)}>
+    <div className={cn("flex items-center space-x-2", className)}>
       {steps.map((step, index) => (
         <React.Fragment key={step.id}>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1.5">
             {/* Step Circle */}
             <div
               className={cn(
-                "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-200",
+                "w-6 h-6 rounded-full flex items-center justify-center text-xs font-normal transition-all duration-200",
                 {
                   "bg-primary text-primary-foreground": step.status === 'completed',
                   "bg-primary text-primary-foreground border-2 border-primary": step.status === 'current',
@@ -31,7 +31,7 @@ export const Stepper: React.FC<StepperProps> = ({ steps, className }) => {
               )}
             >
               {step.status === 'completed' ? (
-                <Check className="w-4 h-4" />
+                <Check className="w-3 h-3" />
               ) : (
                 <span>{index + 1}</span>
               )}
@@ -40,7 +40,7 @@ export const Stepper: React.FC<StepperProps> = ({ steps, className }) => {
             {/* Step Title */}
             <span
               className={cn(
-                "text-sm font-medium transition-colors duration-200",
+                "text-xs font-normal transition-colors duration-200 whitespace-nowrap",
                 {
                   "text-primary": step.status === 'completed' || step.status === 'current',
                   "text-muted-foreground": step.status === 'upcoming'
@@ -55,7 +55,7 @@ export const Stepper: React.FC<StepperProps> = ({ steps, className }) => {
           {index < steps.length - 1 && (
             <div
               className={cn(
-                "h-px w-8 transition-colors duration-200",
+                "h-px w-4 transition-colors duration-200",
                 {
                   "bg-primary": step.status === 'completed',
                   "bg-border": step.status === 'current' || step.status === 'upcoming'
