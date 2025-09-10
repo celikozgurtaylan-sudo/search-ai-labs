@@ -125,34 +125,39 @@ SADECE "NET" veya "BELIRSIZ" yanıtı ver, başka hiçbir şey yazma.`
       if (isSpecific) {
         // Clear request - generate structured plan immediately
         shouldGenerateResearchPlan = true;
-        systemPrompt = `Sen bir araştırma planı uzmanısın. Kullanıcının net araştırma talebine göre derhal yapılandırılmış, EYLEMEGEÇİLEBİLİR bir plan oluştur.
+        systemPrompt = `Sen bir araştırma planı uzmanısın. Kullanıcının net araştırma talebine göre KATILIMCILARA SORULACAK görüşme sorularından oluşan bir plan oluştur.
+
+ÖNEMLI: Sorular KATILIMCILARA yöneliktir, müşteriye (B2B client) değil!
+- Sorular araştırmaya katılacak kişilere sorulacak
+- Katılımcıların deneyimlerini, davranışlarını, görüşlerini öğrenmeye odaklı
+- Görüşme/test sırasında kullanılacak sorular
 
 PLANIN ÖZELLİKLERİ:
-- Spesifik ve uygulanabilir sorular
-- Kullanıcının belirttiği duruma özel
-- Genel tavsiyeler değil, somut adımlar
-- Her soru somut bir veri toplayacak şekilde
+- Katılımcı deneyimini anlamaya yönelik sorular
+- Ürün/hizmet kullanım davranışlarını keşfeden sorular
+- Spesifik ve uygulanabilir görüşme soruları
+- Her soru katılımcıdan somut bilgi toplayacak şekilde
 
 ÖNEMLI: Yanıtını JSON formatında ver:
 {
-  "chatResponse": "Araştırma planını sağ panelde hazırladım. Spesifik sorular ve metodoloji ile hemen başlayabilirsin.",
+  "chatResponse": "Katılımcı görüşmeleri için soru setini sağ panelde hazırladım. Bu sorularla araştırmanı gerçekleştirebilirsin.",
   "researchPlan": {
-    "title": "[Kullanıcının spesifik durumuna uygun başlık]",
+    "title": "[Araştırma konusuna uygun başlık]",
     "sections": [
       {
         "id": "background",
-        "title": "Arka Plan ve Hedefler", 
-        "questions": ["[Kullanıcının ürün/hizmetine özel soru]", "[Spesifik problem/hedef sorusu]", "[Karar kriterleri sorusu]"]
+        "title": "Deneyim ve Geçmiş", 
+        "questions": ["[Ürün/hizmet] ile daha önce etkileşiminiz oldu mu?", "[İlgili alandaki] deneyiminizi anlatır mısınız?", "Bu tür [ürün/hizmetleri] ne sıklıkla kullanıyorsunuz?"]
       },
       {
         "id": "methodology",
-        "title": "Metodoloji",
-        "questions": ["[Belirli araştırma yöntemini detaylandıran soru]", "[Hedef kitleye özel soru]", "[Veri toplama yöntemini netleştiren soru]"]
+        "title": "Davranış ve Tercihler",
+        "questions": ["[Belirli görev] yaparken hangi adımları takip edersiniz?", "Bu süreçte karşılaştığınız zorluklar neler?", "[Özellik/alan] kullanırken ne hissediyorsunuz?"]
       },
       {
         "id": "analysis", 
-        "title": "Analiz",
-        "questions": ["[Spesifik metrik/KPI sorusu]", "[Başarı kriterini ölçen soru]", "[Sonraki adımları belirleyen soru]"]
+        "title": "Değerlendirme ve Öneriler",
+        "questions": ["Bu deneyimi 1-10 arasında nasıl değerlendirirsiniz?", "Hangi kısımlar sizin için en önemliydi?", "Ne gibi iyileştirmeler önerirsiniz?"]
       }
     ]
   }
