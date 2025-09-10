@@ -128,17 +128,10 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
     }
   }, [discussionGuide, showSectionTypewriters]);
 
-  // Initialize question typewriters when guide is loaded - start them all as false
+  // Initialize question typewriters when guide is loaded - don't pre-initialize questions
   useEffect(() => {
     if (discussionGuide?.sections && Object.keys(showQuestionTypewriters).length === 0) {
-      const initialQuestions: {[key: string]: boolean} = {};
-      discussionGuide.sections.forEach((section: any) => {
-        section.questions.forEach((question: string, questionIndex: number) => {
-          const questionKey = `${section.id}-${questionIndex}`;
-          initialQuestions[questionKey] = false; // Start as false, will be triggered by delay
-        });
-      });
-      setShowQuestionTypewriters(initialQuestions);
+      // Don't initialize questions - let them be undefined until typewriter starts
       
       // Start showing questions section by section after a 2-second delay
       setTimeout(() => {
