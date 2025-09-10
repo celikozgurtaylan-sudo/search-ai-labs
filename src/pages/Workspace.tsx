@@ -9,6 +9,7 @@ import { Search, ArrowLeft, Video, Users, Play, BarChart3, Square, ChevronLeft, 
 import ChatPanel from "@/components/workspace/ChatPanel";
 import StudyPanel from "@/components/workspace/StudyPanel";
 import RecruitmentDrawer from "@/components/workspace/RecruitmentDrawer";
+import { Stepper } from "@/components/ui/stepper";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 interface ProjectData {
@@ -122,6 +123,37 @@ const Workspace = () => {
     return 'Kullanıcı Deneyimi Araştırma Çalışması';
   };
 
+  const getResearchSteps = () => {
+    const steps = [
+      { id: 'planning', title: 'Araştırma Planlaması' },
+      { id: 'guide', title: 'Görüşme Kılavuzu' },
+      { id: 'recruit', title: 'Katılımcı Seçimi' },
+      { id: 'conduct', title: 'Görüşme Yürütme' },
+      { id: 'analyze', title: 'Analiz & Rapor' }
+    ];
+
+    return steps.map(step => {
+      let status: 'completed' | 'current' | 'upcoming' = 'upcoming';
+      
+      if (step.id === 'planning') {
+        status = isResearchRelated ? 'completed' : 'current';
+      } else if (step.id === 'guide') {
+        status = currentStep === 'guide' && isResearchRelated ? 'current' : 
+                currentStep === 'recruit' || currentStep === 'starting' || currentStep === 'analyze' ? 'completed' : 'upcoming';
+      } else if (step.id === 'recruit') {
+        status = currentStep === 'recruit' ? 'current' : 
+                currentStep === 'starting' || currentStep === 'analyze' ? 'completed' : 'upcoming';
+      } else if (step.id === 'conduct') {
+        status = currentStep === 'starting' ? 'current' : 
+                currentStep === 'analyze' ? 'completed' : 'upcoming';
+      } else if (step.id === 'analyze') {
+        status = currentStep === 'analyze' ? 'current' : 'upcoming';
+      }
+
+      return { ...step, status };
+    });
+  };
+
   const handleNextStep = () => {
     if (currentStep === 'guide') {
       setShowRecruitment(true);
@@ -196,6 +228,11 @@ const Workspace = () => {
               <div className="flex items-center space-x-2">
                 <span className="font-semibold text-text-primary">Searcho</span>
               </div>
+            </div>
+            
+            {/* Research Progress Stepper */}
+            <div className="flex-1 flex justify-center max-w-2xl mx-8">
+              <Stepper steps={getResearchSteps()} />
             </div>
             
             <div className="flex items-center space-x-3">
