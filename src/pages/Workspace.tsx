@@ -126,7 +126,6 @@ const Workspace = () => {
   const getResearchSteps = () => {
     const steps = [
       { id: 'planning', title: 'Araştırma Planlaması' },
-      { id: 'guide', title: 'Görüşme Kılavuzu' },
       { id: 'recruit', title: 'Katılımcı Seçimi' },
       { id: 'conduct', title: 'Görüşme Yürütme' },
       { id: 'analyze', title: 'Analiz & Rapor' }
@@ -136,10 +135,8 @@ const Workspace = () => {
       let status: 'completed' | 'current' | 'upcoming' = 'upcoming';
       
       if (step.id === 'planning') {
-        status = isResearchRelated ? 'completed' : 'current';
-      } else if (step.id === 'guide') {
-        status = currentStep === 'guide' && isResearchRelated ? 'current' : 
-                currentStep === 'recruit' || currentStep === 'starting' || currentStep === 'analyze' ? 'completed' : 'upcoming';
+        status = (currentStep === 'guide' && !isResearchRelated) ? 'current' :
+                (isResearchRelated || currentStep === 'recruit' || currentStep === 'starting' || currentStep === 'analyze') ? 'completed' : 'current';
       } else if (step.id === 'recruit') {
         status = currentStep === 'recruit' ? 'current' : 
                 currentStep === 'starting' || currentStep === 'analyze' ? 'completed' : 'upcoming';
