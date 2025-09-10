@@ -80,14 +80,50 @@ Sadece "ARAŞTIRMA_İLGİLİ" veya "GENEL_SOHBET" yanıtı ver, başka hiçbir �
     let systemPrompt, shouldGenerateResearchPlan = false;
     
     if (isResearchRelated) {
-      // Check if user is asking for a research plan specifically
-      const isPlanRequest = message.toLowerCase().includes('plan') || 
-                           message.toLowerCase().includes('araştırma') ||
-                           message.toLowerCase().includes('nasıl');
+      // Second analysis: Check if research request is clear or vague
+      const specificityResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { 
+              role: 'system', 
+              content: `Sen araştırma taleplerinin netliğini analiz ediyorsun. Kullanıcının araştırma mesajını analiz et:
+
+NET TALEPLER (hemen plan oluşturulabilir):
+- Belirli bir ürün/hizmet adı var: "Mobil uygulamamın kullanılabilirlik testi"
+- Araştırma türü belirli: "checkout sürecinin kullanıcı testi", "müşteri memnuniyet anketi"
+- Hedef kitle belirtilmiş: "e-ticaret müşterileri için araştırma"
+- Spesifik özellik/süreç: "ödeme sayfasının testi", "kayıt formunun analizi"
+
+BELIRSIZ TALEPLER (keşif konuşması gerekli):
+- Genel ifadeler: "araştırma yapmam lazım", "bir şeyler test etmek istiyorum"
+- Ürün/hizmet belirsiz: "uygulamamla ilgili", "websitem için"
+- Hedef belirsiz: "kullanıcılar için", "müşteriler için" (hangi kullanıcılar?)
+- Amaç belirsiz: "analiz yapmak istiyorum", "veri toplamak istiyorum"
+
+SADECE "NET" veya "BELIRSIZ" yanıtı ver, başka hiçbir şey yazma.`
+            },
+            { role: 'user', content: message }
+          ],
+          temperature: 0.1,
+          max_tokens: 10
+        }),
+      });
+
+      const specificityData = await specificityResponse.json();
+      const isSpecific = specificityData.choices[0].message.content.includes('NET');
+      console.log('Specificity analysis:', specificityData.choices[0].message.content);
+      console.log('Is request specific:', isSpecific);
       
-      if (isPlanRequest) {
+      if (isSpecific) {
+        // Clear request - generate structured plan immediately
         shouldGenerateResearchPlan = true;
-        systemPrompt = `Sen bir araştırma planı uzmanısın. Kullanıcının araştırma konusuna göre yapılandırılmış bir plan oluştur.
+        systemPrompt = `Sen bir araştırma planı uzmanısın. Kullanıcının net araştırma talebine göre derhal yapılandırılmış bir plan oluştur.
 
 ÖNEMLI: Yanıtını JSON formatında ver:
 {
@@ -114,7 +150,18 @@ Sadece "ARAŞTIRMA_İLGİLİ" veya "GENEL_SOHBET" yanıtı ver, başka hiçbir �
   }
 }`;
       } else {
-        systemPrompt = `Sen Türkçe konuşan yardımcı bir asistansın. Kullanıcı araştırma konusu hakkında konuşuyor. Kısa ve öz yanıtlar ver, araştırma konularında rehberlik et.`;
+        // Vague request - start discovery conversation
+        systemPrompt = `Sen araştırma keşif uzmanısın. Kullanıcının belirsiz araştırma talebini netleştirmek için rehberlik edeceksin.
+
+Aşağıdaki keşif sorularından uygun olanları sor:
+- "Hangi ürün/hizmet hakkında araştırma yapmak istiyorsun?"
+- "Bu araştırmanın amacı nedir? (Kullanılabilirlik testi, müşteri memnuniyeti, yeni özellik analizi vs.)"
+- "Hedef kitlen kimler? (Yaş, demografik, davranış özellikleri)"
+- "Hangi özellikleri/süreçleri test etmek istiyorsun?"
+- "Bu araştırmadan hangi sonuçları elde etmeyi umuyorsun?"
+- "Daha önce benzer bir araştırma yaptın mı?"
+
+Kullanıcının durumuna uygun 1-2 soru sor ve araştırma konusunu netleştirmeye odaklan. Türkçe yanıt ver.`;
       }
     } else {
       systemPrompt = `Sen Türkçe konuşan yardımcı bir asistansın. Genel sorulara yardımcı ol, kısa ve öz yanıtlar ver.`;
