@@ -49,6 +49,16 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
   const [loadingQuestions, setLoadingQuestions] = useState<{[key: string]: boolean}>({});
   const [generatingQuestions, setGeneratingQuestions] = useState<{[key: string]: boolean}>({});
   const [typewriterQuestions, setTypewriterQuestions] = useState<{[key: string]: string[]}>({});
+  const [showTitleTypewriter, setShowTitleTypewriter] = useState(true);
+  const [showSectionTypewriters, setShowSectionTypewriters] = useState<{[key: string]: boolean}>({});
+  const [showAnalysisTypewriter, setShowAnalysisTypewriter] = useState(false);
+  const [loadingMessages] = useState([
+    "AI soruları oluşturuluyor...",
+    "Katılımcı deneyimini analiz ediyor...",
+    "En iyi soruları seçiyor...",
+    "Araştırma planını optimize ediyor..."
+  ]);
+  const [currentLoadingIndex, setCurrentLoadingIndex] = useState(0);
 
   const handleEditQuestion = (questionId: string, currentValue: string) => {
     setEditingQuestion(questionId);
@@ -97,6 +107,32 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
 
     onGuideUpdate(updatedGuide);
   };
+
+  // Enhanced loading messages with typewriter effect
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentLoadingIndex(prev => (prev + 1) % loadingMessages.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [loadingMessages.length]);
+
+  // Initialize section typewriters when guide is loaded
+  useEffect(() => {
+    if (discussionGuide?.sections && Object.keys(showSectionTypewriters).length === 0) {
+      const initialSections: {[key: string]: boolean} = {};
+      discussionGuide.sections.forEach((section: any, index: number) => {
+        initialSections[section.id] = true;
+      });
+      setShowSectionTypewriters(initialSections);
+    }
+  }, [discussionGuide, showSectionTypewriters]);
+
+  // Show analysis typewriter when entering analyze step
+  useEffect(() => {
+    if (currentStep === 'analyze' && !showAnalysisTypewriter) {
+      setShowAnalysisTypewriter(true);
+    }
+  }, [currentStep, showAnalysisTypewriter]);
 
   const generateAIQuestions = async (sectionId: string, sectionTitle: string) => {
     setGeneratingQuestions(prev => ({ ...prev, [sectionId]: true }));
@@ -277,20 +313,60 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
 
   const renderAnalysisView = () => (
     <div className="space-y-6">
-      {/* Research Summary */}
+      {/* Research Summary with Typewriter */}
       <div className="bg-surface p-6 rounded-lg">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Araştırma Özeti</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">
+          {showAnalysisTypewriter ? (
+            <TypewriterText 
+              text="Araştırma Özeti"
+              speed={40}
+              onComplete={() => {}}
+            />
+          ) : (
+            "Araştırma Özeti"
+          )}
+        </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div className="text-center">
-            <div className="text-2xl font-bold text-brand-primary">5</div>
+            <div className="text-2xl font-bold text-brand-primary">
+              {showAnalysisTypewriter ? (
+                <TypewriterText 
+                  text="5"
+                  speed={100}
+                  delay={1000}
+                />
+              ) : (
+                "5"
+              )}
+            </div>
             <div className="text-sm text-text-secondary">Toplam Görüşme</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-brand-primary">42</div>
+            <div className="text-2xl font-bold text-brand-primary">
+              {showAnalysisTypewriter ? (
+                <TypewriterText 
+                  text="42"
+                  speed={100}
+                  delay={1500}
+                />
+              ) : (
+                "42"
+              )}
+            </div>
             <div className="text-sm text-text-secondary">Dakika</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-brand-primary">8</div>
+            <div className="text-2xl font-bold text-brand-primary">
+              {showAnalysisTypewriter ? (
+                <TypewriterText 
+                  text="8"
+                  speed={100}
+                  delay={2000}
+                />
+              ) : (
+                "8"
+              )}
+            </div>
             <div className="text-sm text-text-secondary">Ana Tema</div>
           </div>
         </div>
@@ -338,30 +414,100 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
         </div>
       </div>
 
-      {/* Common Points & Trends */}
+      {/* Common Points & Trends with Typewriter */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-surface p-6 rounded-lg">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">Ortak Noktalar</h3>
+          <h3 className="text-lg font-semibold text-text-primary mb-4">
+            {showAnalysisTypewriter ? (
+              <TypewriterText 
+                text="Ortak Noktalar"
+                speed={40}
+                delay={3000}
+              />
+            ) : (
+              "Ortak Noktalar"
+            )}
+          </h3>
           <div className="space-y-3">
             <div className="flex items-start space-x-3">
               <div className="w-2 h-2 bg-status-success rounded-full mt-2"></div>
               <div>
-                <p className="text-sm font-medium text-text-primary">Basitlik İsteği</p>
-                <p className="text-xs text-text-secondary">5/5 katılımcı daha basit arayüz istiyor</p>
+                <p className="text-sm font-medium text-text-primary">
+                  {showAnalysisTypewriter ? (
+                    <TypewriterText 
+                      text="Basitlik İsteği"
+                      speed={30}
+                      delay={4000}
+                    />
+                  ) : (
+                    "Basitlik İsteği"
+                  )}
+                </p>
+                <p className="text-xs text-text-secondary">
+                  {showAnalysisTypewriter ? (
+                    <TypewriterText 
+                      text="5/5 katılımcı daha basit arayüz istiyor"
+                      speed={20}
+                      delay={4500}
+                    />
+                  ) : (
+                    "5/5 katılımcı daha basit arayüz istiyor"
+                  )}
+                </p>
               </div>
             </div>
             <div className="flex items-start space-x-3">
               <div className="w-2 h-2 bg-status-success rounded-full mt-2"></div>
               <div>
-                <p className="text-sm font-medium text-text-primary">Güvenlik Endişesi</p>
-                <p className="text-xs text-text-secondary">4/5 katılımcı güvenlik önceliği vurguluyor</p>
+                <p className="text-sm font-medium text-text-primary">
+                  {showAnalysisTypewriter ? (
+                    <TypewriterText 
+                      text="Güvenlik Endişesi"
+                      speed={30}
+                      delay={5000}
+                    />
+                  ) : (
+                    "Güvenlik Endişesi"
+                  )}
+                </p>
+                <p className="text-xs text-text-secondary">
+                  {showAnalysisTypewriter ? (
+                    <TypewriterText 
+                      text="4/5 katılımcı güvenlik önceliği vurguluyor"
+                      speed={20}
+                      delay={5500}
+                    />
+                  ) : (
+                    "4/5 katılımcı güvenlik önceliği vurguluyor"
+                  )}
+                </p>
               </div>
             </div>
             <div className="flex items-start space-x-3">
               <div className="w-2 h-2 bg-status-warning rounded-full mt-2"></div>
               <div>
-                <p className="text-sm font-medium text-text-primary">Mobil Öncelik</p>
-                <p className="text-xs text-text-secondary">3/5 katılımcı mobil odaklı çözüm istiyor</p>
+                <p className="text-sm font-medium text-text-primary">
+                  {showAnalysisTypewriter ? (
+                    <TypewriterText 
+                      text="Mobil Öncelik"
+                      speed={30}
+                      delay={6000}
+                    />
+                  ) : (
+                    "Mobil Öncelik"
+                  )}
+                </p>
+                <p className="text-xs text-text-secondary">
+                  {showAnalysisTypewriter ? (
+                    <TypewriterText 
+                      text="3/5 katılımcı mobil odaklı çözüm istiyor"
+                      speed={20}
+                      delay={6500}
+                    />
+                  ) : (
+                    "3/5 katılımcı mobil odaklı çözüm istiyor"
+                  )}
+                </p>
               </div>
             </div>
           </div>
@@ -450,7 +596,12 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
           <div className="w-12 h-12 bg-brand-primary-light rounded-lg flex items-center justify-center mx-auto mb-3">
             <Video className="w-6 h-6 text-brand-primary" />
           </div>
-          <p className="text-text-secondary">Tartışma kılavuzu oluşturuluyor...</p>
+          <TypewriterText 
+            text="Tartışma kılavuzu oluşturuluyor..."
+            speed={50}
+            className="text-text-secondary"
+            showCursor={true}
+          />
         </div>
       </div>
     );
@@ -461,7 +612,19 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
       {/* Study Header */}
       <div className="border-b border-border-light p-6 flex-shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
-          <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>
+          <div className="group">
+            {showTitleTypewriter ? (
+              <TypewriterText 
+                text={discussionGuide.title}
+                speed={30}
+                className="text-lg font-semibold text-text-primary"
+                enableControls={true}
+                onComplete={() => setShowTitleTypewriter(false)}
+              />
+            ) : (
+              <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>
+            )}
+          </div>
           
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             {/* Screen Recording Toggle */}
@@ -508,8 +671,18 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
             {discussionGuide.sections.map((section: any) => (
               <Card key={section.id} className="p-6">
                 <CardHeader className="p-0 mb-4">
-                  <CardTitle className="text-base font-semibold text-text-primary">
-                    {section.title}
+                  <CardTitle className="text-base font-semibold text-text-primary group">
+                    {showSectionTypewriters[section.id] ? (
+                      <TypewriterText 
+                        text={section.title}
+                        speed={25}
+                        delay={discussionGuide.sections.indexOf(section) * 500}
+                        enableControls={true}
+                        onComplete={() => setShowSectionTypewriters(prev => ({ ...prev, [section.id]: false }))}
+                      />
+                    ) : (
+                      section.title
+                    )}
                   </CardTitle>
                 </CardHeader>
                 
@@ -578,11 +751,16 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                     );
                   })}
                   
-                  {/* Loading State */}
+                   {/* Loading State with Typewriter */}
                   {loadingQuestions[section.id] && (
                     <div className="flex items-center space-x-2 p-2 text-text-secondary">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span className="text-sm">AI soruları oluşturuluyor...</span>
+                      <TypewriterText 
+                        text={loadingMessages[currentLoadingIndex]}
+                        speed={50}
+                        className="text-sm text-text-secondary"
+                        showCursor={false}
+                      />
                     </div>
                   )}
                   
@@ -623,15 +801,21 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                 <CardHeader className="p-0 mb-4">
                   <CardTitle className="text-base font-semibold text-text-primary flex items-center space-x-2">
                     <User className="w-4 h-4" />
-                    <span>Katılımcılar ({participants.length})</span>
+                    <span>
+                      <TypewriterText 
+                        text={`Katılımcılar (${participants.length})`}
+                        speed={40}
+                        delay={0}
+                      />
+                    </span>
                   </CardTitle>
                 </CardHeader>
                 
                 <CardContent className="p-0 space-y-3">
-                  {participants.map((participant) => {
+                  {participants.map((participant, index) => {
                     const status = getInterviewStatus(participant.id);
                     return (
-                      <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg">
+                      <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg group">
                         <div className="flex items-center space-x-3">
                           <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
                             <span className="text-xs font-medium text-brand-primary">
@@ -639,8 +823,22 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                             </span>
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-text-primary">{participant.name}</p>
-                            <p className="text-xs text-text-secondary">{participant.role}</p>
+                            <p className="text-sm font-medium text-text-primary">
+                              <TypewriterText 
+                                text={participant.name}
+                                speed={20}
+                                delay={index * 200}
+                                showCursor={false}
+                              />
+                            </p>
+                            <p className="text-xs text-text-secondary">
+                              <TypewriterText 
+                                text={participant.role}
+                                speed={15}
+                                delay={index * 200 + 500}
+                                showCursor={false}
+                              />
+                            </p>
                           </div>
                         </div>
                         
