@@ -33,21 +33,49 @@ serve(async (req) => {
           { 
             role: 'system', 
             content: `Sen bir araştırma konusu analiz edicisisin. Kullanıcının mesajını analiz et ve SADECE şu durumlardan birinde "ARAŞTIRMA_İLGİLİ" yanıtı ver:
-            - Kullanıcı araştırması, ürün testi, kullanıcı araştırması, anket, görüşme, UX araştırması hakkında konuşuyorsa
-            - Müşteri geri bildirimi toplama, pazar araştırması, davranış analizi hakkında konuşuyorsa  
-            - Belirli bir ürün, hizmet veya konsept üzerinde araştırma yapmak istiyorsa
-            
-            Diğer tüm durumlarda "GENEL_SOHBET" yanıtı ver. Sadece bu iki kelimeden birini yanıtla, başka hiçbir şey yazma.`
+
+ARAŞTIRMA İLGİLİ DURUMLAR:
+- "araştırma", "research", "analiz", "test", "plan" kelimelerini içeriyorsa
+- Kullanıcı araştırması, ürün testi, UX araştırması, kullanılabilirlik testi hakkında konuşuyorsa
+- "nasıl araştırabilirim", "plan yapabilir misin", "araştırma planı" gibi ifadeler varsa
+- Müşteri geri bildirimi, anket, görüşme, pazar araştırması hakkında konuşuyorsa
+- Veri toplama, kullanıcı davranışı, persona oluşturma konularında soruyorsa
+- Bir ürün/hizmet/konsept hakkında araştırma yapmak istiyorsa
+
+ÖRNEKLER:
+- "Mobil uygulama için kullanıcı araştırması nasıl yapabilirim?" → ARAŞTIRMA_İLGİLİ
+- "Ürün testinde hangi soruları sormalıyım?" → ARAŞTIRMA_İLGİLİ
+- "Müşteri memnuniyeti için anket hazırlayabilir misin?" → ARAŞTIRMA_İLGİLİ
+- "Nasılsın?" → GENEL_SOHBET
+- "Bugün hava nasıl?" → GENEL_SOHBET
+
+Sadece "ARAŞTIRMA_İLGİLİ" veya "GENEL_SOHBET" yanıtı ver, başka hiçbir şey yazma.`
           },
           { role: 'user', content: message }
         ],
-        temperature: 0.3,
-        max_tokens: 10
+        temperature: 0.1,
+        max_tokens: 15
       }),
     });
 
     const analysisData = await analysisResponse.json();
-    const isResearchRelated = analysisData.choices[0].message.content.includes('ARAŞTIRMA_İLGİLİ');
+    console.log('Analysis response:', analysisData.choices[0].message.content);
+    
+    // Primary AI detection
+    let isResearchRelated = analysisData.choices[0].message.content.includes('ARAŞTIRMA_İLGİLİ');
+    
+    // Fallback keyword detection for Turkish research terms
+    if (!isResearchRelated) {
+      const researchKeywords = ['araştırma', 'research', 'analiz', 'test', 'plan', 'anket', 'görüşme', 'kullanıcı', 'müşteri', 'veri', 'davranış', 'persona', 'ürün test', 'ux', 'ui'];
+      const messageText = message.toLowerCase();
+      isResearchRelated = researchKeywords.some(keyword => messageText.includes(keyword));
+      
+      if (isResearchRelated) {
+        console.log('Research detected via fallback keywords');
+      }
+    }
+    
+    console.log('Final research detection result:', isResearchRelated);
 
     let systemPrompt, shouldGenerateResearchPlan = false;
     
