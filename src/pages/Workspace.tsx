@@ -227,11 +227,6 @@ const Workspace = () => {
           ) : (
             <ChatPanel 
               projectData={projectData}
-              discussionGuide={discussionGuide}
-              onGuideUpdate={setDiscussionGuide}
-              isCollapsed={isChatCollapsed}
-              onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
-              onMessagesChange={setChatMessages}
             />
           )}
         </ResizablePanel>

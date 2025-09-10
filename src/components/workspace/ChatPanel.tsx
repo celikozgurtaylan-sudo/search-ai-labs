@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Bot, User, Sparkles, Send, Loader2, ChevronLeft } from "lucide-react";
-import { analyzeProject, ProjectAnalysis } from "@/services/projectAnalysisService";
+import { Bot, User, Send } from "lucide-react";
+import { supabase } from '@/integrations/supabase/client';
 import userAvatar from "@/assets/user-avatar.jpg";
 
 interface ChatMessage {
@@ -15,159 +13,99 @@ interface ChatMessage {
 }
 
 interface ChatPanelProps {
-  projectData: any;
-  discussionGuide: any;
-  onGuideUpdate: (guide: any) => void;
-  isCollapsed?: boolean;
-  onToggleCollapse?: () => void;
-  onMessagesChange?: (messages: ChatMessage[]) => void;
+  projectData?: any;
 }
 
-const ChatPanel = ({ projectData, discussionGuide, onGuideUpdate, isCollapsed = false, onToggleCollapse, onMessagesChange }: ChatPanelProps) => {
+const ChatPanel = ({ projectData }: ChatPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<any[]>([]);
 
-  // Notify parent component when messages change
-  useEffect(() => {
-    if (onMessagesChange) {
-      onMessagesChange(messages);
-    }
-  }, [messages, onMessagesChange]);
-
-  // sentinel for auto-scroll-to-bottom
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  // always scroll to bottom when messages change
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
+  // Load initial message from localStorage if available
   useEffect(() => {
-    if (projectData) {
-      // Initialize chat with user's project description
-      const initialMessages: ChatMessage[] = [
-        {
-          id: '1',
-          type: 'user',
-          content: projectData.description,
-          timestamp: new Date(projectData.timestamp)
-        }
-      ];
-
-      setMessages(initialMessages);
-
-      // Check if LLM analysis was requested
-      const shouldAnalyze = localStorage.getItem('searchai-analyze-request');
-      if (shouldAnalyze === 'true') {
-        localStorage.removeItem('searchai-analyze-request');
-        performProjectAnalysis(projectData.description);
-      } else {
-        // Default AI response if no analysis requested
-        setTimeout(() => {
-          const aiResponse: ChatMessage = {
-            id: '2',
-            type: 'ai',
-            content: `Mükemmel! Projenizi analiz ettim ve kapsamlı bir tartışma kılavuzu oluşturdum. Çalışma kullanıcı perspektiflerini anlamaya ve eylem planına yönelik içgörüler toplamaya odaklanacak.\n\n4 ana bölümde hedefli sorular oluşturdum:\n• Profesyonel Geçmiş\n• İlk İzlenimler\n• Detaylı Keşif\n• Son Düşünceler ve Öneriler\n\nKılavuzun tamamını sağ panelde görebilirsiniz. Aşağıdaki öneri çiplerini kullanarak soruları özelleştirmekten veya yeni bölümler eklemekten çekinmeyin.`,
-            timestamp: new Date()
-          };
-          setMessages(prev => [...prev, aiResponse]);
-        }, 1500);
-      }
+    if (projectData?.description) {
+      handleInitialMessage(projectData.description);
     }
   }, [projectData]);
 
-  const performProjectAnalysis = async (description: string) => {
-    setIsAnalyzing(true);
+  const handleInitialMessage = async (initialMessage: string) => {
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      type: 'user',
+      content: initialMessage,
+      timestamp: new Date()
+    };
+    
+    setMessages([userMessage]);
+    await sendToLLM(initialMessage);
+  };
+
+  const sendToLLM = async (messageText: string) => {
+    setIsLoading(true);
     
     // Add loading message
     const loadingMessage: ChatMessage = {
       id: `ai-loading-${Date.now()}`,
       type: 'ai',
-      content: 'Projenizi analiz ediyorum ve detaylı araştırma planı oluşturuyorum...',
+      content: 'Düşünüyorum...',
       timestamp: new Date()
     };
     setMessages(prev => [...prev, loadingMessage]);
-
+    
     try {
-      const analysis = await analyzeProject(description);
-      
-      // Remove loading message and add analysis result
+      const { data, error } = await supabase.functions.invoke('turkish-chat', {
+        body: { 
+          message: messageText,
+          conversationHistory: conversationHistory
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      // Remove loading message and add AI response
       setMessages(prev => {
         const filtered = prev.filter(msg => !msg.id.includes('loading'));
-        const analysisMessage: ChatMessage = {
-          id: `ai-analysis-${Date.now()}`,
+        const assistantMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
           type: 'ai',
-          content: `📊 **Proje Analizi Tamamlandı**
-
-**Özet:** ${analysis.summary}
-
-**Önerilen Araştırma Yöntemleri:**
-${analysis.researchMethods.map(method => `• ${method}`).join('\n')}
-
-**Hedef Kitle:** ${analysis.targetAudience}
-
-**Anahtar Sorular:**
-${analysis.keyQuestions.map(q => `• ${q}`).join('\n')}
-
-**Tahmini Süre:** ${analysis.timeline}
-
-**Önemli İçgörüler:** ${analysis.insights}
-
-Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları ekleyebilirsiniz.`,
+          content: data.reply,
           timestamp: new Date()
         };
-        return [...filtered, analysisMessage];
+        return [...filtered, assistantMessage];
       });
+      
+      setConversationHistory(data.conversationHistory || []);
+      
     } catch (error) {
+      console.error('Error sending message to LLM:', error);
+      
       // Remove loading message and add error message
       setMessages(prev => {
         const filtered = prev.filter(msg => !msg.id.includes('loading'));
         const errorMessage: ChatMessage = {
-          id: `ai-error-${Date.now()}`,
+          id: (Date.now() + 1).toString(),
           type: 'ai',
-          content: 'Analiz sırasında bir hata oluştu. Varsayılan araştırma kılavuzu ile devam edebilirsiniz.',
+          content: 'Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.',
           timestamp: new Date()
         };
         return [...filtered, errorMessage];
       });
     } finally {
-      setIsAnalyzing(false);
+      setIsLoading(false);
     }
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    if (!discussionGuide) return;
-
-    const newQuestion = generateQuestionFromSuggestion(suggestion);
-    const updatedGuide = {
-      ...discussionGuide,
-      sections: discussionGuide.sections.map((section: any) => {
-        if (section.id === 'detailed-exploration') {
-          return {
-            ...section,
-            questions: [...section.questions, newQuestion]
-          };
-        }
-        return section;
-      }),
-      suggestions: discussionGuide.suggestions.filter((s: string) => s !== suggestion)
-    };
-
-    onGuideUpdate(updatedGuide);
-
-    // Ekleme hakkında AI mesajı ekle
-    const aiMessage: ChatMessage = {
-      id: `ai-${Date.now()}`,
-      type: 'ai',
-      content: `Harika! "${newQuestion}" sorusunu Detaylı Keşif bölümüne ekledim. Bu ${suggestion.toLowerCase()} hakkında daha spesifik içgörüler toplanmasına yardımcı olacak.`,
-      timestamp: new Date()
-    };
-    setMessages(prev => [...prev, aiMessage]);
-  };
-
   const handleSendMessage = async () => {
-    if (!inputMessage.trim()) return;
+    if (!inputMessage.trim() || isLoading) return;
 
     // Add user message
     const userMessage: ChatMessage = {
@@ -181,46 +119,9 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
     const currentInput = inputMessage;
     setInputMessage('');
 
-    // Add loading message
-    const loadingMessage: ChatMessage = {
-      id: `ai-loading-${Date.now()}`,
-      type: 'ai',
-      content: 'Düşünüyorum...',
-      timestamp: new Date()
-    };
-    setMessages(prev => [...prev, loadingMessage]);
-
-    try {
-      // Use the UX research planner to generate dynamic responses
-      const analysis = await analyzeProject(`Kullanıcı sorusu: "${currentInput}"\n\nMevcut proje bağlamı: ${projectData?.description || 'Genel araştırma'}`);
-      
-      // Remove loading message and add AI response based on analysis
-      setMessages(prev => {
-        const filtered = prev.filter(msg => !msg.id.includes('loading'));
-        const aiMessage: ChatMessage = {
-          id: `ai-${Date.now()}`,
-          type: 'ai',
-          content: `${analysis.insights}\n\n**Önerilen yaklaşım:**\n${analysis.researchMethods.slice(0, 2).map(method => `• ${method}`).join('\n')}\n\nBu konuda araştırma kılavuzunuza yeni sorular eklemek ister misiniz?`,
-          timestamp: new Date()
-        };
-        return [...filtered, aiMessage];
-      });
-    } catch (error) {
-      // Fallback to contextual response if API fails
-      setMessages(prev => {
-        const filtered = prev.filter(msg => !msg.id.includes('loading'));
-        const aiMessage: ChatMessage = {
-          id: `ai-${Date.now()}`,
-          type: 'ai',
-          content: `"${currentInput}" hakkında çok iyi bir nokta! Bu konuyu araştırma kılavuzunuza dahil etmek için özel sorular oluşturabilirim. Hangi açıdan yaklaşmak istiyorsunuz - kullanıcı deneyimi, işlevsellik yoksa başka bir perspektif mi?`,
-          timestamp: new Date()
-        };
-        return [...filtered, aiMessage];
-      });
-    }
+    await sendToLLM(currentInput);
   };
 
-  // replace deprecated onKeyPress; keep Enter-to-send
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -228,123 +129,97 @@ Araştırma kılavuzunu bu analize göre özelleştirebilir ve takip soruları e
     }
   };
 
-  const generateQuestionFromSuggestion = (suggestion: string): string => {
-    const questionMap: Record<string, string> = {
-      'Fiyatlandırma/rakip soruları ekle': 'Fiyatlandırma gördüğünüz alternatiflerle nasıl karşılaştırılıyor?',
-      'AI ile ilgili sorular ekle': 'Bu bağlamda AI destekli özellikler hakkında düşünceleriniz nelerdir?',
-      'Özellik odaklı sorular ekle': 'Sizin için en değerli olacak belirli özellikler hangisidir?',
-      'Erişilebilirlik soruları ekle': 'Kullanım durumunuz için erişilebilirlik özellikleri ne kadar önemli?',
-      'Mobil deneyim soruları ekle': 'Bunun mobil cihazlarda nasıl çalışmasını beklersiniz?'
-    };
-    return questionMap[suggestion] || 'Bu konuyu biraz daha detaylandırabilir misiniz?';
-  };
-
   return (
-    // Ensure full-height on mobile (no browser chrome gaps)
     <div className="h-full flex flex-col overflow-hidden">
       {/* Chat Header */}
       <div className="border-b border-border-light p-4">
         <div className="flex items-center justify-between">
           <div className="flex-1">
-            <h2 className="text-lg font-semibold text-text-primary">Araştırma Asistanı</h2>
-            <p className="text-sm text-text-secondary mt-1">AI destekli araştırma planı oluşturma ve optimizasyon</p>
+            <h2 className="text-lg font-semibold text-text-primary">Türkçe AI Asistan</h2>
+            <p className="text-sm text-text-secondary mt-1">Size nasıl yardımcı olabilirim?</p>
           </div>
-          {onToggleCollapse && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onToggleCollapse}
-              className="ml-2 p-2 hover:bg-surface"
-              aria-label="Collapse chat"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-          )}
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-2 py-1 min-h-0 scroll-smooth">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex space-x-3 ${message.type === 'user' ? 'justify-start' : 'justify-start'}`}
-          >
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden ${
-              message.type === 'user' 
-                ? 'bg-surface text-text-secondary' 
-                : 'bg-brand-primary-light text-brand-primary'
-            }`}>
-              {message.type === 'user' ? (
-                <img 
-                  src={userAvatar} 
-                  alt="User avatar" 
-                  className="w-full h-full object-cover rounded-full"
-                />
-              ) : (
-                <Bot className="w-4 h-4" />
-              )}
-            </div>
-            
-            <div className="flex-1 max-w-lg">
-              <div className={`rounded-2xl px-4 py-3 ${
-                message.type === 'user'
-                  ? 'bg-surface text-text-primary'
-                  : 'bg-white border border-border text-text-primary'
+      <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 scroll-smooth space-y-4">
+        {messages.length === 0 ? (
+          <div className="text-center text-text-muted py-8">
+            <Bot className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p>Merhaba! Size nasıl yardımcı olabilirim?</p>
+            <p className="text-sm mt-2">Sormak istediğiniz her şeyi yazabilirsiniz.</p>
+          </div>
+        ) : (
+          messages.map((message) => (
+            <div
+              key={message.id}
+              className={`flex space-x-3 ${message.type === 'user' ? 'justify-start' : 'justify-start'}`}
+            >
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden ${
+                message.type === 'user' 
+                  ? 'bg-surface text-text-secondary' 
+                  : 'bg-brand-primary-light text-brand-primary'
               }`}>
-                <p className="text-sm leading-relaxed whitespace-pre-line">
-                  {message.content}
+                {message.type === 'user' ? (
+                  <img 
+                    src={userAvatar} 
+                    alt="User avatar" 
+                    className="w-full h-full object-cover rounded-full"
+                  />
+                ) : (
+                  <Bot className="w-4 h-4" />
+                )}
+              </div>
+              
+              <div className="flex-1 max-w-lg">
+                <div className={`rounded-2xl px-4 py-3 ${
+                  message.type === 'user'
+                    ? 'bg-brand-primary text-white'
+                    : 'bg-surface text-text-primary border border-border'
+                }`}>
+                  <p className="text-sm leading-relaxed whitespace-pre-line">
+                    {message.content}
+                  </p>
+                </div>
+                <p className="text-xs text-text-muted mt-1 ml-4">
+                  {message.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
-              <p className="text-xs text-text-muted mt-1 ml-4">
-                {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </p>
             </div>
-          </div>
-        ))}
-        {/* sentinel keeps view pinned to the latest message */}
-        <div ref={endRef} />
-      </div>
-
-      {/* Bottom Section - Suggestions and Input */}
-      <div className="flex-shrink-0 bg-white border-t border-border-light pb-[env(safe-area-inset-bottom)]">
-        {/* Suggestions */}
-        {discussionGuide && discussionGuide.suggestions && discussionGuide.suggestions.length > 0 && (
-          <div className="p-4 border-b border-border-light">
-            <div className="flex items-center space-x-2 mb-3">
-              <Sparkles className="w-4 h-4 text-brand-primary" />
-              <span className="text-sm font-medium text-text-secondary">Önerilen geliştirmeler</span>
+          ))
+        )}
+        {isLoading && (
+          <div className="flex justify-start space-x-3">
+            <div className="w-8 h-8 bg-brand-primary-light text-brand-primary rounded-full flex items-center justify-center">
+              <Bot className="w-4 h-4" />
             </div>
-            
-            <div className="flex flex-wrap gap-2">
-              {discussionGuide.suggestions.map((suggestion: string, index: number) => (
-                <Button
-                  key={index}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleSuggestionClick(suggestion)}
-                  className="text-xs hover:bg-brand-primary-light hover:border-brand-primary hover:text-brand-primary"
-                >
-                  + {suggestion}
-                </Button>
-              ))}
+            <div className="bg-surface text-text-primary border border-border p-3 rounded-2xl">
+              <div className="flex space-x-1">
+                <div className="w-2 h-2 bg-text-secondary rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-2 h-2 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              </div>
             </div>
           </div>
         )}
+        <div ref={endRef} />
+      </div>
 
-        {/* Chat Input */}
+      {/* Chat Input */}
+      <div className="flex-shrink-0 bg-white border-t border-border-light pb-[env(safe-area-inset-bottom)]">
         <div className="p-4">
           <div className="flex space-x-3">
             <Input
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Takip sorusu ekle..."
+              placeholder="Sormak istediğiniz her şeyi yazabilirsiniz..."
               className="flex-1"
+              disabled={isLoading}
             />
             <Button 
               onClick={handleSendMessage}
-              disabled={!inputMessage.trim()}
+              disabled={!inputMessage.trim() || isLoading}
               className="px-4 h-10 md:h-9"
             >
               <Send className="w-4 h-4" />

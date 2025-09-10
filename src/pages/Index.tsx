@@ -103,7 +103,7 @@ const Index = () => {
                 handleStartProject();
               }
             }}
-            placeholder="Lütfen araştırma projenizi detaylarıyla açıklayın →" 
+            placeholder="Merhaba! Size nasıl yardımcı olabilirim? Sormak istediğiniz her şeyi yazabilirsiniz..." 
             className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary" 
           />
           
@@ -118,7 +118,7 @@ const Index = () => {
                 Sıfırdan başla
               </Button>
               <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim()} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6">
-                Devam Et <ArrowRight className="w-4 h-4 ml-2" />
+                Sohbete Başla <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
           </div>

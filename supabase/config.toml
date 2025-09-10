@@ -1,1 +1,10 @@
 project_id = "gqdvwmwueaqyqepwyifk"
+
+[functions.turkish-chat]
+verify_jwt = false
+
+[functions.analyze-project]
+verify_jwt = false
+
+[functions.generate-questions]
+verify_jwt = false
