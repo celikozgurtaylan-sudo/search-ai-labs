@@ -11,6 +11,8 @@ import StudyPanel from "@/components/workspace/StudyPanel";
 import RecruitmentDrawer from "@/components/workspace/RecruitmentDrawer";
 import { Stepper } from "@/components/ui/stepper";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useAuth } from "@/contexts/AuthContext";
 import { projectService } from "@/services/projectService";
 
 interface ProjectData {
@@ -23,6 +25,7 @@ interface ProjectData {
 const Workspace = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { user } = useAuth();
   const [projectData, setProjectData] = useState<ProjectData | null>(null);
   const [currentStep, setCurrentStep] = useState<'guide' | 'recruit' | 'starting' | 'run' | 'analyze'>('guide');
   const [showRecruitment, setShowRecruitment] = useState(false);
@@ -230,7 +233,8 @@ const Workspace = () => {
   }
 
   return (
-    <div className="min-h-[100dvh] overflow-hidden bg-canvas">
+    <ProtectedRoute>
+      <div className="min-h-[100dvh] overflow-hidden bg-canvas">
       {/* Header */}
       <header className="border-b border-border-light bg-white flex-shrink-0">
         <div className="max-w-full mx-auto px-6 py-4">
@@ -341,7 +345,8 @@ const Workspace = () => {
           setShowRecruitment(false);
         }}
       />
-    </div>
+      </div>
+    </ProtectedRoute>
   );
 };
 

@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 export interface Project {
   id?: string;
+  user_id?: string;
   title: string;
   description: string;
   analysis?: any;
@@ -10,10 +11,17 @@ export interface Project {
 }
 
 export const projectService = {
-  async createProject(project: Omit<Project, 'id' | 'created_at' | 'updated_at'>): Promise<Project> {
+  async createProject(project: Omit<Project, 'id' | 'user_id' | 'created_at' | 'updated_at'>): Promise<Project> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User must be authenticated to create projects');
+    }
+
     const { data, error } = await supabase
       .from('projects')
       .insert({
+        user_id: user.id,
         title: project.title,
         description: project.description,
         analysis: project.analysis
@@ -29,9 +37,16 @@ export const projectService = {
   },
 
   async getUserProjects(): Promise<Project[]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User must be authenticated to view projects');
+    }
+
     const { data, error } = await supabase
       .from('projects')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -42,10 +57,17 @@ export const projectService = {
   },
 
   async getProject(id: string): Promise<Project | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User must be authenticated to view project');
+    }
+
     const { data, error } = await supabase
       .from('projects')
       .select('*')
       .eq('id', id)
+      .eq('user_id', user.id)
       .maybeSingle();
 
     if (error) {
@@ -55,11 +77,18 @@ export const projectService = {
     return data;
   },
 
-  async updateProject(id: string, updates: Partial<Omit<Project, 'id' | 'created_at' | 'updated_at'>>): Promise<Project> {
+  async updateProject(id: string, updates: Partial<Omit<Project, 'id' | 'user_id' | 'created_at' | 'updated_at'>>): Promise<Project> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User must be authenticated to update projects');
+    }
+
     const { data, error } = await supabase
       .from('projects')
       .update(updates)
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
 
@@ -71,10 +100,17 @@ export const projectService = {
   },
 
   async deleteProject(id: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User must be authenticated to delete projects');
+    }
+
     const { error } = await supabase
       .from('projects')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('user_id', user.id);
 
     if (error) {
       throw new Error(`Failed to delete project: ${error.message}`);

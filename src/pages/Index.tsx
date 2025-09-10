@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Upload, ArrowRight, MessageSquare, BarChart3, Users, Search } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Upload, ArrowRight, MessageSquare, BarChart3, Users, Search, LogOut } from "lucide-react";
+import { useNavigate, Link } from "react-router-dom";
 import { AnimatedHeadline } from "@/components/ui/animated-headline";
+import { useAuth } from "@/contexts/AuthContext";
 import { projectService, Project } from "@/services/projectService";
 import { toast } from "sonner";
 
@@ -40,10 +41,13 @@ const Index = () => {
   const [userProjects, setUserProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { user, signOut } = useAuth();
 
   useEffect(() => {
-    loadUserProjects();
-  }, []);
+    if (user) {
+      loadUserProjects();
+    }
+  }, [user]);
 
   const loadUserProjects = async () => {
     try {
@@ -55,6 +59,11 @@ const Index = () => {
   };
 
   const handleStartProject = async (templateId?: string, description?: string) => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+
     const projectDesc = description || projectDescription;
     if (!projectDesc.trim()) {
       toast.error('Please enter a project description');
@@ -105,6 +114,14 @@ const Index = () => {
     handleStartProject(template.id, sampleDescriptions[template.id as keyof typeof sampleDescriptions]);
   };
 
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      toast.success('Successfully signed out');
+    } catch (error) {
+      toast.error('Failed to sign out');
+    }
+  };
   return <div className="min-h-screen bg-canvas">
       {/* Header */}
       <header className="border-b border-border-light">
@@ -118,12 +135,41 @@ const Index = () => {
             </div>
             
             <div className="flex items-center space-x-6">
-              <div className="flex items-center space-x-2 text-text-secondary hover:text-text-primary cursor-pointer transition-colors">
-                <span className="text-sm font-medium">Projelerim</span>
-                <div className="w-6 h-6 bg-brand-primary-light rounded-full flex items-center justify-center">
-                  <span className="text-xs font-bold text-brand-primary">{userProjects.length}</span>
+              {user ? (
+                <>
+                  <div className="flex items-center space-x-2 text-text-secondary hover:text-text-primary cursor-pointer transition-colors">
+                    <span className="text-sm font-medium">Projelerim</span>
+                    <div className="w-6 h-6 bg-brand-primary-light rounded-full flex items-center justify-center">
+                      <span className="text-xs font-bold text-brand-primary">{userProjects.length}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2 bg-surface px-3 py-2 rounded-full border border-border-light">
+                    <div className="w-6 h-6 bg-brand-primary rounded-full flex items-center justify-center">
+                      <span className="text-xs font-medium text-white">
+                        {user.email?.substring(0, 2).toUpperCase()}
+                      </span>
+                    </div>
+                    <span className="text-sm font-medium text-text-primary">
+                      {user.user_metadata?.display_name || 'Demo User'}
+                    </span>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={handleSignOut}
+                      className="ml-2 p-1 h-6 w-6 hover:bg-destructive/10"
+                    >
+                      <LogOut className="w-3 h-3 text-text-secondary hover:text-destructive" />
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center space-x-4">
+                  <Link to="/auth">
+                    <Button variant="outline">Sign In</Button>
+                  </Link>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
