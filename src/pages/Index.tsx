@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Upload, ArrowRight, MessageSquare, BarChart3, Users, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { AnimatedHeadline } from "@/components/ui/animated-headline";
@@ -62,8 +63,11 @@ const Index = () => {
       <header className="border-b border-border-light">
         <div className="max-w-6xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 relative">
               <span className="text-xl font-semibold text-text-primary">Searcho</span>
+              <Badge variant="secondary" className="absolute -top-2 -right-2 text-xs px-1.5 py-0.5 bg-brand-primary-light text-brand-primary">
+                Beta
+              </Badge>
             </div>
             
             <div className="flex items-center space-x-6">
