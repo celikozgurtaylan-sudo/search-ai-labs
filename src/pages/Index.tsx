@@ -82,7 +82,7 @@ const Index = () => {
                 <div className="w-6 h-6 bg-brand-primary rounded-full flex items-center justify-center">
                   <span className="text-xs font-medium text-white">AY</span>
                 </div>
-                <span className="text-sm font-medium text-text-primary">Ayşe Yılmaz</span>
+                <span className="text-sm font-medium text-text-primary">Demo User</span>
               </div>
             </div>
           </div>
