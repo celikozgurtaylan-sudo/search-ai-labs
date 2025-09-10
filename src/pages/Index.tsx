@@ -65,7 +65,7 @@ const Index = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2 relative">
               <span className="text-xl font-semibold text-text-primary">Searcho</span>
-              <Badge variant="secondary" className="absolute -top-2 -right-2 text-xs px-1.5 py-0.5 bg-brand-primary-light text-brand-primary">
+              <Badge variant="secondary" className="absolute -top-2 left-full ml-1 text-xs px-1.5 py-0.5 bg-brand-primary-light text-brand-primary">
                 Beta
               </Badge>
             </div>
