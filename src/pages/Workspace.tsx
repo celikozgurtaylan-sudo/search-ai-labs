@@ -27,21 +27,26 @@ const Workspace = () => {
   const [participants, setParticipants] = useState<any[]>([]);
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [isResearchRelated, setIsResearchRelated] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('searchai-project');
     if (stored) {
       const data = JSON.parse(stored);
       setProjectData(data);
-      
-      // Tartışma kılavuzunu otomatik oluştur
-      setTimeout(() => {
-        generateDiscussionGuide(data.description);
-      }, 1000);
     } else {
       navigate('/');
     }
   }, [navigate]);
+
+  // Generate discussion guide when research conversation starts
+  useEffect(() => {
+    if (isResearchRelated && !discussionGuide && projectData) {
+      setTimeout(() => {
+        generateDiscussionGuide(projectData.description);
+      }, 1000);
+    }
+  }, [isResearchRelated, discussionGuide, projectData]);
 
   // Auto-collapse chat panel when reaching starting stage
   useEffect(() => {
@@ -227,6 +232,7 @@ const Workspace = () => {
           ) : (
             <ChatPanel 
               projectData={projectData}
+              onResearchDetected={setIsResearchRelated}
             />
           )}
         </ResizablePanel>
@@ -240,13 +246,25 @@ const Workspace = () => {
           maxSize={isChatCollapsed ? 97 : 80}
           className="min-h-0 min-w-0 overflow-hidden transition-all duration-300"
         >
-          <StudyPanel 
-            discussionGuide={discussionGuide}
-            participants={participants}
-            currentStep={currentStep}
-            onGuideUpdate={setDiscussionGuide}
-            chatMessages={chatMessages}
-          />
+          {isResearchRelated ? (
+            <StudyPanel 
+              discussionGuide={discussionGuide}
+              participants={participants}
+              currentStep={currentStep}
+              onGuideUpdate={setDiscussionGuide}
+              chatMessages={chatMessages}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center bg-white border-l border-border-light">
+              <div className="text-center text-text-muted max-w-md px-6">
+                <h3 className="text-lg font-medium text-text-primary mb-2">Araştırma Planı Hazırlığı</h3>
+                <p className="text-sm leading-relaxed">
+                  Araştırma planınızı hazırlamak için sohbet alanında araştırma konunuzu detaylarıyla paylaşın. 
+                  Anlamlı bir araştırma konusu belirlendikten sonra bu alan aktif hale gelecektir.
+                </p>
+              </div>
+            </div>
+          )}
         </ResizablePanel>
       </ResizablePanelGroup>
 

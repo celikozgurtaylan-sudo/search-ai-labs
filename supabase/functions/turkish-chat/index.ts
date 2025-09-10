@@ -20,6 +20,35 @@ serve(async (req) => {
 
     const { message, conversationHistory = [] } = await req.json();
 
+    // First, analyze if the message is research-related
+    const analysisResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { 
+            role: 'system', 
+            content: `Sen bir araştırma konusu analiz edicisisin. Kullanıcının mesajını analiz et ve SADECE şu durumlardan birinde "ARAŞTIRMA_İLGİLİ" yanıtı ver:
+            - Kullanıcı araştırması, ürün testi, kullanıcı araştırması, anket, görüşme, UX araştırması hakkında konuşuyorsa
+            - Müşteri geri bildirimi toplama, pazar araştırması, davranış analizi hakkında konuşuyorsa  
+            - Belirli bir ürün, hizmet veya konsept üzerinde araştırma yapmak istiyorsa
+            
+            Diğer tüm durumlarda "GENEL_SOHBET" yanıtı ver. Sadece bu iki kelimeden birini yanıtla, başka hiçbir şey yazma.`
+          },
+          { role: 'user', content: message }
+        ],
+        temperature: 0.3,
+        max_tokens: 10
+      }),
+    });
+
+    const analysisData = await analysisResponse.json();
+    const isResearchRelated = analysisData.choices[0].message.content.includes('ARAŞTIRMA_İLGİLİ');
+
     const systemPrompt = `Sen Türkçe konuşan yardımcı bir asistansın. 
     
 Kurallar:
@@ -27,7 +56,11 @@ Kurallar:
 - Yardımcı, dostane ve bilgilendirici ol
 - Kullanıcının sorularını anla ve detaylı yanıtlar ver
 - Eğer bir konuda emin değilsen, bunu belirt
-- Her zaman nazik ve saygılı ol`;
+- Her zaman nazik ve saygılı ol
+
+${isResearchRelated ? 
+'Kullanıcı araştırma konusu hakkında konuşuyor. Bu konuda detaylı yardım sağla ve araştırma planlaması konusunda rehberlik et. Araştırma metodolojileri, soru formları, katılımcı seçimi gibi konularda bilgi ver.' : 
+'Genel sorulara yardımcı ol. Eğer kullanıcı araştırma konularına geçerse, o zaman araştırma konularında detaylı bilgi vermeye başla.'}`;
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -64,6 +97,7 @@ Kurallar:
 
     return new Response(JSON.stringify({ 
       reply,
+      isResearchRelated,
       conversationHistory: [...conversationHistory, 
         { role: 'user', content: message },
         { role: 'assistant', content: reply }

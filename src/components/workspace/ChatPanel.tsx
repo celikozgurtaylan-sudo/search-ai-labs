@@ -14,9 +14,10 @@ interface ChatMessage {
 
 interface ChatPanelProps {
   projectData?: any;
+  onResearchDetected?: (isResearch: boolean) => void;
 }
 
-const ChatPanel = ({ projectData }: ChatPanelProps) => {
+const ChatPanel = ({ projectData, onResearchDetected }: ChatPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -84,6 +85,11 @@ const ChatPanel = ({ projectData }: ChatPanelProps) => {
       });
       
       setConversationHistory(data.conversationHistory || []);
+      
+      // Check if the conversation became research-related
+      if (data.isResearchRelated && onResearchDetected) {
+        onResearchDetected(true);
+      }
       
     } catch (error) {
       console.error('Error sending message to LLM:', error);
