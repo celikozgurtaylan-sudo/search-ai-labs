@@ -52,6 +52,7 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
   const [showTitleTypewriter, setShowTitleTypewriter] = useState(true);
   const [showSectionTypewriters, setShowSectionTypewriters] = useState<{[key: string]: boolean}>({});
   const [showAnalysisTypewriter, setShowAnalysisTypewriter] = useState(false);
+  const [showQuestionTypewriters, setShowQuestionTypewriters] = useState<{[key: string]: boolean}>({});
   const [loadingMessages] = useState([
     "AI soruları oluşturuluyor...",
     "Katılımcı deneyimini analiz ediyor...",
@@ -126,6 +127,20 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
       setShowSectionTypewriters(initialSections);
     }
   }, [discussionGuide, showSectionTypewriters]);
+
+  // Initialize question typewriters when guide is loaded
+  useEffect(() => {
+    if (discussionGuide?.sections && Object.keys(showQuestionTypewriters).length === 0) {
+      const initialQuestions: {[key: string]: boolean} = {};
+      discussionGuide.sections.forEach((section: any) => {
+        section.questions.forEach((question: string, questionIndex: number) => {
+          const questionKey = `${section.id}-${questionIndex}`;
+          initialQuestions[questionKey] = true;
+        });
+      });
+      setShowQuestionTypewriters(initialQuestions);
+    }
+  }, [discussionGuide, showQuestionTypewriters]);
 
   // Show analysis typewriter when entering analyze step
   useEffect(() => {
@@ -689,6 +704,16 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                 <CardContent className="p-0 space-y-3">
                   {section.questions.map((question: string, index: number) => {
                     const isRecentlyAdded = typewriterQuestions[section.id]?.includes(question);
+                    const questionKey = `${section.id}-${index}`;
+                    const shouldShowTypewriter = showQuestionTypewriters[questionKey];
+                    
+                    // Calculate delay: 2 seconds base + staggered delay based on position
+                    let globalQuestionIndex = 0;
+                    for (let i = 0; i < discussionGuide.sections.indexOf(section); i++) {
+                      globalQuestionIndex += discussionGuide.sections[i].questions.length;
+                    }
+                    globalQuestionIndex += index;
+                    const questionDelay = 2000 + (globalQuestionIndex * 800); // 2s base + 0.8s between questions
                     
                     return (
                       <div key={`${section.id}-${index}`} className="group flex items-start space-x-2">
@@ -726,11 +751,14 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                               className="text-sm text-text-primary cursor-text hover:bg-surface rounded p-2 -m-2 transition-colors"
                               onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}
                             >
-                              {isRecentlyAdded ? (
+                              {(shouldShowTypewriter || isRecentlyAdded) ? (
                                 <TypewriterText 
                                   text={question} 
-                                  speed={30}
+                                  speed={25}
+                                  delay={isRecentlyAdded ? 0 : questionDelay}
                                   className="text-text-primary"
+                                  enableControls={true}
+                                  onComplete={() => setShowQuestionTypewriters(prev => ({ ...prev, [questionKey]: false }))}
                                 />
                               ) : (
                                 question
