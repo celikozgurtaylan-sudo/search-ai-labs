@@ -128,17 +128,37 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
     }
   }, [discussionGuide, showSectionTypewriters]);
 
-  // Initialize question typewriters when guide is loaded
+  // Initialize question typewriters when guide is loaded - start them all as false
   useEffect(() => {
     if (discussionGuide?.sections && Object.keys(showQuestionTypewriters).length === 0) {
       const initialQuestions: {[key: string]: boolean} = {};
       discussionGuide.sections.forEach((section: any) => {
         section.questions.forEach((question: string, questionIndex: number) => {
           const questionKey = `${section.id}-${questionIndex}`;
-          initialQuestions[questionKey] = true;
+          initialQuestions[questionKey] = false; // Start as false, will be triggered by delay
         });
       });
       setShowQuestionTypewriters(initialQuestions);
+      
+      // Start showing questions after a 2-second delay
+      setTimeout(() => {
+        discussionGuide.sections.forEach((section: any) => {
+          section.questions.forEach((question: string, questionIndex: number) => {
+            const questionKey = `${section.id}-${questionIndex}`;
+            // Calculate global question index for staggered delay
+            let globalQuestionIndex = 0;
+            for (let i = 0; i < discussionGuide.sections.indexOf(section); i++) {
+              globalQuestionIndex += discussionGuide.sections[i].questions.length;
+            }
+            globalQuestionIndex += questionIndex;
+            
+            // Stagger each question by 800ms
+            setTimeout(() => {
+              setShowQuestionTypewriters(prev => ({ ...prev, [questionKey]: true }));
+            }, globalQuestionIndex * 800);
+          });
+        });
+      }, 2000); // 2-second base delay
     }
   }, [discussionGuide, showQuestionTypewriters]);
 
@@ -751,17 +771,25 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                               className="text-sm text-text-primary cursor-text hover:bg-surface rounded p-2 -m-2 transition-colors"
                               onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}
                             >
-                              {(shouldShowTypewriter || isRecentlyAdded) ? (
+                              {shouldShowTypewriter ? (
                                 <TypewriterText 
                                   text={question} 
                                   speed={25}
-                                  delay={isRecentlyAdded ? 0 : questionDelay}
                                   className="text-text-primary"
                                   enableControls={true}
                                   onComplete={() => setShowQuestionTypewriters(prev => ({ ...prev, [questionKey]: false }))}
                                 />
-                              ) : (
+                              ) : isRecentlyAdded ? (
+                                <TypewriterText 
+                                  text={question} 
+                                  speed={30}
+                                  className="text-text-primary"
+                                />
+                              ) : shouldShowTypewriter === false ? (
                                 question
+                              ) : (
+                                // Show placeholder while waiting for typewriter to start
+                                <span className="opacity-0">{question}</span>
                               )}
                             </div>
                           )}
