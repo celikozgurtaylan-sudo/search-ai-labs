@@ -140,23 +140,23 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
       });
       setShowQuestionTypewriters(initialQuestions);
       
-      // Start showing questions after a 2-second delay
+      // Start showing questions section by section after a 2-second delay
       setTimeout(() => {
-        discussionGuide.sections.forEach((section: any) => {
+        let sectionStartDelay = 0;
+        
+        discussionGuide.sections.forEach((section: any, sectionIndex: number) => {
           section.questions.forEach((question: string, questionIndex: number) => {
             const questionKey = `${section.id}-${questionIndex}`;
-            // Calculate global question index for staggered delay
-            let globalQuestionIndex = 0;
-            for (let i = 0; i < discussionGuide.sections.indexOf(section); i++) {
-              globalQuestionIndex += discussionGuide.sections[i].questions.length;
-            }
-            globalQuestionIndex += questionIndex;
+            const questionDelay = sectionStartDelay + (questionIndex * 800);
             
-            // Stagger each question by 800ms
             setTimeout(() => {
               setShowQuestionTypewriters(prev => ({ ...prev, [questionKey]: true }));
-            }, globalQuestionIndex * 800);
+            }, questionDelay);
           });
+          
+          // Next section starts after all questions in current section finish
+          // Add extra 400ms buffer between sections
+          sectionStartDelay += (section.questions.length * 800) + 400;
         });
       }, 2000); // 2-second base delay
     }
@@ -787,10 +787,7 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                                 />
                               ) : shouldShowTypewriter === false ? (
                                 question
-                              ) : (
-                                // Show placeholder while waiting for typewriter to start
-                                <span className="opacity-0">{question}</span>
-                              )}
+                              ) : null}
                             </div>
                           )}
                         </div>
