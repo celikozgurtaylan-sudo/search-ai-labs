@@ -15,9 +15,10 @@ interface ChatMessage {
 interface ChatPanelProps {
   projectData?: any;
   onResearchDetected?: (isResearch: boolean) => void;
+  onResearchPlanGenerated?: (plan: any) => void;
 }
 
-const ChatPanel = ({ projectData, onResearchDetected }: ChatPanelProps) => {
+const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }: ChatPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -89,6 +90,11 @@ const ChatPanel = ({ projectData, onResearchDetected }: ChatPanelProps) => {
       // Check if the conversation became research-related
       if (data.isResearchRelated && onResearchDetected) {
         onResearchDetected(true);
+      }
+      
+      // Handle research plan generation
+      if (data.researchPlan && onResearchPlanGenerated) {
+        onResearchPlanGenerated(data.researchPlan);
       }
       
     } catch (error) {

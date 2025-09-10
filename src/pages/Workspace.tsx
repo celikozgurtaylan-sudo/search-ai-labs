@@ -233,6 +233,9 @@ const Workspace = () => {
             <ChatPanel 
               projectData={projectData}
               onResearchDetected={setIsResearchRelated}
+              onResearchPlanGenerated={(plan) => {
+                setDiscussionGuide(plan);
+              }}
             />
           )}
         </ResizablePanel>

@@ -49,18 +49,48 @@ serve(async (req) => {
     const analysisData = await analysisResponse.json();
     const isResearchRelated = analysisData.choices[0].message.content.includes('ARAŞTIRMA_İLGİLİ');
 
-    const systemPrompt = `Sen Türkçe konuşan yardımcı bir asistansın. 
+    let systemPrompt, shouldGenerateResearchPlan = false;
     
-Kurallar:
-- SADECE Türkçe yanıt ver
-- Yardımcı, dostane ve bilgilendirici ol
-- Kullanıcının sorularını anla ve detaylı yanıtlar ver
-- Eğer bir konuda emin değilsen, bunu belirt
-- Her zaman nazik ve saygılı ol
+    if (isResearchRelated) {
+      // Check if user is asking for a research plan specifically
+      const isPlanRequest = message.toLowerCase().includes('plan') || 
+                           message.toLowerCase().includes('araştırma') ||
+                           message.toLowerCase().includes('nasıl');
+      
+      if (isPlanRequest) {
+        shouldGenerateResearchPlan = true;
+        systemPrompt = `Sen bir araştırma planı uzmanısın. Kullanıcının araştırma konusuna göre yapılandırılmış bir plan oluştur.
 
-${isResearchRelated ? 
-'Kullanıcı araştırma konusu hakkında konuşuyor. Bu konuda detaylı yardım sağla ve araştırma planlaması konusunda rehberlik et. Araştırma metodolojileri, soru formları, katılımcı seçimi gibi konularda bilgi ver.' : 
-'Genel sorulara yardımcı ol. Eğer kullanıcı araştırma konularına geçerse, o zaman araştırma konularında detaylı bilgi vermeye başla.'}`;
+ÖNEMLI: Yanıtını JSON formatında ver:
+{
+  "chatResponse": "Araştırma planını sağ panelde hazırladım. Kategorileri inceleyerek başlayabilirsin.",
+  "researchPlan": {
+    "title": "[Araştırma konusuna uygun başlık]",
+    "sections": [
+      {
+        "id": "background",
+        "title": "Arka Plan ve Hedefler", 
+        "questions": ["Soru 1", "Soru 2", "Soru 3"]
+      },
+      {
+        "id": "methodology",
+        "title": "Metodoloji",
+        "questions": ["Soru 1", "Soru 2", "Soru 3"]
+      },
+      {
+        "id": "analysis", 
+        "title": "Analiz",
+        "questions": ["Soru 1", "Soru 2", "Soru 3"]
+      }
+    ]
+  }
+}`;
+      } else {
+        systemPrompt = `Sen Türkçe konuşan yardımcı bir asistansın. Kullanıcı araştırma konusu hakkında konuşuyor. Kısa ve öz yanıtlar ver, araştırma konularında rehberlik et.`;
+      }
+    } else {
+      systemPrompt = `Sen Türkçe konuşan yardımcı bir asistansın. Genel sorulara yardımcı ol, kısa ve öz yanıtlar ver.`;
+    }
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -91,13 +121,26 @@ ${isResearchRelated ?
     }
 
     const data = await response.json();
-    const reply = data.choices[0].message.content;
+    let reply = data.choices[0].message.content;
+    let researchPlan = null;
+    
+    // Parse JSON response if it's a research plan
+    if (shouldGenerateResearchPlan) {
+      try {
+        const parsed = JSON.parse(reply);
+        reply = parsed.chatResponse;
+        researchPlan = parsed.researchPlan;
+      } catch (e) {
+        console.log('Failed to parse JSON, using original response');
+      }
+    }
     
     console.log('Generated Turkish response:', reply);
 
     return new Response(JSON.stringify({ 
       reply,
       isResearchRelated,
+      researchPlan,
       conversationHistory: [...conversationHistory, 
         { role: 'user', content: message },
         { role: 'assistant', content: reply }
