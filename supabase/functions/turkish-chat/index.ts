@@ -92,19 +92,21 @@ Sadece "ARAŞTIRMA_İLGİLİ" veya "GENEL_SOHBET" yanıtı ver, başka hiçbir �
           messages: [
             { 
               role: 'system', 
-              content: `Sen araştırma taleplerinin netliğini analiz ediyorsun. Kullanıcının araştırma mesajını analiz et:
+            content: `Sen araştırma taleplerinin netliğini analiz ediyorsun. Kullanıcının araştırma mesajını analiz et:
 
 NET TALEPLER (hemen plan oluşturulabilir):
 - Belirli bir ürün/hizmet adı var: "Mobil uygulamamın kullanılabilirlik testi"
 - Araştırma türü belirli: "checkout sürecinin kullanıcı testi", "müşteri memnuniyet anketi"
 - Hedef kitle belirtilmiş: "e-ticaret müşterileri için araştırma"
 - Spesifik özellik/süreç: "ödeme sayfasının testi", "kayıt formunun analizi"
+- Somut bir problem var: "kullanıcılar sepeti terk ediyor", "form doldurma oranı düşük"
 
 BELIRSIZ TALEPLER (keşif konuşması gerekli):
 - Genel ifadeler: "araştırma yapmam lazım", "bir şeyler test etmek istiyorum"
 - Ürün/hizmet belirsiz: "uygulamamla ilgili", "websitem için"
 - Hedef belirsiz: "kullanıcılar için", "müşteriler için" (hangi kullanıcılar?)
 - Amaç belirsiz: "analiz yapmak istiyorum", "veri toplamak istiyorum"
+- Problem tanımlanmamış: sadece "test etmek" ifadeleri
 
 SADECE "NET" veya "BELIRSIZ" yanıtı ver, başka hiçbir şey yazma.`
             },
@@ -123,28 +125,34 @@ SADECE "NET" veya "BELIRSIZ" yanıtı ver, başka hiçbir şey yazma.`
       if (isSpecific) {
         // Clear request - generate structured plan immediately
         shouldGenerateResearchPlan = true;
-        systemPrompt = `Sen bir araştırma planı uzmanısın. Kullanıcının net araştırma talebine göre derhal yapılandırılmış bir plan oluştur.
+        systemPrompt = `Sen bir araştırma planı uzmanısın. Kullanıcının net araştırma talebine göre derhal yapılandırılmış, EYLEMEGEÇİLEBİLİR bir plan oluştur.
+
+PLANIN ÖZELLİKLERİ:
+- Spesifik ve uygulanabilir sorular
+- Kullanıcının belirttiği duruma özel
+- Genel tavsiyeler değil, somut adımlar
+- Her soru somut bir veri toplayacak şekilde
 
 ÖNEMLI: Yanıtını JSON formatında ver:
 {
-  "chatResponse": "Araştırma planını sağ panelde hazırladım. Kategorileri inceleyerek başlayabilirsin.",
+  "chatResponse": "Araştırma planını sağ panelde hazırladım. Spesifik sorular ve metodoloji ile hemen başlayabilirsin.",
   "researchPlan": {
-    "title": "[Araştırma konusuna uygun başlık]",
+    "title": "[Kullanıcının spesifik durumuna uygun başlık]",
     "sections": [
       {
         "id": "background",
         "title": "Arka Plan ve Hedefler", 
-        "questions": ["Soru 1", "Soru 2", "Soru 3"]
+        "questions": ["[Kullanıcının ürün/hizmetine özel soru]", "[Spesifik problem/hedef sorusu]", "[Karar kriterleri sorusu]"]
       },
       {
         "id": "methodology",
         "title": "Metodoloji",
-        "questions": ["Soru 1", "Soru 2", "Soru 3"]
+        "questions": ["[Belirli araştırma yöntemini detaylandıran soru]", "[Hedef kitleye özel soru]", "[Veri toplama yöntemini netleştiren soru]"]
       },
       {
         "id": "analysis", 
         "title": "Analiz",
-        "questions": ["Soru 1", "Soru 2", "Soru 3"]
+        "questions": ["[Spesifik metrik/KPI sorusu]", "[Başarı kriterini ölçen soru]", "[Sonraki adımları belirleyen soru]"]
       }
     ]
   }
@@ -153,15 +161,24 @@ SADECE "NET" veya "BELIRSIZ" yanıtı ver, başka hiçbir şey yazma.`
         // Vague request - start discovery conversation
         systemPrompt = `Sen araştırma keşif uzmanısın. Kullanıcının belirsiz araştırma talebini netleştirmek için rehberlik edeceksin.
 
-Aşağıdaki keşif sorularından uygun olanları sor:
-- "Hangi ürün/hizmet hakkında araştırma yapmak istiyorsun?"
-- "Bu araştırmanın amacı nedir? (Kullanılabilirlik testi, müşteri memnuniyeti, yeni özellik analizi vs.)"
-- "Hedef kitlen kimler? (Yaş, demografik, davranış özellikleri)"
-- "Hangi özellikleri/süreçleri test etmek istiyorsun?"
-- "Bu araştırmadan hangi sonuçları elde etmeyi umuyorsun?"
-- "Daha önce benzer bir araştırma yaptın mı?"
+KRITIK: ASLA genel tavsiye verme veya şöyle liste halinde adımlar sunma:
+❌ KÖTÜ ÖRNEK: "1. Hedef belirleme 2. Hedef kitle seçimi 3. Test senaryosu oluşturma..."
+❌ KÖTÜ ÖRNEK: "Şu aşamaları takip ederek kullanılabilirlik testinizi gerçekleştirebilirsiniz..."
+❌ KÖTÜ ÖRNEK: "Genel bir test planı oluşturabiliriz. İşte adım adım yol haritası..."
 
-Kullanıcının durumuna uygun 1-2 soru sor ve araştırma konusunu netleştirmeye odaklan. Türkçe yanıt ver.`;
+BUNUN YERİNE:
+✅ Kullanıcının spesifik durumunu anlayabilmek için 1-2 soru sor
+✅ Somut detayları netleştir
+✅ Eyleme geçilebilir bilgi topla
+
+ÖRNEK SORULAR (duruma uygun olanını seç):
+- "Hangi ürün/hizmet hakkında araştırma yapmak istiyorsun?"
+- "Şu anda kullanıcıların yaşadığı spesifik bir problem var mı?"
+- "Bu araştırmayla hangi kararı vermeyi planlıyorsun?"
+- "Hedef kitlen kimler? (Yaş, demografik, davranış özellikleri)"
+- "Hangi özelliği/süreci test etmek istiyorsun?"
+
+Sadece 1-2 spesifik soru sor, genel tavsiye verme. Türkçe yanıt ver.`;
       }
     } else {
       systemPrompt = `Sen Türkçe konuşan yardımcı bir asistansın. Genel sorulara yardımcı ol, kısa ve öz yanıtlar ver.`;
