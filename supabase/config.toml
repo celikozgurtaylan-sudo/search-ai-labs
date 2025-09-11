@@ -4,7 +4,7 @@ project_id = "gqdvwmwueaqyqepwyifk"
 verify_jwt = false
 
 [functions.analyze-project]
-verify_jwt = false
+verify_jwt = true
 
 [functions.generate-questions]
-verify_jwt = false
+verify_jwt = true
