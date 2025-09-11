@@ -35,7 +35,7 @@ import TypewriterText from "@/components/ui/typewriter-text";
 
 interface StudyPanelProps {
   discussionGuide: any;
-  participants: any[];
+  participants: any[]; // Will work with both old and new participant structures
   currentStep: 'guide' | 'recruit' | 'starting' | 'run' | 'analyze';
   onGuideUpdate: (guide: any) => void;
   chatMessages?: any[];
@@ -290,14 +290,18 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
               
               return (
                 <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
-                      <span className="text-xs font-medium text-brand-primary">
-                        {participant.name.split(' ').map((n: string) => n[0]).join('')}
-                      </span>
-                    </div>
-                    <span className="text-sm font-medium text-text-primary">{participant.name}</span>
-                  </div>
+                   <div className="flex items-center space-x-3">
+                     <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
+                       <span className="text-xs font-medium text-brand-primary">
+                         {participant.name ? 
+                           participant.name.split(' ').map((n: string) => n[0]).join('') : 
+                           participant.email ? participant.email.substring(0, 2).toUpperCase() : 'P'}
+                       </span>
+                     </div>
+                     <span className="text-sm font-medium text-text-primary">
+                       {participant.name || participant.email || 'Participant'}
+                     </span>
+                   </div>
                   
                   <div className="flex items-center space-x-2">
                     {isCompleted ? (

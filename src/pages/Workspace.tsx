@@ -8,7 +8,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 import { Search, ArrowLeft, Video, Users, Play, BarChart3, Square, ChevronLeft, ChevronRight } from "lucide-react";
 import ChatPanel from "@/components/workspace/ChatPanel";
 import StudyPanel from "@/components/workspace/StudyPanel";
-import RecruitmentDrawer from "@/components/workspace/RecruitmentDrawer";
+import InvitationPanel from "@/components/workspace/InvitationPanel";
 import { Stepper } from "@/components/ui/stepper";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -335,15 +335,16 @@ const Workspace = () => {
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      {/* Recruitment Drawer */}
-      <RecruitmentDrawer 
+      {/* Invitation Panel */}
+      <InvitationPanel 
         open={showRecruitment}
         onOpenChange={setShowRecruitment}
-        onParticipantsSelect={(selected) => {
-          setParticipants(selected);
+        onParticipantsUpdate={(participants) => {
+          setParticipants(participants);
           setCurrentStep('recruit');
           setShowRecruitment(false);
         }}
+        projectId={projectData.id || ''}
       />
       </div>
     </ProtectedRoute>

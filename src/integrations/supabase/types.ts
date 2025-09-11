@@ -44,6 +44,107 @@ export type Database = {
         }
         Relationships: []
       }
+      study_participants: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          email: string
+          id: string
+          invitation_token: string
+          invited_at: string
+          joined_at: string | null
+          metadata: Json | null
+          name: string | null
+          project_id: string
+          status: string
+          token_expires_at: string
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          invitation_token: string
+          invited_at?: string
+          joined_at?: string | null
+          metadata?: Json | null
+          name?: string | null
+          project_id: string
+          status?: string
+          token_expires_at?: string
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          invitation_token?: string
+          invited_at?: string
+          joined_at?: string | null
+          metadata?: Json | null
+          name?: string | null
+          project_id?: string
+          status?: string
+          token_expires_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      study_sessions: {
+        Row: {
+          created_at: string
+          ended_at: string | null
+          id: string
+          metadata: Json | null
+          notes: string | null
+          participant_id: string | null
+          project_id: string
+          scheduled_at: string | null
+          session_token: string
+          started_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          metadata?: Json | null
+          notes?: string | null
+          participant_id?: string | null
+          project_id: string
+          scheduled_at?: string | null
+          session_token: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          metadata?: Json | null
+          notes?: string | null
+          participant_id?: string | null
+          project_id?: string
+          scheduled_at?: string | null
+          session_token?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "study_sessions_participant_id_fkey"
+            columns: ["participant_id"]
+            isOneToOne: false
+            referencedRelation: "study_participants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

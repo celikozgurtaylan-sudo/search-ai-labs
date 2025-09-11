@@ -9,6 +9,8 @@ import Auth from "./pages/Auth";
 import Workspace from "./pages/Workspace";
 import Subscriptions from "./pages/Subscriptions";
 import NotFound from "./pages/NotFound";
+import ParticipantLanding from "./pages/ParticipantLanding";
+import StudySession from "./pages/StudySession";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +26,8 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/workspace" element={<Workspace />} />
             <Route path="/subscriptions" element={<Subscriptions />} />
+            <Route path="/participate/:token" element={<ParticipantLanding />} />
+            <Route path="/study-session/:sessionToken" element={<StudySession />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
