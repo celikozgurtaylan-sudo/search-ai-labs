@@ -147,7 +147,7 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
       <div className="border-b border-border-light p-4">
         <div className="flex items-center justify-between">
           <div className="flex-1">
-            <h2 className="text-lg font-semibold text-text-primary">Türkçe AI Asistan</h2>
+            <h2 className="text-lg font-semibold text-text-primary">Searcho AI Asistan</h2>
             <p className="text-sm text-text-secondary mt-1">Size nasıl yardımcı olabilirim?</p>
           </div>
         </div>
