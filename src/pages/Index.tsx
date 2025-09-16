@@ -3,23 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Upload, ArrowRight, MessageSquare, BarChart3, Users, Search, LogOut, AlertTriangle, FileText } from "lucide-react";
+import { ArrowRight, MessageSquare, BarChart3, Users, Search, LogOut } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { AnimatedHeadline } from "@/components/ui/animated-headline";
 import { useAuth } from "@/contexts/AuthContext";
 import { projectService, Project } from "@/services/projectService";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 const templates = [{
   id: "ad-testing",
@@ -51,10 +40,6 @@ const Index = () => {
   const [projectDescription, setProjectDescription] = useState("");
   const [userProjects, setUserProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [additionalPrompt, setAdditionalPrompt] = useState("");
-  const [processingDocument, setProcessingDocument] = useState(false);
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
 
@@ -127,56 +112,6 @@ const Index = () => {
       "foundational": "Uzaktan çalışanların verimlilik ve işbirliği araçlarını nasıl yönettiğini keşfedin, yeni çalışma alanı platformumuz için fırsatları belirleyin."
     };
     handleStartProject(template.id, sampleDescriptions[template.id as keyof typeof sampleDescriptions]);
-  };
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const fileName = file.name.toLowerCase();
-      if (fileName.endsWith('.pdf') || fileName.endsWith('.docx')) {
-        setSelectedFile(file);
-      } else {
-        toast.error('Sadece PDF ve DOCX dosyaları desteklenmektedir.');
-        event.target.value = '';
-      }
-    }
-  };
-
-  const processDocument = async () => {
-    if (!selectedFile) return;
-
-    setProcessingDocument(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('additionalPrompt', additionalPrompt);
-
-      const { data, error } = await supabase.functions.invoke('process-document', {
-        body: formData,
-      });
-
-      if (error) throw error;
-
-      if (data.success) {
-        // Use the analysis to populate the project description
-        const analysis = data.analysis;
-        const generatedDescription = `${analysis.summary}\n\nÖnerilen araştırma alanları: ${analysis.researchAreas.join(', ')}\n\nHedef kitle: ${analysis.targetAudience.join(', ')}\n\n${analysis.projectSuggestion}`;
-        
-        setProjectDescription(generatedDescription);
-        setUploadModalOpen(false);
-        setSelectedFile(null);
-        setAdditionalPrompt("");
-        
-        toast.success(`${data.fileName} başarıyla işlendi ve proje açıklaması oluşturuldu!`);
-      } else {
-        throw new Error(data.error || 'Döküman işlenirken hata oluştu');
-      }
-    } catch (error) {
-      console.error('Document processing error:', error);
-      toast.error('Döküman işlenirken hata oluştu. Lütfen tekrar deneyin.');
-    } finally {
-      setProcessingDocument(false);
-    }
   };
 
   const handleSignOut = async () => {
@@ -262,94 +197,7 @@ const Index = () => {
             className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary" 
           />
           
-          <div className="flex items-center justify-between mt-6">
-            <Dialog open={uploadModalOpen} onOpenChange={setUploadModalOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="flex items-center space-x-2">
-                  <Upload className="w-4 h-4" />
-                  <span>Döküman yükle</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="bg-surface max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center space-x-2">
-                    <FileText className="w-5 h-5" />
-                    <span>Döküman Yükleme</span>
-                  </DialogTitle>
-                  <DialogDescription className="space-y-4">
-                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                      <div className="flex items-start space-x-2">
-                        <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5" />
-                        <div>
-                          <h4 className="font-semibold text-orange-800 mb-2">Desteklenen Dosya Türleri</h4>
-                          <ul className="text-sm text-orange-700 space-y-1">
-                            <li>• <strong>PDF dosyaları</strong> (.pdf)</li>
-                            <li>• <strong>Word belgeleri</strong> (.docx)</li>
-                          </ul>
-                          <p className="text-sm text-orange-600 mt-2">
-                            Maksimum dosya boyutu: 20MB
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <div>
-                        <Label htmlFor="file-upload" className="text-sm font-medium">
-                          Dosya Seçin
-                        </Label>
-                        <Input
-                          id="file-upload"
-                          type="file"
-                          accept=".pdf,.docx"
-                          onChange={handleFileUpload}
-                          className="mt-1"
-                        />
-                        {selectedFile && (
-                          <p className="text-sm text-green-600 mt-1">
-                            ✓ Seçilen dosya: {selectedFile.name}
-                          </p>
-                        )}
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="additional-prompt" className="text-sm font-medium">
-                          Ek Talimatlar (İsteğe bağlı)
-                        </Label>
-                        <Textarea
-                          id="additional-prompt"
-                          value={additionalPrompt}
-                          onChange={(e) => setAdditionalPrompt(e.target.value)}
-                          placeholder="Dökümanınızla ilgili özel bir araştırma alanına odaklanmak istiyorsanız buraya yazın..."
-                          className="mt-1 min-h-[80px]"
-                        />
-                      </div>
-                      
-                      <div className="flex justify-end space-x-2 pt-4">
-                        <Button 
-                          variant="outline" 
-                          onClick={() => {
-                            setUploadModalOpen(false);
-                            setSelectedFile(null);
-                            setAdditionalPrompt("");
-                          }}
-                        >
-                          İptal
-                        </Button>
-                        <Button 
-                          onClick={processDocument}
-                          disabled={!selectedFile || processingDocument}
-                          className="bg-brand-primary hover:bg-brand-primary-hover text-white"
-                        >
-                          {processingDocument ? 'İşleniyor...' : 'Dökümanı İşle'}
-                        </Button>
-                      </div>
-                    </div>
-                  </DialogDescription>
-                </DialogHeader>
-              </DialogContent>
-            </Dialog>
-            
+          <div className="flex items-center justify-end mt-6">
             <div className="flex items-center space-x-3">
               <Button variant="outline" onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading}>
                 Sıfırdan başla
