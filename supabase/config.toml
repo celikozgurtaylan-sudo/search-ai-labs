@@ -10,4 +10,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.send-invitation-email]
-verify_jwt = true
+verify_jwt = false
+
+[functions.searcho-realtime]
+verify_jwt = false

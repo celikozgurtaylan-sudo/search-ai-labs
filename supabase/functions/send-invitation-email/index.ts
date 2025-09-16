@@ -15,12 +15,64 @@ interface InvitationEmailRequest {
   invitationToken: string;
   projectTitle?: string;
   expiresAt: string;
+  studyType?: 'mobile-usability' | 'desktop-research' | 'general';
+  targetDevice?: 'mobile' | 'desktop' | 'both';
+  projectDescription?: string;
 }
 
-const createEmailTemplate = (participantName: string, invitationToken: string, projectTitle: string, expiresAt: string) => {
+const createEmailTemplate = (
+  participantName: string, 
+  invitationToken: string, 
+  projectTitle: string, 
+  expiresAt: string,
+  studyType: string = 'general',
+  targetDevice: string = 'both',
+  projectDescription?: string
+) => {
   const invitationLink = `${Deno.env.get('SUPABASE_URL')?.replace('/supabase', '')}/participate/${invitationToken}`;
   const expirationDate = new Date(expiresAt).toLocaleDateString('tr-TR');
   
+  // Dynamic content based on study type and target device
+  const getContextualMessage = () => {
+    if (studyType === 'mobile-usability' && targetDevice === 'mobile') {
+      return `
+        <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <h4 style="color: #856404; margin: 0 0 8px 0; font-size: 14px;">📱 Önemli: Mobil Test</h4>
+          <p style="color: #856404; margin: 0; font-size: 14px;">
+            Bu araştırma mobil deneyim odaklıdır. Lütfen katılımdan önce:
+          </p>
+          <ul style="color: #856404; margin: 8px 0 0 0; font-size: 14px;">
+            <li>Telefonunuzdan bu davetiyeye tıklayın</li>
+            <li>Test edilecek uygulamanın telefonunuzda yüklü olduğundan emin olun</li>
+            <li>Stabil internet bağlantınızı kontrol edin</li>
+            <li>Mikrofon ve kameranıza erişim izni verin</li>
+          </ul>
+        </div>`;
+    }
+    
+    if (studyType === 'desktop-research' && targetDevice === 'desktop') {
+      return `
+        <div style="background-color: #e3f2fd; border: 1px solid #90caf9; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <h4 style="color: #1565c0; margin: 0 0 8px 0; font-size: 14px;">💻 Masaüstü Araştırması</h4>
+          <p style="color: #1565c0; margin: 0; font-size: 14px;">
+            Bu araştırma masaüstü deneyimi üzerine odaklanmaktadır. En iyi deneyim için bilgisayarınızdan katılın.
+          </p>
+        </div>`;
+    }
+    
+    return '';
+  };
+
+  const getFormatDescription = () => {
+    if (studyType === 'mobile-usability') {
+      return 'Mobil kullanılabilirlik testi ve sesli görüşme';
+    }
+    if (studyType === 'desktop-research') {
+      return 'Masaüstü araştırması ve görüşme';
+    }
+    return 'Online görüşme ve kullanıcı deneyimi araştırması';
+  };
+
   return `
     <!DOCTYPE html>
     <html lang="tr">
@@ -221,11 +273,14 @@ const createEmailTemplate = (participantName: string, invitationToken: string, p
             ürünümüzü geliştirmemiz ve daha iyi bir deneyim sunmamız için çok değerli.
           </div>
           
+          ${getContextualMessage()}
+          
           <div class="project-info">
             <h3>📋 Araştırma Detayları</h3>
             <p><strong>Proje:</strong> ${projectTitle || 'Kullanıcı Deneyimi Araştırması'}</p>
+            ${projectDescription ? `<p><strong>Açıklama:</strong> ${projectDescription}</p>` : ''}
             <p><strong>Tahmini Süre:</strong> 15-30 dakika</p>
-            <p><strong>Format:</strong> Online görüşme</p>
+            <p><strong>Format:</strong> ${getFormatDescription()}</p>
           </div>
           
           <div class="button-container">
@@ -266,7 +321,16 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const { participantEmail, participantName, invitationToken, projectTitle, expiresAt }: InvitationEmailRequest = await req.json();
+    const { 
+      participantEmail, 
+      participantName, 
+      invitationToken, 
+      projectTitle, 
+      expiresAt, 
+      studyType = 'general',
+      targetDevice = 'both',
+      projectDescription 
+    }: InvitationEmailRequest = await req.json();
 
     if (!participantEmail || !invitationToken) {
       return new Response(
@@ -285,7 +349,10 @@ const handler = async (req: Request): Promise<Response> => {
       participantName || participantEmail.split('@')[0], 
       invitationToken, 
       projectTitle || 'Kullanıcı Deneyimi Araştırması',
-      expiresAt
+      expiresAt,
+      studyType,
+      targetDevice,
+      projectDescription
     );
 
     const emailResponse = await resend.emails.send({

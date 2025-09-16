@@ -1,17 +1,21 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, Clock, User, Video, MessageSquare } from "lucide-react";
+import { CheckCircle, Clock, User, Video, MessageSquare, Camera, Monitor } from "lucide-react";
 import { StudyParticipant } from "@/services/participantService";
+import SearchoAI from "@/components/SearchoAI";
 
 const StudySession = () => {
   const { sessionToken } = useParams();
   const location = useLocation();
-  const { participant, projectId } = location.state || {};
+  const { participant, projectId, projectData } = location.state || {};
   const [sessionStatus, setSessionStatus] = useState<'waiting' | 'active' | 'completed'>('waiting');
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -20,6 +24,55 @@ const StudySession = () => {
     
     return () => clearInterval(timer);
   }, []);
+
+  // Initialize camera when session becomes active
+  useEffect(() => {
+    if (sessionStatus === 'active') {
+      initializeCamera();
+    }
+    
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [sessionStatus]);
+
+  const initializeCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 },
+        audio: true
+      });
+      setCameraStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+    }
+  };
+
+  const startScreenShare = async () => {
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true
+      });
+      setIsScreenSharing(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = screenStream;
+      }
+      
+      // Listen for screen share end
+      screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+        setIsScreenSharing(false);
+        initializeCamera(); // Switch back to camera
+      });
+    } catch (error) {
+      console.error('Error starting screen share:', error);
+    }
+  };
 
   useEffect(() => {
     // Simulate session lifecycle
@@ -95,104 +148,122 @@ const StudySession = () => {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Participant Info */}
-          <div className="lg:col-span-1">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <User className="w-5 h-5" />
-                  <span>Katılımcı Bilgileri</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-text-secondary">İsim</label>
-                  <p className="text-text-primary">{participant?.name || 'Anonim Katılımcı'}</p>
-                </div>
-                
-                <div>
-                  <label className="text-sm font-medium text-text-secondary">E-posta</label>
-                  <p className="text-text-primary text-sm">{participant?.email}</p>
-                </div>
-                
-                <div>
-                  <label className="text-sm font-medium text-text-secondary">Durum</label>
-                  <div className="mt-1">
-                    <Badge variant="outline" className="text-status-success border-status-success">
-                      <CheckCircle className="w-3 h-3 mr-1" />
-                      Katıldı
-                    </Badge>
-                  </div>
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {sessionStatus === 'waiting' ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <Card className="w-full max-w-lg">
+              <CardContent className="pt-6">
+                <div className="text-center py-12">
+                  <Clock className="w-12 h-12 text-brand-primary mx-auto mb-4 animate-pulse" />
+                  <h3 className="text-lg font-semibold text-text-primary mb-2">
+                    Searcho AI Hazırlanıyor...
+                  </h3>
+                  <p className="text-text-secondary">
+                    Lütfen bekleyin, AI asistanı kısa süre içinde sizinle görüşmeye başlayacak.
+                  </p>
                 </div>
               </CardContent>
             </Card>
           </div>
-
-          {/* Session Content */}
-          <div className="lg:col-span-2">
-            {sessionStatus === 'waiting' ? (
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center py-12">
-                    <Clock className="w-12 h-12 text-brand-primary mx-auto mb-4 animate-pulse" />
-                    <h3 className="text-lg font-semibold text-text-primary mb-2">
-                      Araştırmacı Bağlanıyor...
-                    </h3>
-                    <p className="text-text-secondary">
-                      Lütfen bekleyin, araştırmacı kısa süre içinde sizinle iletişime geçecek.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <MessageSquare className="w-5 h-5" />
-                    <span>Görüşme Alanı</span>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[70vh]">
+            {/* Left Side - Participant Video & Info */}
+            <div className="lg:col-span-5 space-y-6">
+              {/* Video Feed */}
+              <Card className="h-80">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="flex items-center space-x-2">
+                      <Camera className="w-5 h-5" />
+                      <span>{isScreenSharing ? 'Ekran Paylaşımı' : 'Kamera'}</span>
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={startScreenShare}
+                      disabled={isScreenSharing}
+                    >
+                      <Monitor className="w-4 h-4 mr-2" />
+                      Ekran Paylaş
+                    </Button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="bg-surface rounded-lg p-6 mb-4">
-                    <div className="text-center py-8">
-                      <Video className="w-16 h-16 text-brand-primary mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold text-text-primary mb-2">
-                        Video Görüşme Aktif
-                      </h3>
-                      <p className="text-text-secondary mb-6">
-                        Araştırmacı ile görüşmeniz devam ediyor. Soruları yanıtlamak için 
-                        mikrofon ve kameranızı kullanabilirsiniz.
-                      </p>
-                      
-                      <div className="flex items-center justify-center space-x-4 text-sm">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-status-success rounded-full"></div>
-                          <span className="text-text-secondary">Mikrofon aktif</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-status-success rounded-full"></div>
-                          <span className="text-text-secondary">Kamera aktif</span>
-                        </div>
-                      </div>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    muted
+                    className="w-full h-48 bg-surface rounded-lg object-cover"
+                    playsInline
+                  />
+                  <div className="mt-3 flex items-center justify-center space-x-4 text-sm">
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-3 h-3 rounded-full ${cameraStream ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                      <span className="text-text-secondary">
+                        {isScreenSharing ? 'Ekran paylaşılıyor' : cameraStream ? 'Kamera aktif' : 'Kamera kapalı'}
+                      </span>
                     </div>
-                  </div>
-                  
-                  <div className="flex justify-center">
-                    <Button 
-                      onClick={handleCompleteSession}
-                      className="bg-brand-primary hover:bg-brand-primary-hover text-white"
-                    >
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Görüşmeyi Tamamla
-                    </Button>
                   </div>
                 </CardContent>
               </Card>
-            )}
+
+              {/* Participant Info */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <User className="w-5 h-5" />
+                    <span>Katılımcı Bilgileri</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-text-secondary">İsim</label>
+                    <p className="text-text-primary">{participant?.name || 'Anonim Katılımcı'}</p>
+                  </div>
+                  
+                  <div>
+                    <label className="text-sm font-medium text-text-secondary">E-posta</label>
+                    <p className="text-text-primary text-sm">{participant?.email}</p>
+                  </div>
+                  
+                  <div>
+                    <label className="text-sm font-medium text-text-secondary">Durum</label>
+                    <div className="mt-1">
+                      <Badge variant="outline" className="text-green-600 border-green-600">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Aktif Sesion
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {projectData && (
+                    <div>
+                      <label className="text-sm font-medium text-text-secondary">Proje</label>
+                      <p className="text-text-primary text-sm">{projectData.title}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Right Side - Searcho AI */}
+            <div className="lg:col-span-7">
+              <Card className="h-full">
+                <CardContent className="p-0 h-full">
+                  <SearchoAI
+                    isActive={sessionStatus === 'active'}
+                    projectContext={{
+                      title: projectData?.title,
+                      description: projectData?.description,
+                      studyType: 'general'
+                    }}
+                    onSessionEnd={handleCompleteSession}
+                  />
+                </CardContent>
+              </Card>
+            </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );

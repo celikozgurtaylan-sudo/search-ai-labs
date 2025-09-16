@@ -138,3 +138,21 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Searcho AI Animation Classes */
+@keyframes pulse-gradient {
+  0%, 100% { 
+    background-size: 100% 100%;
+  }
+  50% { 
+    background-size: 120% 120%;
+  }
+}
+
+.animation-delay-75 {
+  animation-delay: 75ms;
+}
+
+.animation-delay-150 {
+  animation-delay: 150ms;
+}
