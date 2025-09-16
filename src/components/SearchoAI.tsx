@@ -57,6 +57,18 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
           
           // Create AudioContext and ensure it's resumed
           audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+          
+          // Add click handler to resume AudioContext on user interaction
+          const resumeAudioContext = async () => {
+            if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+              await audioContextRef.current.resume();
+              console.log('AudioContext resumed on user interaction');
+            }
+          };
+          
+          document.addEventListener('click', resumeAudioContext, { once: true });
+          document.addEventListener('touchstart', resumeAudioContext, { once: true });
+          
           if (audioContextRef.current.state === 'suspended') {
             await audioContextRef.current.resume();
             console.log('AudioContext resumed');
@@ -168,7 +180,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     console.log('Received message type:', data.type, data);
     
     switch (data.type) {
-      case 'response.audio.delta':
+      case 'response.output_audio.delta':
         console.log('Audio delta received, size:', data.delta?.length);
         if (data.delta && audioQueueRef.current) {
           try {
@@ -186,12 +198,12 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
           }
         }
         break;
-      case 'response.audio_transcript.delta':
+      case 'response.output_audio_transcript.delta':
         console.log('Transcript delta:', data.delta);
         // Accumulate AI transcript for display
         setAiTranscript(prev => prev + (data.delta || ''));
         break;
-      case 'response.audio.done':
+      case 'response.output_audio.done':
         console.log('Audio response finished');
         setIsSpeaking(false);
         break;
