@@ -43,6 +43,10 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   const [isQuestionComplete, setIsQuestionComplete] = useState(false);
   const [questionsInitialized, setQuestionsInitialized] = useState(false);
   const [isWaitingForAnswer, setIsWaitingForAnswer] = useState(false);
+  
+  // Preamble state
+  const [isPreamblePhase, setIsPreamblePhase] = useState(true);
+  const [preambleComplete, setPreambleComplete] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -72,12 +76,12 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
       );
       setQuestionsInitialized(true);
       
-      // Get the first question
-      await getNextQuestion();
+      // Don't get the first question yet - wait for preamble to complete
+      console.log('Questions initialized. Starting with preamble...');
       
       toast({
-        title: "Interview Started",
-        description: "Questions have been loaded. Ready to begin!",
+        title: "Interview Starting",
+        description: "Beginning with welcome and introduction...",
       });
     } catch (error) {
       console.error('Failed to initialize questions:', error);
@@ -87,6 +91,21 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
         variant: "destructive",
       });
     }
+  };
+
+  // Function to transition from preamble to questions
+  const startActualQuestions = async () => {
+    console.log('Transitioning from preamble to questions...');
+    setIsPreamblePhase(false);
+    setPreambleComplete(true);
+    
+    // Now get the first actual question
+    await getNextQuestion();
+    
+    toast({
+      title: "Moving to Questions",
+      description: "Now beginning the structured interview questions.",
+    });
   };
 
   const getNextQuestion = async () => {
@@ -368,28 +387,36 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
         console.log('Session created, sending configuration...');
         // Send session configuration after session is created
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          const questionPrompt = currentQuestion ? 
-            `Current question: "${currentQuestion.question_text}". Ask this question and wait for the user's complete answer before proceeding.` : 
-            'Start the interview by greeting the participant warmly.';
-
           const config = {
+            event_id: "configure_session",
             type: "session.update",
             session: {
               modalities: ["text", "audio"],
-              instructions: `You are Searcho, a professional UX research interviewer conducting a structured interview. 
+              instructions: isPreamblePhase ? 
+                `You are SEARCHO, a friendly UX research interviewer. This is the PREAMBLE phase.
 
-Project: "${projectContext?.description || 'User research project'}"
+PREAMBLE INSTRUCTIONS:
+- Start with a warm, welcoming greeting
+- Introduce yourself as SEARCHO, the AI interviewer for this UX research session
+- Explain that this is a user research interview about "${projectContext?.description || 'the project'}"
+- Make the participant feel comfortable and explain the process briefly
+- Ask if they have any initial questions before we begin with the structured questions
+- Keep this conversational and natural - this is about building rapport
+- Once you sense they're ready and comfortable, say something like "Great! Now let's move into our structured questions" and then call the start_questions function
 
-Your role:
-1. Ask questions ONE AT A TIME from the provided question list
-2. Wait for complete answers before moving to the next question
-3. Ask follow-up questions when needed for clarity
-4. Be warm, professional, and encouraging
-5. Speak clearly and at a moderate pace
+Remember: Be warm, professional, and put them at ease. This preamble sets the tone for the entire interview.` :
 
-${questionPrompt}
+                `You are SEARCHO, a professional UX research interviewer conducting a structured interview.
 
-Conduct the interview in a conversational but structured manner. Make sure to get thorough responses to each question.`,
+QUESTION PHASE INSTRUCTIONS:
+- You are now in the structured question phase of the interview
+- Ask the questions provided systematically and wait for complete responses
+- Follow up naturally to get deeper insights
+- Keep responses focused and relevant to UX research
+- Use the save_response function after getting a complete answer to each question
+- Move through questions at an appropriate pace
+
+Current question context: ${currentQuestion?.question_text || 'No current question'}`,
               voice: "alloy",
               input_audio_format: "pcm16",
               output_audio_format: "pcm16",
@@ -400,9 +427,36 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
                 type: "server_vad",
                 threshold: 0.5,
                 prefix_padding_ms: 300,
-                silence_duration_ms: 1500
+                silence_duration_ms: 1000
               },
-              temperature: 0.7,
+              tools: isPreamblePhase ? [
+                {
+                  type: "function",
+                  name: "start_questions",
+                  description: "Call this function when the preamble is complete and you're ready to transition to structured questions. Use this after the participant seems comfortable and ready.",
+                  parameters: {
+                    type: "object",
+                    properties: {},
+                    required: []
+                  }
+                }
+              ] : [
+                {
+                  type: "function", 
+                  name: "save_response",
+                  description: "Save the participant's response to the current question. Call this after getting a complete answer.",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      response: { type: "string", description: "The participant's complete response" },
+                      isComplete: { type: "boolean", description: "Whether this completes the current question" }
+                    },
+                    required: ["response", "isComplete"]
+                  }
+                }
+              ],
+              tool_choice: "auto",
+              temperature: 0.8,
               max_response_output_tokens: "inf"
             }
           };
@@ -418,6 +472,19 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
         const errorMessage = data.error?.message || data.message || 'API error occurred';
         console.log('Setting audio error to:', errorMessage);
         setAudioError(errorMessage);
+        break;
+      case 'response.function_call_arguments.done':
+        console.log('Function call completed:', data);
+        const functionName = data.name;
+        
+        if (functionName === 'save_response') {
+          const args = JSON.parse(data.arguments);
+          console.log('Saving response:', args);
+          await saveResponse(args.response, args.isComplete);
+        } else if (functionName === 'start_questions') {
+          console.log('Starting structured questions phase');
+          await startActualQuestions();
+        }
         break;
       default:
         console.log('Unhandled message type:', data.type);
@@ -584,7 +651,10 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
               {aiTranscript || (
                 <span className="text-white/50 italic">
                   {isConnected ? 
-                    (isListening ? 'Listening...' : 'Ready to start the interview') : 
+                    (isPreamblePhase ? 
+                      'Starting with welcome and introduction...' : 
+                      (isListening ? 'Listening...' : 'Ready for questions')
+                    ) : 
                     'Connecting...'
                   }
                 </span>
@@ -592,6 +662,30 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
             </div>
           </div>
         </div>
+
+        {/* Question Display - Only show during question phase */}
+        {!isPreamblePhase && currentQuestion && (
+          <div className="w-full max-w-2xl mb-6">
+            <div className="bg-blue-500/10 backdrop-blur-sm rounded-lg p-4 border border-blue-400/30">
+              <div className="text-sm font-medium text-blue-300 mb-2">Current Question</div>
+              <div className="text-white text-base">
+                {currentQuestion.question_text}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Preamble Phase Indicator */}
+        {isPreamblePhase && (
+          <div className="w-full max-w-2xl mb-6">
+            <div className="bg-green-500/10 backdrop-blur-sm rounded-lg p-4 border border-green-400/30 text-center">
+              <div className="text-sm font-medium text-green-300 mb-2">Welcome Phase</div>
+              <div className="text-white/80 text-sm">
+                SEARCHO will start with a warm welcome and introduction before moving to structured questions
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom Controls Bar - Fixed position and always visible */}
