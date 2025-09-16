@@ -106,7 +106,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         audio.onended = () => {
           setTimeout(() => {
             setCurrentChunk(prev => prev + 1);
-          }, 800); // Brief pause between chunks
+          }, 2000); // 2-second pause between chunks
         };
 
         audio.onerror = () => {
@@ -114,7 +114,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
           // Continue to next chunk even if audio fails
           setTimeout(() => {
             setCurrentChunk(prev => prev + 1);
-          }, 2000);
+          }, 2000); // 2-second pause for consistency
         };
 
         audio.play().catch(console.error);
@@ -123,13 +123,13 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         // Continue to next chunk
         setTimeout(() => {
           setCurrentChunk(prev => prev + 1);
-        }, 2000);
+        }, 2000); // 2-second pause for consistency
       }
     } else {
-      // No audio, just wait for text to complete
+      // No audio, just wait for text to complete + 2-second pause
       setTimeout(() => {
         setCurrentChunk(prev => prev + 1);
-      }, 3000);
+      }, 4000); // 3s for text + 2s pause = 5s total, reduced to 4s for better flow
     }
   }, [currentChunk, audioQueue, onComplete]);
 
