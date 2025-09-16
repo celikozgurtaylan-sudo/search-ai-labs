@@ -415,7 +415,9 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
         break;
       case 'error':
         console.error('OpenAI error:', data);
-        setAudioError(data.error?.message || 'API error occurred');
+        const errorMessage = data.error?.message || data.message || 'API error occurred';
+        console.log('Setting audio error to:', errorMessage);
+        setAudioError(errorMessage);
         break;
       default:
         console.log('Unhandled message type:', data.type);
@@ -479,8 +481,10 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
       <div className="flex-1 flex flex-col items-center justify-start pt-8 px-6 min-h-0">
         {/* Error Display */}
         {audioError && (
-          <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-red-500/20 backdrop-blur-md border border-red-400/50 rounded-lg px-4 py-2 text-red-200 text-sm z-10">
+          <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-red-500/20 backdrop-blur-md border border-red-400/50 rounded-lg px-4 py-2 text-red-200 text-sm z-10 cursor-pointer"
+               onClick={() => setAudioError(null)}>
             Audio Error: {audioError}
+            <span className="ml-2 text-xs opacity-75">(click to dismiss)</span>
           </div>
         )}
 
