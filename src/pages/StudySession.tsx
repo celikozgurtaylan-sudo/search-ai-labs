@@ -124,6 +124,7 @@ const StudySession = () => {
             </div>
             
             <div className="flex items-center space-x-4">
+              <div>Görüşme başladı</div>
               <Badge variant={sessionStatus === 'active' ? 'default' : 'outline'}>
                 {sessionStatus === 'waiting' && (
                   <>
