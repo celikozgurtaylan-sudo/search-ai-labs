@@ -8,6 +8,8 @@ export interface Project {
   analysis?: any;
   created_at?: string;
   updated_at?: string;
+  archived?: boolean;
+  archived_at?: string;
 }
 
 export const projectService = {
@@ -36,7 +38,32 @@ export const projectService = {
     return data;
   },
 
-  async getUserProjects(): Promise<Project[]> {
+  async getUserProjects(includeArchived: boolean = false): Promise<Project[]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User must be authenticated to view projects');
+    }
+
+    let query = supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', user.id);
+
+    if (!includeArchived) {
+      query = query.eq('archived', false);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to fetch projects: ${error.message}`);
+    }
+
+    return data || [];
+  },
+
+  async getArchivedProjects(): Promise<Project[]> {
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
@@ -47,10 +74,11 @@ export const projectService = {
       .from('projects')
       .select('*')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+      .eq('archived', true)
+      .order('archived_at', { ascending: false });
 
     if (error) {
-      throw new Error(`Failed to fetch projects: ${error.message}`);
+      throw new Error(`Failed to fetch archived projects: ${error.message}`);
     }
 
     return data || [];
@@ -97,6 +125,48 @@ export const projectService = {
     }
 
     return data;
+  },
+
+  async archiveProject(id: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User must be authenticated to archive projects');
+    }
+
+    const { error } = await supabase
+      .from('projects')
+      .update({ 
+        archived: true, 
+        archived_at: new Date().toISOString() 
+      })
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (error) {
+      throw new Error(`Failed to archive project: ${error.message}`);
+    }
+  },
+
+  async unarchiveProject(id: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User must be authenticated to unarchive projects');
+    }
+
+    const { error } = await supabase
+      .from('projects')
+      .update({ 
+        archived: false, 
+        archived_at: null 
+      })
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (error) {
+      throw new Error(`Failed to unarchive project: ${error.message}`);
+    }
   },
 
   async deleteProject(id: string): Promise<void> {

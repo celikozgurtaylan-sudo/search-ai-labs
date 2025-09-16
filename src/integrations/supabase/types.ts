@@ -17,6 +17,8 @@ export type Database = {
       projects: {
         Row: {
           analysis: Json | null
+          archived: boolean
+          archived_at: string | null
           created_at: string
           description: string
           id: string
@@ -26,6 +28,8 @@ export type Database = {
         }
         Insert: {
           analysis?: Json | null
+          archived?: boolean
+          archived_at?: string | null
           created_at?: string
           description: string
           id?: string
@@ -35,6 +39,8 @@ export type Database = {
         }
         Update: {
           analysis?: Json | null
+          archived?: boolean
+          archived_at?: string | null
           created_at?: string
           description?: string
           id?: string
