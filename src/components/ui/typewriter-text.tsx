@@ -39,7 +39,7 @@ const TypewriterText = ({
   }, [delay, hasStarted]);
 
   useEffect(() => {
-    if (!hasStarted) return;
+    if (!hasStarted || !text) return;
     
     if (currentIndex < text.length && isPlaying) {
       const timeout = setTimeout(() => {
@@ -61,6 +61,7 @@ const TypewriterText = ({
   }, [text, delay]);
 
   const handleSkip = () => {
+    if (!text) return;
     setDisplayText(text);
     setCurrentIndex(text.length);
     if (onComplete) onComplete();
@@ -81,12 +82,12 @@ const TypewriterText = ({
     <div className="relative">
       <span className={className}>
         {displayText}
-        {showCursor && currentIndex < text.length && (
+        {showCursor && text && currentIndex < text.length && (
           <span className="animate-pulse text-brand-primary">|</span>
         )}
       </span>
       
-      {enableControls && currentIndex < text.length && (
+      {enableControls && text && currentIndex < text.length && (
         <div className="absolute -right-20 top-0 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             size="sm"
