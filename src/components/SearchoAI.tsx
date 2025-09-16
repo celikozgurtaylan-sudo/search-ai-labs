@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Volume2, VolumeX, Video, VideoOff } from 'lucide-react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '../utils/AudioRecorder';
-import VoiceWaveVisualizer from '@/components/ui/voice-wave-visualizer';
+import MinimalVoiceWaves from '@/components/ui/minimal-voice-waves';
 
 interface SearchoAIProps {
   isActive: boolean;
@@ -323,8 +323,8 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
 
           {/* Voice Wave Visualizer */}
           <div className="flex-1 flex justify-center px-8">
-            <div className="bg-white/10 rounded-lg p-3 border border-white/20">
-              <VoiceWaveVisualizer 
+            <div className="bg-white/10 rounded-lg px-4 py-2 border border-white/20">
+              <MinimalVoiceWaves 
                 isListening={isListening} 
                 audioStream={audioStreamRef.current}
                 className="opacity-80"
