@@ -620,11 +620,11 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
               className={`
                 ${isMuted 
                   ? 'bg-red-500/30 border-red-400 text-red-300 hover:bg-red-500/40' 
-                  : 'bg-white/30 border-white/50 text-white hover:bg-white/40'
+                  : 'bg-surface border-border-light text-text-primary hover:bg-surface-hover'
                 }
                 min-w-[90px] h-12 font-medium transition-all duration-200 z-50
-                focus:ring-2 focus:ring-white/50 focus:ring-offset-2 focus:ring-offset-transparent
-                shadow-lg
+                focus:ring-2 focus:ring-brand-primary/50 focus:ring-offset-2 focus:ring-offset-transparent
+                border-2
               `}
             >
               {isMuted ? <MicOff className="w-5 h-5 mr-2" /> : <Mic className="w-5 h-5 mr-2" />}
@@ -636,7 +636,7 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
             <Button
               variant="outline"
               size="lg"
-              className="bg-white/30 border-white/50 text-white hover:bg-white/40 h-12 px-3 shadow-lg"
+              className="bg-surface border-border-light text-text-primary hover:bg-surface-hover h-12 px-3 border-2"
               title="Video options"
             >
               <Video className="w-5 h-5" />
