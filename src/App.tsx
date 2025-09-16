@@ -7,6 +7,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Workspace from "./pages/Workspace";
+import ProjectHistory from "./pages/ProjectHistory";
 import Subscriptions from "./pages/Subscriptions";
 import NotFound from "./pages/NotFound";
 import ParticipantLanding from "./pages/ParticipantLanding";
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/workspace" element={<Workspace />} />
+            <Route path="/projects" element={<ProjectHistory />} />
             <Route path="/subscriptions" element={<Subscriptions />} />
             <Route path="/participate/:token" element={<ParticipantLanding />} />
             <Route path="/study-session/:sessionToken" element={<StudySession />} />
