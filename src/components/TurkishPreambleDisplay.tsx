@@ -57,7 +57,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
     try {
       for (const chunk of TURKISH_PREAMBLE_CHUNKS) {
         const { data, error } = await supabase.functions.invoke('turkish-tts', {
-          body: { text: chunk, voice: 'alloy' }
+          body: { text: chunk, voice: 'nova' }
         });
 
         if (error) throw error;
@@ -97,6 +97,12 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
       return;
     }
 
+    // Stop any currently playing audio to prevent overlap
+    if (currentAudio) {
+      currentAudio.pause();
+      setCurrentAudio(null);
+    }
+
     // Play audio if available
     if (audioQueue[currentChunk]) {
       try {
@@ -104,6 +110,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         setCurrentAudio(audio);
         
         audio.onended = () => {
+          setCurrentAudio(null);
           setTimeout(() => {
             setCurrentChunk(prev => prev + 1);
           }, 2000); // 2-second pause between chunks
@@ -111,6 +118,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
 
         audio.onerror = () => {
           console.error('Audio playback error');
+          setCurrentAudio(null);
           // Continue to next chunk even if audio fails
           setTimeout(() => {
             setCurrentChunk(prev => prev + 1);
@@ -120,6 +128,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         audio.play().catch(console.error);
       } catch (error) {
         console.error('Audio creation error:', error);
+        setCurrentAudio(null);
         // Continue to next chunk
         setTimeout(() => {
           setCurrentChunk(prev => prev + 1);
@@ -131,9 +140,9 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         setCurrentChunk(prev => prev + 1);
       }, 4000); // 3s for text + 2s pause = 5s total, reduced to 4s for better flow
     }
-  }, [currentChunk, audioQueue, onComplete]);
+  }, [currentChunk, audioQueue, onComplete, currentAudio]);
 
-  // Effect to play next chunk when currentChunk changes
+  // Single useEffect to handle chunk progression without race conditions
   useEffect(() => {
     if (isPlaying && currentChunk < TURKISH_PREAMBLE_CHUNKS.length) {
       playCurrentChunk();
