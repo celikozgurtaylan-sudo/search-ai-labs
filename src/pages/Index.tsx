@@ -106,10 +106,10 @@ const Index = () => {
 
   const handleTemplateSelect = (template: typeof templates[0]) => {
     const sampleDescriptions = {
-      "ad-testing": "Y kuşağını hedefleyen sürdürülebilir giyim markamız için yeni video reklamımızı test edin. Duygusal tepkileri ve satın alma niyetini anlamak istiyoruz.",
-      "landing-page": "Fibabanka.com.tr adresindeki SaaS açılış sayfamızı değerlendirin - pazarlama profesyonellerinin AI destekli kullanıcı araştırma platformumuz hakkında ne düşündüğünü anlamak istiyoruz.",
-      "nps-feedback": "Mobil bankacılık uygulamamızın kullanıcıları için NPS anketi yapın, iyileştirme alanlarını belirleyin ve müşteri sadakatini neyin yönlendirdiğini anlayın.",
-      "foundational": "Uzaktan çalışanların verimlilik ve işbirliği araçlarını nasıl yönettiğini keşfedin, yeni çalışma alanı platformumuz için fırsatları belirleyin."
+      "ad-testing": "Reklam kampanyası performansını ve hedef kitle tepkilerini değerlendirmek için kapsamlı bir kullanıcı araştırması tasarlayın. Duygusal tepkiler, marka algısı ve satın alma niyeti üzerine odaklanılması gereken bir çalışma.",
+      "landing-page": "Web sitesi açılış sayfasının kullanıcı deneyimi ve dönüşüm optimizasyonu için detaylı analiz gereksinimi. Kullanıcı davranışları, mesaj netliği ve etkileşim oranları üzerine araştırma planlanması.",
+      "nps-feedback": "Müşteri memnuniyeti ve sadakat düzeyini ölçmeye yönelik NPS tabanlı araştırma metodolojisi. Kullanıcı geri bildirimlerinin sistematik analizi ve iyileştirme önerilerinin geliştirilmesi gereksinimi.",
+      "foundational": "Kullanıcı ihtiyaçları ve pazar dinamiklerini derinlemesine anlamaya yönelik temel araştırma metodolojisi. Kullanıcı segmentasyonu, davranış analizi ve fırsat tespiti odaklı çalışma planlaması."
     };
     handleStartProject(template.id, sampleDescriptions[template.id as keyof typeof sampleDescriptions]);
   };
