@@ -236,7 +236,7 @@ const Workspace = () => {
     <ProtectedRoute>
       <div className="min-h-[100dvh] overflow-hidden bg-canvas">
       {/* Header */}
-      <header className="border-b border-border-light bg-white flex-shrink-0">
+      <header className="border-b border-border-light bg-white flex-shrink-0 relative z-60">
         <div className="max-w-full mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
