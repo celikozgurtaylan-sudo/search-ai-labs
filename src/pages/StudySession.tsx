@@ -253,9 +253,12 @@ const StudySession = () => {
                   <SearchoAI
                     isActive={sessionStatus === 'active'}
                     projectContext={{
-                      title: projectData?.title,
-                      description: projectData?.description,
-                      studyType: 'general'
+                      description: projectData?.description || '',
+                      discussionGuide: projectData?.analysis?.discussionGuide || null,
+                      template: 'interview',
+                      sessionId: 'session_' + Date.now(),
+                      projectId: projectData?.id,
+                      participantId: 'participant_' + Date.now()
                     }}
                     onSessionEnd={handleCompleteSession}
                   />

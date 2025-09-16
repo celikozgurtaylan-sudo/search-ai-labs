@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.searcho-realtime]
 verify_jwt = false
+
+[functions.interview-manager]
+verify_jwt = false
+
+[functions.interview-analysis]
+verify_jwt = false

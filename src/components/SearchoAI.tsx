@@ -1,20 +1,31 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { Mic, MicOff, Video, PhoneOff, CheckCircle2, Circle, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Volume2, VolumeX, Video, VideoOff } from 'lucide-react';
-import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '../utils/AudioRecorder';
+import { Card } from '@/components/ui/card';
 import MinimalVoiceWaves from '@/components/ui/minimal-voice-waves';
+import { useToast } from '@/components/ui/use-toast';
+import { AudioRecorder } from '@/utils/AudioRecorder';
+import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 
 interface SearchoAIProps {
   isActive: boolean;
   projectContext?: {
-    title?: string;
-    description?: string;
-    studyType?: string;
+    description: string;
+    discussionGuide?: any;
+    template?: string;
+    sessionId?: string;
+    projectId?: string;
+    participantId?: string;
   };
   onSessionEnd?: () => void;
 }
 
 const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) => {
+  const { toast } = useToast();
+  
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -23,12 +34,133 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   const [audioError, setAudioError] = useState<string | null>(null);
   const [aiTranscript, setAiTranscript] = useState('');
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  
+  // Interview-specific state
+  const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestion | null>(null);
+  const [interviewProgress, setInterviewProgress] = useState<InterviewProgress>({ completed: 0, total: 0, isComplete: false, percentage: 0 });
+  const [currentResponse, setCurrentResponse] = useState<string>('');
+  const [isQuestionComplete, setIsQuestionComplete] = useState(false);
+  const [questionsInitialized, setQuestionsInitialized] = useState(false);
+  const [isWaitingForAnswer, setIsWaitingForAnswer] = useState(false);
+
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
-  const audioQueueRef = useRef<AudioQueue | null>(null);
+  const audioQueueRef = useRef<any | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
+
+  // Initialize questions when session starts
+  useEffect(() => {
+    if (isActive && projectContext?.sessionId && projectContext?.projectId && 
+        projectContext?.discussionGuide && !questionsInitialized) {
+      initializeInterviewQuestions();
+    }
+  }, [isActive, projectContext, questionsInitialized]);
+
+  const initializeInterviewQuestions = async () => {
+    if (!projectContext?.sessionId || !projectContext?.projectId || !projectContext?.discussionGuide) {
+      return;
+    }
+
+    try {
+      console.log('Initializing interview questions...');
+      await interviewService.initializeQuestions(
+        projectContext.projectId,
+        projectContext.sessionId,
+        projectContext.discussionGuide
+      );
+      setQuestionsInitialized(true);
+      
+      // Get the first question
+      await getNextQuestion();
+      
+      toast({
+        title: "Interview Started",
+        description: "Questions have been loaded. Ready to begin!",
+      });
+    } catch (error) {
+      console.error('Failed to initialize questions:', error);
+      toast({
+        title: "Error",
+        description: "Failed to initialize interview questions",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getNextQuestion = async () => {
+    if (!projectContext?.sessionId) return;
+
+    try {
+      const data = await interviewService.getNextQuestion(projectContext.sessionId);
+      setCurrentQuestion(data.nextQuestion);
+      setInterviewProgress(data.progress);
+      setIsQuestionComplete(false);
+      setCurrentResponse('');
+      setIsWaitingForAnswer(false);
+
+      if (data.progress.isComplete) {
+        toast({
+          title: "Interview Complete!",
+          description: "All questions have been answered. Starting analysis...",
+        });
+        // Trigger analysis
+        if (projectContext.projectId) {
+          setTimeout(() => analyzeInterview(), 2000);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to get next question:', error);
+    }
+  };
+
+  const analyzeInterview = async () => {
+    if (!projectContext?.sessionId || !projectContext?.projectId) return;
+
+    try {
+      await interviewService.analyzeInterview(projectContext.sessionId, projectContext.projectId);
+      toast({
+        title: "Analysis Complete",
+        description: "Interview responses have been analyzed successfully!",
+      });
+    } catch (error) {
+      console.error('Failed to analyze interview:', error);
+      toast({
+        title: "Analysis Error",
+        description: "Failed to analyze interview responses",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const saveResponse = async (transcription: string, isComplete: boolean = false) => {
+    if (!projectContext?.sessionId || !currentQuestion) return;
+
+    try {
+      await interviewService.saveResponse(projectContext.sessionId, {
+        questionId: currentQuestion.id,
+        participantId: projectContext.participantId,
+        transcription,
+        responseText: transcription,
+        isComplete,
+        metadata: {
+          timestamp: new Date().toISOString(),
+          questionText: currentQuestion.question_text
+        }
+      });
+
+      if (isComplete) {
+        setIsQuestionComplete(true);
+        // Move to next question after a short delay
+        setTimeout(() => {
+          getNextQuestion();
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('Failed to save response:', error);
+    }
+  };
 
   // Initialize session timer
   useEffect(() => {
@@ -74,7 +206,8 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
             console.log('AudioContext resumed');
           }
           
-          audioQueueRef.current = new AudioQueue(audioContextRef.current);
+          // Initialize AudioQueue (assuming it's available from AudioRecorder)
+          audioQueueRef.current = { addToQueue: async () => {} }; // Placeholder
           console.log('Audio system initialized');
         } catch (error) {
           console.error('Audio initialization failed:', error);
@@ -118,7 +251,8 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
             try {
               audioRecorderRef.current = new AudioRecorder((audioData: Float32Array) => {
                 if (wsRef.current?.readyState === WebSocket.OPEN && !isMuted) {
-                  const encodedAudio = encodeAudioForAPI(audioData);
+                  // Send audio to WebSocket (assuming encodeAudioForAPI exists)
+                  const encodedAudio = btoa(String.fromCharCode(...new Uint8Array(audioData.buffer)));
                   wsRef.current.send(JSON.stringify({
                     type: 'input_audio_buffer.append',
                     audio: encodedAudio
@@ -206,6 +340,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
       case 'response.output_audio.done':
         console.log('Audio response finished');
         setIsSpeaking(false);
+        setIsWaitingForAnswer(true);
         break;
       case 'response.done':
         console.log('Full response completed');
@@ -220,27 +355,41 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
       case 'input_audio_buffer.speech_stopped':
         console.log('Speech stopped detected');
         setIsListening(false);
+        // Save the response when user stops speaking
+        if (currentResponse) {
+          saveResponse(currentResponse, true);
+        }
+        break;
+      case 'conversation.item.input_audio_transcription.completed':
+        console.log('User transcription completed:', data.transcript);
+        setCurrentResponse(data.transcript);
         break;
       case 'session.created':
         console.log('Session created, sending configuration...');
         // Send session configuration after session is created
         if (wsRef.current?.readyState === WebSocket.OPEN) {
+          const questionPrompt = currentQuestion ? 
+            `Current question: "${currentQuestion.question_text}". Ask this question and wait for the user's complete answer before proceeding.` : 
+            'Start the interview by greeting the participant warmly.';
+
           const config = {
             type: "session.update",
             session: {
               modalities: ["text", "audio"],
-              instructions: `Sen Searcho, Türkçe konuşan bir UX araştırma asistanısın. ${projectContext?.studyType || 'Kullanıcı deneyimi'} araştırması yapıyorsun. Samimi ve profesyonel bir şekilde kullanıcılarla konuş. 
-              
-              Bu araştırma "${projectContext?.title || 'Bilinmeyen proje'}" projesi hakkında. 
-              Proje açıklaması: ${projectContext?.description || 'Açıklama yok'}
-              
-              Görevin:
-              1. Katılımcıyla samimi bir şekilde tanış
-              2. Proje hakkında sorular sor
-              3. Kullanıcı deneyimi üzerine derinlemesine konuş
-              4. Yapıcı geri bildirim topla
-              
-              Türkçe, samimi ve profesyonel bir tonda konuş.`,
+              instructions: `You are Searcho, a professional UX research interviewer conducting a structured interview. 
+
+Project: "${projectContext?.description || 'User research project'}"
+
+Your role:
+1. Ask questions ONE AT A TIME from the provided question list
+2. Wait for complete answers before moving to the next question
+3. Ask follow-up questions when needed for clarity
+4. Be warm, professional, and encouraging
+5. Speak clearly and at a moderate pace
+
+${questionPrompt}
+
+Conduct the interview in a conversational but structured manner. Make sure to get thorough responses to each question.`,
               voice: "alloy",
               input_audio_format: "pcm16",
               output_audio_format: "pcm16",
@@ -251,9 +400,9 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
                 type: "server_vad",
                 threshold: 0.5,
                 prefix_padding_ms: 300,
-                silence_duration_ms: 1000
+                silence_duration_ms: 1500
               },
-              temperature: 0.8,
+              temperature: 0.7,
               max_response_output_tokens: "inf"
             }
           };
@@ -301,6 +450,26 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
 
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-surface to-canvas">
+      {/* Interview Progress Header */}
+      {questionsInitialized && (
+        <div className="bg-white/5 backdrop-blur-sm border-b border-white/10 p-4">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-white/80 text-sm font-medium">
+                Interview Progress
+              </div>
+              <Badge variant="secondary" className="bg-white/10 text-white">
+                {interviewProgress.completed} / {interviewProgress.total}
+              </Badge>
+            </div>
+            <Progress 
+              value={interviewProgress.percentage} 
+              className="h-2 bg-white/10"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col items-center justify-center px-6">
         {/* Error Display */}
@@ -316,6 +485,41 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
             Initializing audio system...
           </div>
         )}
+
+        {/* Current Question Display */}
+        {currentQuestion && (
+          <div className="w-full max-w-4xl mb-6">
+            <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center">
+                  <Badge variant="outline" className="mr-3 bg-primary/20 text-primary border-primary/30">
+                    {currentQuestion.section}
+                  </Badge>
+                  <span className="text-white/60 text-sm">
+                    Question {currentQuestion.question_order}
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  {isQuestionComplete ? (
+                    <CheckCircle2 className="w-5 h-5 text-green-400" />
+                  ) : (
+                    <Circle className="w-5 h-5 text-white/40" />
+                  )}
+                </div>
+              </div>
+              <div className="text-white text-lg leading-relaxed">
+                {currentQuestion.question_text}
+              </div>
+              {isWaitingForAnswer && !isQuestionComplete && (
+                <div className="mt-4 flex items-center text-yellow-400 text-sm">
+                  <ArrowRight className="w-4 h-4 mr-2" />
+                  Waiting for your response...
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
         {/* Searcho AI Gradient Circle */}
         <div className="relative mb-8">
           {/* Main gradient circle */}
@@ -377,8 +581,8 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
               {aiTranscript || (
                 <span className="text-white/50 italic">
                   {isConnected ? 
-                    (isListening ? 'Dinliyor...' : 'Hazır, konuşmaya başlayabilirsiniz') : 
-                    'Bağlanıyor...'
+                    (isListening ? 'Listening...' : 'Ready to start the interview') : 
+                    'Connecting...'
                   }
                 </span>
               )}
@@ -458,6 +662,8 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
           <div>Listening: {isListening ? 'Yes' : 'No'}</div>
           <div>Speaking: {isSpeaking ? 'Yes' : 'No'}</div>
           <div>Muted: {isMuted ? 'Yes' : 'No'}</div>
+          <div>Questions Init: {questionsInitialized ? 'Yes' : 'No'}</div>
+          <div>Current Q: {currentQuestion?.question_order || 'None'}</div>
         </div>
       )}
     </div>

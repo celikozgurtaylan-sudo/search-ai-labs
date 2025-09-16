@@ -14,6 +14,96 @@ export type Database = {
   }
   public: {
     Tables: {
+      interview_questions: {
+        Row: {
+          created_at: string
+          id: string
+          is_follow_up: boolean | null
+          parent_question_id: string | null
+          project_id: string
+          question_order: number
+          question_text: string
+          question_type: string | null
+          section: string | null
+          session_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_follow_up?: boolean | null
+          parent_question_id?: string | null
+          project_id: string
+          question_order: number
+          question_text: string
+          question_type?: string | null
+          section?: string | null
+          session_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_follow_up?: boolean | null
+          parent_question_id?: string | null
+          project_id?: string
+          question_order?: number
+          question_text?: string
+          question_type?: string | null
+          section?: string | null
+          session_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      interview_responses: {
+        Row: {
+          analyzed: boolean | null
+          audio_duration_ms: number | null
+          confidence_score: number | null
+          created_at: string
+          id: string
+          is_complete: boolean | null
+          metadata: Json | null
+          participant_id: string | null
+          question_id: string
+          response_text: string | null
+          session_id: string
+          transcription: string | null
+          updated_at: string
+        }
+        Insert: {
+          analyzed?: boolean | null
+          audio_duration_ms?: number | null
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          is_complete?: boolean | null
+          metadata?: Json | null
+          participant_id?: string | null
+          question_id: string
+          response_text?: string | null
+          session_id: string
+          transcription?: string | null
+          updated_at?: string
+        }
+        Update: {
+          analyzed?: boolean | null
+          audio_duration_ms?: number | null
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          is_complete?: boolean | null
+          metadata?: Json | null
+          participant_id?: string | null
+          question_id?: string
+          response_text?: string | null
+          session_id?: string
+          transcription?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           analysis: Json | null
