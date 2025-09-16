@@ -31,6 +31,8 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [canSkip, setCanSkip] = useState(false);
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [preambleCompleted, setPreambleCompleted] = useState(false);
 
   // Generate all audio chunks on mount
   useEffect(() => {
@@ -83,15 +85,18 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
   };
   const playCurrentChunk = useCallback(() => {
     if (currentChunk >= TURKISH_PREAMBLE_CHUNKS.length) {
-      // Preamble complete
+      // All chunks completed, now wait for user response
       setIsPlaying(false);
-      setTimeout(() => onComplete(), 1000);
+      setPreambleCompleted(true);
+      setIsWaitingForResponse(true);
+      console.log('Preamble completed, waiting for user response...');
       return;
     }
 
     // Stop any currently playing audio to prevent overlap
     if (currentAudio) {
       currentAudio.pause();
+      currentAudio.currentTime = 0; // Reset to beginning
       setCurrentAudio(null);
     }
 
@@ -114,6 +119,12 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
             setCurrentChunk(prev => prev + 1);
           }, 2000); // 2-second pause for consistency
         };
+        
+        // Add loading event to prevent multiple plays
+        audio.onloadstart = () => {
+          console.log(`Loading audio for chunk ${currentChunk + 1}`);
+        };
+        
         audio.play().catch(console.error);
       } catch (error) {
         console.error('Audio creation error:', error);
@@ -129,7 +140,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         setCurrentChunk(prev => prev + 1);
       }, 4000); // 3s for text + 2s pause = 5s total, reduced to 4s for better flow
     }
-  }, [currentChunk, audioQueue, onComplete, currentAudio]);
+  }, [currentChunk, audioQueue, currentAudio]);
 
   // Handle chunk progression
   useEffect(() => {
@@ -141,6 +152,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
   const handleSkip = () => {
     if (currentAudio) {
       currentAudio.pause();
+      currentAudio.currentTime = 0;
       setCurrentAudio(null);
     }
     setIsPlaying(false);
@@ -150,6 +162,13 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
       onComplete();
     }
   };
+
+  const handleContinue = () => {
+    console.log('User chose to continue to structured questions');
+    setIsWaitingForResponse(false);
+    onComplete();
+  };
+
   const handleManualStart = () => {
     if (!isPlaying && !isGeneratingAudio) {
       startPreamble();
@@ -166,26 +185,62 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         </div>
 
         <div className="mb-8 min-h-[100px] flex items-center justify-center">
-          {isGeneratingAudio ? <div className="text-muted-foreground">
+          {isGeneratingAudio ? (
+            <div className="text-muted-foreground">
               <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2"></div>
               Ses hazırlanıyor...
-            </div> : isPlaying && currentChunk < TURKISH_PREAMBLE_CHUNKS.length ? <TypewriterText text={TURKISH_PREAMBLE_CHUNKS[currentChunk]} speed={50} className="text-lg leading-relaxed" showCursor={false} /> : !isPlaying && currentChunk === 0 ? <div className="text-muted-foreground">
+            </div>
+          ) : isWaitingForResponse ? (
+            <div className="text-center">
+              <TypewriterText 
+                text={TURKISH_PREAMBLE_CHUNKS[TURKISH_PREAMBLE_CHUNKS.length - 1]} 
+                speed={50} 
+                className="text-lg leading-relaxed mb-4" 
+                showCursor={false} 
+              />
+              <div className="text-sm text-muted-foreground mt-4">
+                Devam etmek için butona basın veya "hayır" / "yok" deyin
+              </div>
+            </div>
+          ) : isPlaying && currentChunk < TURKISH_PREAMBLE_CHUNKS.length ? (
+            <TypewriterText 
+              text={TURKISH_PREAMBLE_CHUNKS[currentChunk]} 
+              speed={50} 
+              className="text-lg leading-relaxed" 
+              showCursor={false} 
+            />
+          ) : !isPlaying && currentChunk === 0 ? (
+            <div className="text-muted-foreground">
               Başlamak için butona basın
-            </div> : <div className="text-lg text-primary font-medium">
+            </div>
+          ) : (
+            <div className="text-lg text-primary font-medium">
               Yapılandırılmış görüşmeye geçiliyor...
-            </div>}
+            </div>
+          )}
         </div>
 
         <div className="flex justify-center gap-4">
-          {!isPlaying && !isGeneratingAudio && currentChunk === 0 && <Button onClick={handleManualStart} className="flex items-center gap-2">
+          {!isPlaying && !isGeneratingAudio && currentChunk === 0 && (
+            <Button onClick={handleManualStart} className="flex items-center gap-2">
               <Play className="w-4 h-4" />
               Başlat
-            </Button>}
+            </Button>
+          )}
           
-          {isPlaying && canSkip && <Button variant="outline" onClick={handleSkip} className="flex items-center gap-2">
+          {isWaitingForResponse && (
+            <Button onClick={handleContinue} className="flex items-center gap-2">
+              <SkipForward className="w-4 h-4" />
+              Devam Et
+            </Button>
+          )}
+          
+          {isPlaying && canSkip && !isWaitingForResponse && (
+            <Button variant="outline" onClick={handleSkip} className="flex items-center gap-2">
               <SkipForward className="w-4 h-4" />
               Geç
-            </Button>}
+            </Button>
+          )}
         </div>
       </Card>
     </div>;
