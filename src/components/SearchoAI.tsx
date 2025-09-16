@@ -454,7 +454,7 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
   if (!isActive) return null;
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-surface to-canvas">
+    <div className="flex flex-col h-full bg-gradient-to-b from-surface to-canvas overflow-hidden">
       {/* Interview Progress Header */}
       {questionsInitialized && (
         <div className="bg-white/5 backdrop-blur-sm border-b border-white/10 p-4">
@@ -622,11 +622,12 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
                   ? 'bg-red-500/30 border-red-400 text-red-300 hover:bg-red-500/40' 
                   : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
                 }
-                min-w-[90px] h-10 font-medium transition-all duration-200 z-10
+                min-w-[90px] h-12 font-medium transition-all duration-200 z-50
                 focus:ring-2 focus:ring-white/50 focus:ring-offset-2 focus:ring-offset-transparent
+                shadow-lg
               `}
             >
-              {isMuted ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
+              {isMuted ? <MicOff className="w-5 h-5 mr-2" /> : <Mic className="w-5 h-5 mr-2" />}
               <span className="hidden sm:inline text-sm">
                 {isMuted ? 'Unmute' : 'Mute'}
               </span>
@@ -635,10 +636,10 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
             <Button
               variant="outline"
               size="lg"
-              className="bg-white/10 border-white/20 text-white hover:bg-white/20 h-10 px-3"
+              className="bg-white/10 border-white/20 text-white hover:bg-white/20 h-12 px-3 shadow-lg"
               title="Video options"
             >
-              <Video className="w-4 h-4" />
+              <Video className="w-5 h-5" />
             </Button>
 
             {onSessionEnd && (
@@ -646,7 +647,7 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
                 variant="destructive"
                 size="lg"
                 onClick={onSessionEnd}
-                className="bg-red-600 hover:bg-red-700 text-white min-w-[100px] h-10 font-medium"
+                className="bg-red-600 hover:bg-red-700 text-white min-w-[100px] h-12 font-medium shadow-lg"
               >
                 End Session
               </Button>
