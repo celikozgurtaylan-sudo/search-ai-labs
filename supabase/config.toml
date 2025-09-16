@@ -8,3 +8,6 @@ verify_jwt = true
 
 [functions.generate-questions]
 verify_jwt = true
+
+[functions.process-document]
+verify_jwt = true
