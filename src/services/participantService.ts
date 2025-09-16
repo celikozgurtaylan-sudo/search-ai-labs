@@ -110,7 +110,9 @@ export const participantService = {
   },
 
   generateInvitationToken(): string {
-    return `inv_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
+    const prefix = 'user-study';
+    const randomPart = Math.random().toString(36).substring(2, 10); // shorter, more readable
+    return `${prefix}-${randomPart}`;
   },
 
   generateSessionToken(): string {

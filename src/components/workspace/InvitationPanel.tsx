@@ -164,7 +164,7 @@ const InvitationPanel = ({
   };
 
   const handleCopyInvitationLink = (token: string) => {
-    const link = `${window.location.origin}/participate/${token}`;
+    const link = `${window.location.origin}/join/research/${token}`;
     navigator.clipboard.writeText(link);
     toast.success("Davet linki kopyalandı");
   };

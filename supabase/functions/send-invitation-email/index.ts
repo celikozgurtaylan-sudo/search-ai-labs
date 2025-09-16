@@ -29,7 +29,7 @@ const createEmailTemplate = (
   targetDevice: string = 'both',
   projectDescription?: string
 ) => {
-  const invitationLink = `${Deno.env.get('SUPABASE_URL')?.replace('/supabase', '')}/participate/${invitationToken}`;
+  const invitationLink = `${Deno.env.get('FRONTEND_URL')}/join/research/${invitationToken}`;
   const expirationDate = new Date(expiresAt).toLocaleDateString('tr-TR');
   
   // Dynamic content based on study type and target device

@@ -29,6 +29,7 @@ const App = () => (
             <Route path="/projects" element={<ProjectHistory />} />
             <Route path="/subscriptions" element={<Subscriptions />} />
             <Route path="/participate/:token" element={<ParticipantLanding />} />
+            <Route path="/join/research/:token" element={<ParticipantLanding />} />
             <Route path="/study-session/:sessionToken" element={<StudySession />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
