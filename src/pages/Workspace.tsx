@@ -92,9 +92,11 @@ const Workspace = () => {
     }
   }, [isResearchRelated, discussionGuide, projectData]);
 
-  // Calculate total animation duration and enable button after completion + 15 seconds
+  // Calculate total animation duration and enable button after completion + 8 seconds
   useEffect(() => {
     if (discussionGuide && !isButtonReady) {
+      console.log('Setting up button ready timer with discussionGuide:', discussionGuide);
+      
       const calculateAnimationDuration = () => {
         if (!discussionGuide?.sections) return 0;
         
@@ -114,10 +116,15 @@ const Workspace = () => {
 
       const animationDuration = calculateAnimationDuration();
       const totalWaitTime = animationDuration + 8000; // Add 8 seconds after animation
+      
+      console.log('Animation duration:', animationDuration, 'Total wait time:', totalWaitTime);
 
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
+        console.log('Setting isButtonReady to true');
         setIsButtonReady(true);
       }, totalWaitTime);
+
+      return () => clearTimeout(timeoutId);
     }
   }, [discussionGuide, isButtonReady]);
 
@@ -241,6 +248,7 @@ const Workspace = () => {
             onClick={handleNextStep}
             className="bg-brand-primary hover:bg-brand-primary-hover text-white"
             disabled={!isResearchRelated || !discussionGuide || !isButtonReady}
+            title={`Research: ${isResearchRelated}, Guide: ${!!discussionGuide}, Ready: ${isButtonReady}`}
           >
             <Users className="w-4 h-4 mr-2" />
             Sonraki: Katılımcıları Ekle →
