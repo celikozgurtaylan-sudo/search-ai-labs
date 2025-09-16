@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.interview-analysis]
 verify_jwt = false
+
+[functions.turkish-tts]
+verify_jwt = false

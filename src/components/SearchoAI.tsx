@@ -9,6 +9,7 @@ import { AudioRecorder } from '@/utils/AudioRecorder';
 import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import TurkishPreambleDisplay from './TurkishPreambleDisplay';
 
 interface SearchoAIProps {
   isActive: boolean;
@@ -47,6 +48,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   // Preamble state
   const [isPreamblePhase, setIsPreamblePhase] = useState(true);
   const [preambleComplete, setPreambleComplete] = useState(false);
+  const [showTurkishPreamble, setShowTurkishPreamble] = useState(true);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -392,21 +394,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
             type: "session.update",
             session: {
               modalities: ["text", "audio"],
-              instructions: isPreamblePhase ? 
-                `You are SEARCHO, a friendly UX research interviewer. This is the PREAMBLE phase.
-
-PREAMBLE INSTRUCTIONS:
-- Start with a warm, welcoming greeting
-- Introduce yourself as SEARCHO, the AI interviewer for this UX research session
-- Explain that this is a user research interview about "${projectContext?.description || 'the project'}"
-- Make the participant feel comfortable and explain the process briefly
-- Ask if they have any initial questions before we begin with the structured questions
-- Keep this conversational and natural - this is about building rapport
-- Once you sense they're ready and comfortable, say something like "Great! Now let's move into our structured questions" and then call the start_questions function
-
-Remember: Be warm, professional, and put them at ease. This preamble sets the tone for the entire interview.` :
-
-                `You are SEARCHO, a professional UX research interviewer conducting a structured interview.
+              instructions: `You are SEARCHO, a professional UX research interviewer conducting a structured interview.
 
 QUESTION PHASE INSTRUCTIONS:
 - You are now in the structured question phase of the interview
@@ -429,18 +417,7 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                 prefix_padding_ms: 300,
                 silence_duration_ms: 1000
               },
-              tools: isPreamblePhase ? [
-                {
-                  type: "function",
-                  name: "start_questions",
-                  description: "Call this function when the preamble is complete and you're ready to transition to structured questions. Use this after the participant seems comfortable and ready.",
-                  parameters: {
-                    type: "object",
-                    properties: {},
-                    required: []
-                  }
-                }
-              ] : [
+              tools: [
                 {
                   type: "function", 
                   name: "save_response",
@@ -521,6 +498,17 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
   };
 
   if (!isActive) return null;
+
+  // Show Turkish preamble if in preamble phase
+  if (showTurkishPreamble && isPreamblePhase) {
+    return (
+      <TurkishPreambleDisplay 
+        projectContext={projectContext}
+        onComplete={startActualQuestions}
+        onSkip={startActualQuestions}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-surface to-canvas overflow-hidden">
