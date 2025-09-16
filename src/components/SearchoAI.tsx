@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, Video, VideoOff } from 'lucide-react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '../utils/AudioRecorder';
+import VoiceWaveVisualizer from '@/components/ui/voice-wave-visualizer';
 
 interface SearchoAIProps {
   isActive: boolean;
@@ -18,10 +19,27 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [aiTranscript, setAiTranscript] = useState('');
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
   const audioQueueRef = useRef<AudioQueue | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+
+  // Initialize session timer
+  useEffect(() => {
+    if (isActive && !sessionStartTime) {
+      setSessionStartTime(new Date());
+    }
+    
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, [isActive, sessionStartTime]);
 
   // Initialize audio context and queue
   useEffect(() => {
@@ -66,6 +84,15 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
               });
 
               await audioRecorderRef.current.start();
+              
+              // Get audio stream for visualization
+              try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioStreamRef.current = stream;
+              } catch (error) {
+                console.error('Error getting audio stream for visualization:', error);
+              }
+              
               console.log('Audio recording started');
             } catch (error) {
               console.error('Error starting audio recording:', error);
@@ -122,8 +149,16 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
         }
         setIsSpeaking(true);
         break;
+      case 'response.audio_transcript.delta':
+        // Accumulate AI transcript for display
+        setAiTranscript(prev => prev + (data.delta || ''));
+        break;
       case 'response.audio.done':
         setIsSpeaking(false);
+        break;
+      case 'response.done':
+        // Clear transcript for next response
+        setTimeout(() => setAiTranscript(''), 2000);
         break;
       case 'input_audio_buffer.speech_started':
         setIsListening(true);
@@ -191,101 +226,150 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     console.log(`Audio ${newMutedState ? 'muted' : 'unmuted'}`);
   };
 
+  const getSessionDuration = () => {
+    if (!sessionStartTime) return '00:00';
+    const duration = Math.floor((currentTime.getTime() - sessionStartTime.getTime()) / 1000);
+    const minutes = Math.floor(duration / 60);
+    const seconds = duration % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
   if (!isActive) return null;
 
   return (
-    <div className="flex flex-col items-center justify-center h-full bg-gradient-to-b from-surface to-canvas">
-      {/* Searcho AI Gradient Circle */}
-      <div className="relative">
-        {/* Main gradient circle */}
-        <div 
-          className={`
-            w-48 h-48 rounded-full relative overflow-hidden transition-all duration-500 ease-in-out
-            ${isSpeaking ? 'scale-110 shadow-2xl' : 'scale-100 shadow-xl'}
-          `}
-          style={{
-            background: `
-              radial-gradient(circle at 30% 30%, #667eea 0%, #764ba2 45%, #f093fb 100%),
-              linear-gradient(135deg, rgba(102, 126, 234, 0.8) 0%, rgba(118, 75, 162, 0.9) 50%, rgba(240, 147, 251, 0.8) 100%)
-            `
-          }}
-        >
-          {/* Inner glow effect */}
+    <div className="flex flex-col h-full bg-gradient-to-b from-surface to-canvas">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6">
+        {/* Searcho AI Gradient Circle */}
+        <div className="relative mb-8">
+          {/* Main gradient circle */}
           <div 
             className={`
-              absolute inset-4 rounded-full transition-all duration-300
-              ${isSpeaking ? 'animate-pulse' : ''}
+              w-48 h-48 rounded-full relative overflow-hidden transition-all duration-500 ease-in-out
+              ${isSpeaking ? 'scale-110 shadow-2xl' : 'scale-100 shadow-xl'}
             `}
             style={{
-              background: 'radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.1) 70%, transparent 100%)'
+              background: `
+                radial-gradient(circle at 30% 30%, #667eea 0%, #764ba2 45%, #f093fb 100%),
+                linear-gradient(135deg, rgba(102, 126, 234, 0.8) 0%, rgba(118, 75, 162, 0.9) 50%, rgba(240, 147, 251, 0.8) 100%)
+              `
             }}
-          />
-          
-          {/* Speaking animation waves */}
-          {isSpeaking && (
-            <>
-              <div className="absolute inset-0 rounded-full border-2 border-white/30 animate-ping" />
-              <div className="absolute inset-2 rounded-full border-2 border-white/20 animate-ping animation-delay-75" />
-              <div className="absolute inset-4 rounded-full border-2 border-white/10 animate-ping animation-delay-150" />
-            </>
-          )}
+          >
+            {/* Inner glow effect */}
+            <div 
+              className={`
+                absolute inset-4 rounded-full transition-all duration-300
+                ${isSpeaking ? 'animate-pulse' : ''}
+              `}
+              style={{
+                background: 'radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.1) 70%, transparent 100%)'
+              }}
+            />
+            
+            {/* Speaking animation waves */}
+            {isSpeaking && (
+              <>
+                <div className="absolute inset-0 rounded-full border-2 border-white/30 animate-ping" />
+                <div className="absolute inset-2 rounded-full border-2 border-white/20 animate-ping animation-delay-75" />
+                <div className="absolute inset-4 rounded-full border-2 border-white/10 animate-ping animation-delay-150" />
+              </>
+            )}
 
-          {/* Searcho logo/icon in center */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-white font-bold text-2xl tracking-wider">
-              SEARCHO
+            {/* Searcho logo/icon in center */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-white font-bold text-2xl tracking-wider">
+                SEARCHO
+              </div>
+            </div>
+          </div>
+
+          {/* Connection status indicator */}
+          <div className={`
+            absolute -top-2 -right-2 w-6 h-6 rounded-full border-2 border-white
+            ${isConnected ? 'bg-green-500' : 'bg-red-500'}
+          `} />
+        </div>
+
+        {/* AI Transcript Display */}
+        <div className="w-full max-w-2xl mb-6">
+          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 min-h-[120px] border border-white/20">
+            <div className="flex items-center mb-2">
+              <div className="text-sm font-medium text-white/80">SEARCHO (Interviewer)</div>
+              <div className={`ml-2 w-2 h-2 rounded-full ${isSpeaking ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} />
+            </div>
+            <div className="text-white text-base leading-relaxed">
+              {aiTranscript || (
+                <span className="text-white/50 italic">
+                  {isConnected ? 
+                    (isListening ? 'Dinliyor...' : 'Hazır, konuşmaya başlayabilirsiniz') : 
+                    'Bağlanıyor...'
+                  }
+                </span>
+              )}
             </div>
           </div>
         </div>
-
-        {/* Connection status indicator */}
-        <div className={`
-          absolute -top-2 -right-2 w-6 h-6 rounded-full border-2 border-white
-          ${isConnected ? 'bg-green-500' : 'bg-red-500'}
-        `} />
       </div>
 
-      {/* Status Text */}
-      <div className="mt-8 text-center">
-        <h3 className="text-xl font-semibold text-text-primary mb-2">
-          {isConnected ? 'Searcho AI Hazır' : 'Bağlanıyor...'}
-        </h3>
-        <p className="text-text-secondary text-sm">
-          {isListening && 'Dinliyor...'}
-          {isSpeaking && 'Konuşuyor...'}
-          {!isListening && !isSpeaking && isConnected && 'Sizi dinliyorum, konuşmaya başlayabilirsiniz'}
-          {!isConnected && 'Searcho AI ile bağlantı kuruluyor...'}
-        </p>
-      </div>
+      {/* Bottom Controls Bar */}
+      <div className="bg-white/5 backdrop-blur-sm border-t border-white/10 p-4">
+        <div className="flex items-center justify-between max-w-4xl mx-auto">
+          {/* Session Timer */}
+          <div className="flex items-center space-x-4">
+            <div className="text-white/80 text-sm">
+              <span className="font-medium">{getSessionDuration()}</span>
+            </div>
+          </div>
 
-      {/* Audio Controls */}
-      <div className="mt-8 flex items-center space-x-4">
-        <Button
-          variant="outline"
-          size="lg"
-          onClick={toggleMute}
-          className={`
-            ${isMuted ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white'}
-          `}
-        >
-          {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-          {isMuted ? 'Sessize Alınmış' : 'Mikrofon Açık'}
-        </Button>
+          {/* Voice Wave Visualizer */}
+          <div className="flex-1 flex justify-center px-8">
+            <div className="bg-white/10 rounded-lg p-3 border border-white/20">
+              <VoiceWaveVisualizer 
+                isListening={isListening} 
+                audioStream={audioStreamRef.current}
+                className="opacity-80"
+              />
+            </div>
+          </div>
 
-        {onSessionEnd && (
-          <Button
-            variant="destructive"
-            size="lg"
-            onClick={onSessionEnd}
-          >
-            Görüşmeyi Bitir
-          </Button>
-        )}
+          {/* Audio/Video Controls */}
+          <div className="flex items-center space-x-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleMute}
+              className={`
+                ${isMuted ? 'bg-red-500/20 border-red-400 text-red-400' : 'bg-white/10 border-white/20 text-white hover:bg-white/20'}
+              `}
+            >
+              {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+            >
+              <Video className="w-4 h-4" />
+            </Button>
+
+            {onSessionEnd && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={onSessionEnd}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                End Session
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Debug info (only in development) */}
       {process.env.NODE_ENV === 'development' && (
-        <div className="mt-4 text-xs text-text-muted space-y-1">
+        <div className="absolute top-4 left-4 text-xs text-white/60 space-y-1 bg-black/20 p-2 rounded">
           <div>Connected: {isConnected ? 'Yes' : 'No'}</div>
           <div>Listening: {isListening ? 'Yes' : 'No'}</div>
           <div>Speaking: {isSpeaking ? 'Yes' : 'No'}</div>
