@@ -197,6 +197,7 @@ const Workspace = () => {
           <Button 
             onClick={handleNextStep}
             className="bg-brand-primary hover:bg-brand-primary-hover text-white"
+            disabled={!isResearchRelated || !discussionGuide}
           >
             <Users className="w-4 h-4 mr-2" />
             Sonraki: Katılımcıları Ekle →
