@@ -131,12 +131,12 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
     }
   }, [currentChunk, audioQueue, onComplete, currentAudio]);
 
-  // Handle initial chunk play when starting
+  // Handle chunk progression
   useEffect(() => {
-    if (isPlaying && currentChunk === 0) {
+    if (isPlaying && currentChunk < TURKISH_PREAMBLE_CHUNKS.length) {
       playCurrentChunk();
     }
-  }, [isPlaying]);
+  }, [currentChunk, isPlaying, playCurrentChunk]);
   const handleSkip = () => {
     if (currentAudio) {
       currentAudio.pause();

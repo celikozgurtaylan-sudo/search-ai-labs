@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import MinimalVoiceWaves from '@/components/ui/minimal-voice-waves';
 import { useToast } from '@/components/ui/use-toast';
-import { AudioRecorder } from '@/utils/AudioRecorder';
+import { AudioRecorder, AudioQueue } from '@/utils/AudioRecorder';
 import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -227,8 +227,8 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
             console.log('AudioContext resumed');
           }
           
-          // Initialize AudioQueue (assuming it's available from AudioRecorder)
-          audioQueueRef.current = { addToQueue: async () => {} }; // Placeholder
+          // Initialize AudioQueue
+          audioQueueRef.current = new AudioQueue(audioContextRef.current);
           console.log('Audio system initialized');
         } catch (error) {
           console.error('Audio initialization failed:', error);
