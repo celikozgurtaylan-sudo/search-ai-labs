@@ -134,9 +134,10 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
   // Handle chunk progression
   useEffect(() => {
     if (isPlaying && currentChunk < TURKISH_PREAMBLE_CHUNKS.length) {
+      console.log(`Starting chunk ${currentChunk + 1}/${TURKISH_PREAMBLE_CHUNKS.length}`);
       playCurrentChunk();
     }
-  }, [currentChunk, isPlaying, playCurrentChunk]);
+  }, [currentChunk, isPlaying]);
   const handleSkip = () => {
     if (currentAudio) {
       currentAudio.pause();
