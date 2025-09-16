@@ -94,7 +94,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   };
 
   // Function to transition from preamble to questions
-  const startActualQuestions = async () => {
+  const startActualQuestions = useCallback(async () => {
     console.log('Transitioning from preamble to questions...');
     setIsPreamblePhase(false);
     setPreambleComplete(true);
@@ -106,9 +106,9 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
       title: "Moving to Questions",
       description: "Now beginning the structured interview questions.",
     });
-  };
+  }, []);
 
-  const getNextQuestion = async () => {
+  const getNextQuestion = useCallback(async () => {
     if (!projectContext?.sessionId) return;
 
     try {
@@ -132,7 +132,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     } catch (error) {
       console.error('Failed to get next question:', error);
     }
-  };
+  }, [projectContext]); // Add dependencies
 
   const analyzeInterview = async () => {
     if (!projectContext?.sessionId || !projectContext?.projectId) return;
@@ -153,7 +153,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     }
   };
 
-  const saveResponse = async (transcription: string, isComplete: boolean = false) => {
+  const saveResponse = useCallback(async (transcription: string, isComplete: boolean = false) => {
     if (!projectContext?.sessionId || !currentQuestion) return;
 
     try {
@@ -179,7 +179,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     } catch (error) {
       console.error('Failed to save response:', error);
     }
-  };
+  }, [projectContext, currentQuestion]);
 
   // Initialize session timer
   useEffect(() => {
@@ -329,7 +329,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     };
   }, [isActive, isMuted]);
 
-  const handleSearchoMessage = async (data: any) => {
+  const handleSearchoMessage = useCallback(async (data: any) => {
     console.log('Received message type:', data.type, data);
     
     switch (data.type) {
@@ -489,7 +489,7 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
       default:
         console.log('Unhandled message type:', data.type);
     }
-  };
+  }, [isPreamblePhase, currentQuestion, projectContext]); // Add dependencies
 
   const toggleMute = () => {
     console.log('🔇 Mute button clicked - Current state:', { isMuted, wsConnected: wsRef.current?.readyState === WebSocket.OPEN });
