@@ -423,6 +423,7 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
   };
 
   const toggleMute = () => {
+    console.log('🔇 Mute button clicked - Current state:', { isMuted, wsConnected: wsRef.current?.readyState === WebSocket.OPEN });
     const newMutedState = !isMuted;
     setIsMuted(newMutedState);
     
@@ -432,10 +433,14 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
         wsRef.current.send(JSON.stringify({
           type: 'input_audio_buffer.clear'
         }));
+        console.log('🔇 Audio buffer cleared due to mute');
       }
+      console.log('🔇 Mute state changed via WebSocket:', newMutedState ? 'muted' : 'unmuted');
+    } else {
+      console.warn('🔇 WebSocket not available for mute command');
     }
     
-    console.log(`Audio ${newMutedState ? 'muted' : 'unmuted'}`);
+    console.log(`🔇 Audio ${newMutedState ? 'muted' : 'unmuted'}`);
   };
 
   const getSessionDuration = () => {
@@ -471,7 +476,7 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6">
+      <div className="flex-1 flex flex-col items-center justify-start pt-8 px-6 min-h-0">
         {/* Error Display */}
         {audioError && (
           <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-red-500/20 backdrop-blur-md border border-red-400/50 rounded-lg px-4 py-2 text-red-200 text-sm z-10">
@@ -585,8 +590,8 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
         </div>
       </div>
 
-      {/* Bottom Controls Bar */}
-      <div className="bg-white/5 backdrop-blur-sm border-t border-white/10 p-4">
+      {/* Bottom Controls Bar - Fixed position and always visible */}
+      <div className="bg-white/5 backdrop-blur-sm border-t border-white/10 p-4 mt-auto">
         <div className="flex items-center justify-between max-w-4xl mx-auto">
           {/* Session Timer */}
           <div className="flex items-center space-x-4">
@@ -596,8 +601,8 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
           </div>
 
           {/* Voice Wave Visualizer */}
-          <div className="flex-1 flex justify-center px-8">
-            <div className="bg-white/10 rounded-lg px-4 py-2 border border-white/20">
+          <div className="flex-1 flex justify-center px-4 sm:px-8">
+            <div className="bg-white/10 rounded-lg px-3 py-2 border border-white/20">
               <MinimalVoiceWaves 
                 isListening={isListening} 
                 audioStream={audioStreamRef.current}
@@ -606,30 +611,31 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
             </div>
           </div>
 
-          {/* Audio/Video Controls */}
-          <div className="flex items-center space-x-3">
+          {/* Audio/Video Controls - Enhanced for better accessibility */}
+          <div className="flex items-center space-x-2 sm:space-x-3">
             <Button
               variant="outline"
-              size="sm"
+              size="lg"
               onClick={toggleMute}
               className={`
                 ${isMuted 
                   ? 'bg-red-500/30 border-red-400 text-red-300 hover:bg-red-500/40' 
                   : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
                 }
-                min-w-[80px] font-medium
+                min-w-[90px] h-10 font-medium transition-all duration-200 z-10
+                focus:ring-2 focus:ring-white/50 focus:ring-offset-2 focus:ring-offset-transparent
               `}
             >
               {isMuted ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
-              <span className="hidden sm:inline">
+              <span className="hidden sm:inline text-sm">
                 {isMuted ? 'Unmute' : 'Mute'}
               </span>
             </Button>
 
             <Button
               variant="outline"
-              size="sm"
-              className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+              size="lg"
+              className="bg-white/10 border-white/20 text-white hover:bg-white/20 h-10 px-3"
               title="Video options"
             >
               <Video className="w-4 h-4" />
@@ -638,9 +644,9 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
             {onSessionEnd && (
               <Button
                 variant="destructive"
-                size="sm"
+                size="lg"
                 onClick={onSessionEnd}
-                className="bg-red-600 hover:bg-red-700 text-white min-w-[100px]"
+                className="bg-red-600 hover:bg-red-700 text-white min-w-[100px] h-10 font-medium"
               >
                 End Session
               </Button>

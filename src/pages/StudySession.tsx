@@ -248,8 +248,8 @@ const StudySession = () => {
 
             {/* Right Side - Searcho AI */}
             <div className="lg:col-span-7">
-              <Card className="h-[70vh] flex flex-col">
-                <CardContent className="p-0 h-full flex flex-col">
+              <Card className="min-h-[70vh] flex flex-col">
+                <CardContent className="p-0 flex-1 flex flex-col">
                   <SearchoAI
                     isActive={sessionStatus === 'active'}
                     projectContext={{
