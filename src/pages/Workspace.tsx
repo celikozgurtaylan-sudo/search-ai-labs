@@ -100,7 +100,7 @@ const Workspace = () => {
       };
 
       const animationDuration = calculateAnimationDuration();
-      const totalWaitTime = animationDuration + 15000; // Add 15 seconds after animation
+      const totalWaitTime = animationDuration + 8000; // Add 8 seconds after animation
 
       setTimeout(() => {
         setIsButtonReady(true);
