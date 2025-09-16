@@ -164,9 +164,9 @@ const InvitationPanel = ({
   };
 
   const handleCopyInvitationLink = (token: string) => {
-    const link = `https://testsession.searcho.online/join/research/${token}`;
+    const link = `https://testsession.searcho.online/workspace/session/${token}`;
     navigator.clipboard.writeText(link);
-    toast.success("Davet linki kopyalandı");
+    toast.success("Araştırmacı linki kopyalandı");
   };
 
   const getStatusBadge = (status: StudyParticipant['status']) => {

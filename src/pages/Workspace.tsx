@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,7 @@ interface ProjectData {
 
 const Workspace = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const isMobile = useIsMobile();
   const { user } = useAuth();
   const [projectData, setProjectData] = useState<ProjectData | null>(null);
@@ -37,6 +38,18 @@ const Workspace = () => {
   const [isButtonReady, setIsButtonReady] = useState(false);
 
   useEffect(() => {
+    // Check for researcher session first
+    const researcherSession = localStorage.getItem('researcher-session');
+    if (researcherSession) {
+      const sessionData = JSON.parse(researcherSession);
+      setProjectData(sessionData.projectData);
+      setCurrentStep(sessionData.autoStartPhase || 'starting');
+      setIsResearchRelated(true);
+      localStorage.removeItem('researcher-session'); // Clean up
+      return;
+    }
+
+    // Normal project loading
     const stored = localStorage.getItem('searchai-project');
     if (stored) {
       const data = JSON.parse(stored);

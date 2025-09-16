@@ -12,6 +12,7 @@ import Subscriptions from "./pages/Subscriptions";
 import NotFound from "./pages/NotFound";
 import ParticipantLanding from "./pages/ParticipantLanding";
 import StudySession from "./pages/StudySession";
+import ResearcherSession from "./pages/ResearcherSession";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +32,7 @@ const App = () => (
             <Route path="/participate/:token" element={<ParticipantLanding />} />
             <Route path="/join/research/:token" element={<ParticipantLanding />} />
             <Route path="/study-session/:sessionToken" element={<StudySession />} />
+            <Route path="/workspace/session/:token" element={<ResearcherSession />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
