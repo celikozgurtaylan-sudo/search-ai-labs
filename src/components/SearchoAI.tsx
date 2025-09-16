@@ -555,12 +555,6 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
               </>
             )}
 
-            {/* Searcho logo/icon in center */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-white font-bold text-2xl tracking-wider">
-                SEARCHO
-              </div>
-            </div>
           </div>
 
           {/* Connection status indicator */}
