@@ -20,6 +20,14 @@ serve(async (req) => {
 
     const { message, conversationHistory = [] } = await req.json();
 
+    // Check if this is a template-based message
+    const isNPSTemplate = message.includes('NPS tabanlı araştırma metodolojisi') || message.includes('müşteri memnuniyeti ve sadakat düzeyini ölçmeye');
+    const isAdTestingTemplate = message.includes('Reklam kampanyası performansını') || message.includes('hedef kitle tepkilerini değerlendirmek');
+    const isLandingPageTemplate = message.includes('Web sitesi açılış sayfasının') || message.includes('dönüşüm optimizasyonu');
+    const isFoundationalTemplate = message.includes('Kullanıcı ihtiyaçları ve pazar dinamiklerini') || message.includes('temel araştırma metodolojisi');
+    
+    const isTemplateMessage = isNPSTemplate || isAdTestingTemplate || isLandingPageTemplate || isFoundationalTemplate;
+
     // First, analyze if the message is research-related
     const analysisResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -122,42 +130,73 @@ SADECE "NET" veya "BELIRSIZ" yanıtı ver, başka hiçbir şey yazma.`
       console.log('Specificity analysis:', specificityData.choices[0].message.content);
       console.log('Is request specific:', isSpecific);
       
-      if (isSpecific) {
-        // Clear request - generate structured plan immediately
+      if (isSpecific || isTemplateMessage) {
+        // Clear request or template - generate structured plan immediately
         shouldGenerateResearchPlan = true;
-        systemPrompt = `Sen bir araştırma planı uzmanısın. Kullanıcının net araştırma talebine göre KATILIMCILARA SORULACAK görüşme sorularından oluşan bir plan oluştur.
+        
+        let templateSpecificPrompt = '';
+        if (isNPSTemplate) {
+          templateSpecificPrompt = `Sen bir NPS (Net Promoter Score) araştırma uzmanısın. Müşteri memnuniyeti ve sadakat ölçümü için kapsamlı bir görüşme planı oluştur.
 
-ÖNEMLI: Sorular KATILIMCILARA yöneliktir, müşteriye (B2B client) değil!
-- Sorular araştırmaya katılacak kişilere sorulacak
-- Katılımcıların deneyimlerini, davranışlarını, görüşlerini öğrenmeye odaklı
-- Görüşme/test sırasında kullanılacak sorular
+ÖNEMLI: Bu NPS araştırması için KATILIMCILARA SORULACAK sorular oluştur:
+- NPS skorunu etkileyen faktörleri keşfet
+- Müşteri sadakat düzeyini anlayacak sorular
+- Memnuniyet ve memnuniyetsizlik nedenlerini ortaya çıkaracak sorular
+- Referans verme eğilimini anlamaya yönelik sorular
 
 PLANIN ÖZELLİKLERİ:
-- Katılımcı deneyimini anlamaya yönelik sorular
-- Ürün/hizmet kullanım davranışlarını keşfeden sorular
-- Spesifik ve uygulanabilir görüşme soruları
-- Her soru katılımcıdan somut bilgi toplayacak şekilde
+- NPS metodolojisine uygun soru yapısı
+- Müşteri deneyimini derinlemesine analiz
+- Sadakat faktörlerini keşfeden sorular
+- Somut geri bildirim toplayacak yaklaşım`;
+        } else if (isAdTestingTemplate) {
+          templateSpecificPrompt = `Sen bir reklam testi uzmanısın. Reklam kampanyası performansını ve hedef kitle tepkilerini değerlendirmek için görüşme planı hazırla.
 
-ÖNEMLI: Yanıtını JSON formatında ver:
+REKLAM TESTİ İÇİN KATILIMCILARA SORULACAK SORULAR:
+- Reklam içeriğine ilk tepkileri
+- Marka algısına etkisi
+- Satın alma niyeti değişimi
+- Duygusal tepki analizi`;
+        } else if (isLandingPageTemplate) {
+          templateSpecificPrompt = `Sen bir web sitesi kullanılabilirlik uzmanısın. Açılış sayfasının optimizasyonu için kullanıcı test planı oluştur.
+
+AÇILIŞ SAYFASI TESTİ İÇİN KATILIMCILARA SORULACAK SORULAR:
+- İlk izlenim ve anlaşılırlık
+- Navigasyon ve kullanım kolaylığı
+- Dönüşüm engellerini tespit
+- Görsel tasarım ve içerik değerlendirmesi`;
+        } else if (isFoundationalTemplate) {
+          templateSpecificPrompt = `Sen bir temel kullanıcı araştırması uzmanısın. Kullanıcı ihtiyaçları ve pazar fırsatlarını keşfetmek için kapsamlı araştırma planı oluştur.
+
+TEMEL ARAŞTIRMA İÇİN KATILIMCILARA SORULACAK SORULAR:
+- Kullanıcı davranış kalıpları
+- İhtiyaç ve motivasyon faktörleri
+- Mevcut çözümlerin eksiklikleri
+- Gelecekteki beklenti ve trendler`;
+        }
+        
+        systemPrompt = `${templateSpecificPrompt}
+
+YANIT FORMATI:
 {
-  "chatResponse": "Katılımcı görüşmeleri için soru setini sağ panelde hazırladım. Bu sorularla araştırmanı gerçekleştirebilirsin.",
+  "chatResponse": "Seçtiğin araştırma türü için özel hazırlanmış görüşme sorularını sağ panelde bulabilirsin. Bu sorularla hemen araştırmana başlayabilirsin.",
   "researchPlan": {
-    "title": "[Araştırma konusuna uygun başlık]",
+    "title": "[Araştırma türüne uygun başlık]",
     "sections": [
       {
         "id": "background",
         "title": "Deneyim ve Geçmiş", 
-        "questions": ["[Ürün/hizmet] ile daha önce etkileşiminiz oldu mu?", "[İlgili alandaki] deneyiminizi anlatır mısınız?", "Bu tür [ürün/hizmetleri] ne sıklıkla kullanıyorsunuz?"]
+        "questions": ["[Konuya uygun 3 soru]"]
       },
       {
         "id": "methodology",
         "title": "Davranış ve Tercihler",
-        "questions": ["[Belirli görev] yaparken hangi adımları takip edersiniz?", "Bu süreçte karşılaştığınız zorluklar neler?", "[Özellik/alan] kullanırken ne hissediyorsunuz?"]
+        "questions": ["[Konuya uygun 3 soru]"]
       },
       {
         "id": "analysis", 
         "title": "Değerlendirme ve Öneriler",
-        "questions": ["Bu deneyimi 1-10 arasında nasıl değerlendirirsiniz?", "Hangi kısımlar sizin için en önemliydi?", "Ne gibi iyileştirmeler önerirsiniz?"]
+        "questions": ["[Konuya uygun 3 soru]"]
       }
     ]
   }
