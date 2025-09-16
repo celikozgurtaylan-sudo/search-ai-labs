@@ -26,11 +26,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 const ProjectHistory = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState("");
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -89,16 +93,31 @@ const ProjectHistory = () => {
     }
   };
 
-  const handleDeleteProject = async (project: Project, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDeleteProject = async () => {
+    if (!projectToDelete) return;
+    
     try {
-      await projectService.deleteProject(project.id!);
+      await projectService.deleteProject(projectToDelete.id!);
       toast.success('Proje kalıcı olarak silindi');
+      setProjectToDelete(null);
+      setDeleteConfirmationText("");
       loadProjects();
     } catch (error) {
       toast.error('Proje silinirken hata oluştu');
     }
   };
+
+  const openDeleteConfirmation = (project: Project) => {
+    setProjectToDelete(project);
+    setDeleteConfirmationText("");
+  };
+
+  const closeDeleteConfirmation = () => {
+    setProjectToDelete(null);
+    setDeleteConfirmationText("");
+  };
+
+  const isDeleteConfirmed = projectToDelete && deleteConfirmationText === projectToDelete.title;
 
   const getProjectTypeIcon = (project: Project) => {
     const template = project.analysis?.template;
@@ -299,34 +318,16 @@ const ProjectHistory = () => {
                                 <span>Geri Yükle</span>
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <DropdownMenuItem 
-                                    className="flex items-center space-x-2 text-red-600 cursor-pointer hover:bg-red-50"
-                                    onSelect={(e) => e.preventDefault()}
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                    <span>Kalıcı Sil</span>
-                                  </DropdownMenuItem>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent className="bg-surface">
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Projeyi kalıcı olarak sil</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Bu işlem geri alınamaz. Proje kalıcı olarak silinecek ve tüm veriler kaybolacak.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>İptal</AlertDialogCancel>
-                                    <AlertDialogAction 
-                                      onClick={(e) => handleDeleteProject(project, e)}
-                                      className="bg-red-600 hover:bg-red-700"
-                                    >
-                                      Kalıcı Sil
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
+                              <DropdownMenuItem 
+                                className="flex items-center space-x-2 text-red-600 cursor-pointer hover:bg-red-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDeleteConfirmation(project);
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                <span>Kalıcı Sil</span>
+                              </DropdownMenuItem>
                             </>
                           ) : (
                             <>
@@ -338,34 +339,16 @@ const ProjectHistory = () => {
                                 <span>Arşivle</span>
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <DropdownMenuItem 
-                                    className="flex items-center space-x-2 text-red-600 cursor-pointer hover:bg-red-50"
-                                    onSelect={(e) => e.preventDefault()}
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                    <span>Kalıcı Sil</span>
-                                  </DropdownMenuItem>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent className="bg-surface">
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Projeyi kalıcı olarak sil</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Bu işlem geri alınamaz. Projeyi önce arşivlemek isteyebilirsiniz.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>İptal</AlertDialogCancel>
-                                    <AlertDialogAction 
-                                      onClick={(e) => handleDeleteProject(project, e)}
-                                      className="bg-red-600 hover:bg-red-700"
-                                    >
-                                      Kalıcı Sil
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
+                              <DropdownMenuItem 
+                                className="flex items-center space-x-2 text-red-600 cursor-pointer hover:bg-red-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDeleteConfirmation(project);
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                <span>Kalıcı Sil</span>
+                              </DropdownMenuItem>
                             </>
                           )}
                         </DropdownMenuContent>
@@ -385,6 +368,46 @@ const ProjectHistory = () => {
           </div>
         )}
       </main>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!projectToDelete} onOpenChange={closeDeleteConfirmation}>
+        <AlertDialogContent className="bg-surface">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-600">
+              Projeyi Kalıcı Olarak Sil
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-4">
+              <p>
+                Bu işlem <strong>geri alınamaz</strong>. Proje kalıcı olarak silinecek ve tüm veriler kaybolacak.
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="delete-confirmation" className="text-sm font-medium">
+                  Silmek için proje başlığını yazın: <span className="font-bold text-text-primary">"{projectToDelete?.title}"</span>
+                </Label>
+                <Input
+                  id="delete-confirmation"
+                  value={deleteConfirmationText}
+                  onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                  placeholder="Proje başlığını buraya yazın..."
+                  className="w-full"
+                />
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={closeDeleteConfirmation}>
+              İptal
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteProject}
+              disabled={!isDeleteConfirmed}
+              className="bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Kalıcı Olarak Sil
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
