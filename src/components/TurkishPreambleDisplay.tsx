@@ -204,22 +204,23 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
     }
   }, [currentChunk, audioQueue, currentAudio, moveToNextChunk]);
 
-  // Handle chunk progression - only when explicitly triggered, not in a loop
+  // Handle chunk progression - only auto-start the first chunk
   useEffect(() => {
-    if (isPlaying && currentChunk < TURKISH_PREAMBLE_CHUNKS.length && currentChunk === 0) {
-      // Only start the first chunk automatically
+    if (isPlaying && currentChunk === 0) {
       console.log(`🚀 Auto-starting first chunk`);
       playCurrentChunk();
     }
   }, [isPlaying]);
 
-  // Manual progression trigger for subsequent chunks
+  // Cleanup on unmount
   useEffect(() => {
-    if (isPlaying && currentChunk > 0 && currentChunk < TURKISH_PREAMBLE_CHUNKS.length) {
-      console.log(`▶️ Playing chunk ${currentChunk + 1}/${TURKISH_PREAMBLE_CHUNKS.length}`);
-      playCurrentChunk();
-    }
-  }, [currentChunk]);
+    return () => {
+      if (currentAudio) {
+        currentAudio.pause();
+        setCurrentAudio(null);
+      }
+    };
+  }, []);
   const handleSkip = () => {
     if (currentAudio) {
       currentAudio.pause();
