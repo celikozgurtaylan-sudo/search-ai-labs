@@ -5,34 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import {
-  Plus,
-  Edit3,
-  Check,
-  X,
-  FileText,
-  Download,
-  Share,
-  CheckCircle2,
-  Clock,
-  Circle,
-  PlayCircle,
-  BarChart3,
-  Camera,
-  Monitor,
-  Loader2,
-  TrendingUp,
-  AlertTriangle,
-  Users,
-  Video,
-  User,
-  Sparkles,
-  RefreshCw
-} from "lucide-react";
+import { Plus, Edit3, Check, X, FileText, Download, Share, CheckCircle2, Clock, Circle, PlayCircle, BarChart3, Camera, Monitor, Loader2, TrendingUp, AlertTriangle, Users, Video, User, Sparkles, RefreshCw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import TypewriterText from "@/components/ui/typewriter-text";
-
 interface StudyPanelProps {
   discussionGuide: any;
   participants: any[]; // Will work with both old and new participant structures
@@ -40,35 +16,42 @@ interface StudyPanelProps {
   onGuideUpdate: (guide: any) => void;
   chatMessages?: any[];
 }
-
-const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate, chatMessages = [] }: StudyPanelProps) => {
+const StudyPanel = ({
+  discussionGuide,
+  participants,
+  currentStep,
+  onGuideUpdate,
+  chatMessages = []
+}: StudyPanelProps) => {
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [isScreenRecording, setIsScreenRecording] = useState(false);
   const [isCameraRecording, setIsCameraRecording] = useState(false);
-  const [loadingQuestions, setLoadingQuestions] = useState<{[key: string]: boolean}>({});
-  const [generatingQuestions, setGeneratingQuestions] = useState<{[key: string]: boolean}>({});
-  const [typewriterQuestions, setTypewriterQuestions] = useState<{[key: string]: string[]}>({});
+  const [loadingQuestions, setLoadingQuestions] = useState<{
+    [key: string]: boolean;
+  }>({});
+  const [generatingQuestions, setGeneratingQuestions] = useState<{
+    [key: string]: boolean;
+  }>({});
+  const [typewriterQuestions, setTypewriterQuestions] = useState<{
+    [key: string]: string[];
+  }>({});
   const [showTitleTypewriter, setShowTitleTypewriter] = useState(true);
-  const [showSectionTypewriters, setShowSectionTypewriters] = useState<{[key: string]: boolean}>({});
+  const [showSectionTypewriters, setShowSectionTypewriters] = useState<{
+    [key: string]: boolean;
+  }>({});
   const [showAnalysisTypewriter, setShowAnalysisTypewriter] = useState(false);
-  const [showQuestionTypewriters, setShowQuestionTypewriters] = useState<{[key: string]: boolean}>({});
-  const [loadingMessages] = useState([
-    "AI soruları oluşturuluyor...",
-    "Katılımcı deneyimini analiz ediyor...",
-    "En iyi soruları seçiyor...",
-    "Araştırma planını optimize ediyor..."
-  ]);
+  const [showQuestionTypewriters, setShowQuestionTypewriters] = useState<{
+    [key: string]: boolean;
+  }>({});
+  const [loadingMessages] = useState(["AI soruları oluşturuluyor...", "Katılımcı deneyimini analiz ediyor...", "En iyi soruları seçiyor...", "Araştırma planını optimize ediyor..."]);
   const [currentLoadingIndex, setCurrentLoadingIndex] = useState(0);
-
   const handleEditQuestion = (questionId: string, currentValue: string) => {
     setEditingQuestion(questionId);
     setEditValue(currentValue);
   };
-
   const handleSaveQuestion = (sectionId: string, questionIndex: number) => {
     if (!discussionGuide) return;
-
     const updatedGuide = {
       ...discussionGuide,
       sections: discussionGuide.sections.map((section: any) => {
@@ -83,15 +66,12 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
         return section;
       })
     };
-
     onGuideUpdate(updatedGuide);
     setEditingQuestion(null);
     setEditValue("");
   };
-
   const handleAddQuestion = (sectionId: string) => {
     if (!discussionGuide) return;
-
     const newQuestion = "Yeni soru - düzenlemek için tıklayın";
     const updatedGuide = {
       ...discussionGuide,
@@ -105,7 +85,6 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
         return section;
       })
     };
-
     onGuideUpdate(updatedGuide);
   };
 
@@ -120,7 +99,9 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
   // Initialize section typewriters when guide is loaded
   useEffect(() => {
     if (discussionGuide?.sections && Object.keys(showSectionTypewriters).length === 0) {
-      const initialSections: {[key: string]: boolean} = {};
+      const initialSections: {
+        [key: string]: boolean;
+      } = {};
       discussionGuide.sections.forEach((section: any, index: number) => {
         initialSections[section.id] = true;
       });
@@ -132,24 +113,25 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
   useEffect(() => {
     if (discussionGuide?.sections && Object.keys(showQuestionTypewriters).length === 0) {
       // Don't initialize questions - let them be undefined until typewriter starts
-      
+
       // Start showing questions section by section after a 2-second delay
       setTimeout(() => {
         let sectionStartDelay = 0;
-        
         discussionGuide.sections.forEach((section: any, sectionIndex: number) => {
           section.questions.forEach((question: string, questionIndex: number) => {
             const questionKey = `${section.id}-${questionIndex}`;
-            const questionDelay = sectionStartDelay + (questionIndex * 800);
-            
+            const questionDelay = sectionStartDelay + questionIndex * 800;
             setTimeout(() => {
-              setShowQuestionTypewriters(prev => ({ ...prev, [questionKey]: true }));
+              setShowQuestionTypewriters(prev => ({
+                ...prev,
+                [questionKey]: true
+              }));
             }, questionDelay);
           });
-          
+
           // Next section starts after all questions in current section finish
           // Add extra 400ms buffer between sections
-          sectionStartDelay += (section.questions.length * 800) + 400;
+          sectionStartDelay += section.questions.length * 800 + 400;
         });
       }, 2000); // 2-second base delay
     }
@@ -161,32 +143,34 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
       setShowAnalysisTypewriter(true);
     }
   }, [currentStep, showAnalysisTypewriter]);
-
   const generateAIQuestions = async (sectionId: string, sectionTitle: string) => {
-    setGeneratingQuestions(prev => ({ ...prev, [sectionId]: true }));
-    
+    setGeneratingQuestions(prev => ({
+      ...prev,
+      [sectionId]: true
+    }));
     try {
       // Get current questions for this section
       const currentSection = discussionGuide?.sections?.find((s: any) => s.id === sectionId);
       const existingQuestions = currentSection?.questions || [];
-      
+
       // Get the latest user message from chat as project description
       const userMessages = chatMessages.filter(msg => msg.type === 'user');
       const latestUserInput = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
-      
+
       // Fallback to stored project data if no chat messages
-      const projectDescription = latestUserInput || 
-        (localStorage.getItem('searchai-project') ? 
-          JSON.parse(localStorage.getItem('searchai-project')!).description : 
-          'Kullanıcı deneyimi araştırması');
-      
+      const projectDescription = latestUserInput || (localStorage.getItem('searchai-project') ? JSON.parse(localStorage.getItem('searchai-project')!).description : 'Kullanıcı deneyimi araştırması');
+
       // Random delay between 5-10 seconds
       const delay = Math.random() * 5000 + 5000;
-      setLoadingQuestions(prev => ({ ...prev, [sectionId]: true }));
-      
+      setLoadingQuestions(prev => ({
+        ...prev,
+        [sectionId]: true
+      }));
       await new Promise(resolve => setTimeout(resolve, delay));
-      
-      const { data, error } = await supabase.functions.invoke('generate-questions', {
+      const {
+        data,
+        error
+      } = await supabase.functions.invoke('generate-questions', {
         body: {
           sectionTitle,
           sectionId,
@@ -195,7 +179,6 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
           validateProject: true // Enable project validation
         }
       });
-
       if (error) {
         console.error('Error generating questions:', error);
         throw error;
@@ -203,24 +186,35 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
 
       // Check if validation failed
       if (data?.needsElaboration) {
-        setLoadingQuestions(prev => ({ ...prev, [sectionId]: false }));
-        setGeneratingQuestions(prev => ({ ...prev, [sectionId]: false }));
-        
+        setLoadingQuestions(prev => ({
+          ...prev,
+          [sectionId]: false
+        }));
+        setGeneratingQuestions(prev => ({
+          ...prev,
+          [sectionId]: false
+        }));
+
         // Show a message asking for more elaboration
         alert(`Lütfen daha detaylı bir araştırma projesi açıklaması yapın. Mevcut metin: "${projectDescription.substring(0, 100)}..." daha spesifik araştırma hedefleri içermiyor.`);
         return;
       }
-
       const questions = data?.questions || [];
-      setLoadingQuestions(prev => ({ ...prev, [sectionId]: false }));
-      
+      setLoadingQuestions(prev => ({
+        ...prev,
+        [sectionId]: false
+      }));
+
       // Set up typewriter effect for each question
-      setTypewriterQuestions(prev => ({ ...prev, [sectionId]: questions }));
-      
+      setTypewriterQuestions(prev => ({
+        ...prev,
+        [sectionId]: questions
+      }));
+
       // Add questions one by one with typewriter effect
       for (let i = 0; i < questions.length; i++) {
         await new Promise(resolve => setTimeout(resolve, i * 2000)); // Stagger the questions
-        
+
         const updatedGuide = {
           ...discussionGuide,
           sections: discussionGuide.sections.map((section: any) => {
@@ -234,25 +228,27 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
             return section;
           })
         };
-        
         onGuideUpdate(updatedGuide);
       }
-      
     } catch (error) {
       console.error('Error generating AI questions:', error);
-      setLoadingQuestions(prev => ({ ...prev, [sectionId]: false }));
+      setLoadingQuestions(prev => ({
+        ...prev,
+        [sectionId]: false
+      }));
     } finally {
-      setGeneratingQuestions(prev => ({ ...prev, [sectionId]: false }));
+      setGeneratingQuestions(prev => ({
+        ...prev,
+        [sectionId]: false
+      }));
     }
   };
-
   const getInterviewStatus = (participantId: string) => {
     // Görüşme ilerlemesini simüle et
     const statuses = ['Sırada', 'Devam Ediyor', 'Tamamlandı'];
     const hash = participantId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
     return statuses[hash % statuses.length];
   };
-
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'Tamamlandı':
@@ -263,13 +259,10 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
         return <Circle className="w-4 h-4 text-text-muted" />;
     }
   };
-
   const renderStartingView = () => {
     const completedInterviews = Math.floor(Math.random() * 3) + 2; // Simulate progress
     const totalInterviews = participants.length;
-    
-    return (
-      <div className="h-full flex items-center justify-center">
+    return <div className="h-full flex items-center justify-center">
         <div className="text-center max-w-md">
           <div className="w-16 h-16 bg-status-success-light rounded-full flex items-center justify-center mx-auto mb-6">
             <PlayCircle className="w-8 h-8 text-status-success" />
@@ -285,17 +278,13 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
           
           <div className="space-y-3 mb-6">
             {participants.map((participant, index) => {
-              const isCompleted = index < completedInterviews;
-              const isActive = index === completedInterviews;
-              
-              return (
-                <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg">
+            const isCompleted = index < completedInterviews;
+            const isActive = index === completedInterviews;
+            return <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg">
                    <div className="flex items-center space-x-3">
                      <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
                         <span className="text-xs font-medium text-brand-primary">
-                          {participant.name ? 
-                            participant.name.split(' ').map((n: string) => n[0]).join('') : 
-                            participant.email ? participant.email.substring(0, 2).toUpperCase() : 'P'}
+                          {participant.name ? participant.name.split(' ').map((n: string) => n[0]).join('') : participant.email ? participant.email.substring(0, 2).toUpperCase() : 'P'}
                         </span>
                      </div>
                      <span className="text-sm font-medium text-text-primary">
@@ -304,26 +293,19 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                    </div>
                   
                   <div className="flex items-center space-x-2">
-                    {isCompleted ? (
-                      <>
+                    {isCompleted ? <>
                         <CheckCircle2 className="w-4 h-4 text-status-success" />
                         <span className="text-xs text-status-success">Tamamlandı</span>
-                      </>
-                    ) : isActive ? (
-                      <>
+                      </> : isActive ? <>
                         <Circle className="w-4 h-4 text-brand-primary animate-pulse" />
                         <span className="text-xs text-brand-primary">Görüşmede</span>
-                      </>
-                    ) : (
-                      <>
+                      </> : <>
                         <Clock className="w-4 h-4 text-text-muted" />
                         <span className="text-xs text-text-muted">Bekliyor</span>
-                      </>
-                    )}
+                      </>}
                   </div>
-                </div>
-              );
-            })}
+                </div>;
+          })}
           </div>
           
           <div className="bg-surface p-4 rounded-lg">
@@ -339,65 +321,30 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
             </div>
           </div>
         </div>
-      </div>
-    );
+      </div>;
   };
-
-  const renderAnalysisView = () => (
-    <div className="space-y-6">
+  const renderAnalysisView = () => <div className="space-y-6">
       {/* Research Summary with Typewriter */}
       <div className="bg-surface p-6 rounded-lg">
         <h3 className="text-lg font-semibold text-text-primary mb-4">
-          {showAnalysisTypewriter ? (
-            <TypewriterText 
-              text="Araştırma Özeti"
-              speed={40}
-              onComplete={() => {}}
-            />
-          ) : (
-            "Araştırma Özeti"
-          )}
+          {showAnalysisTypewriter ? <TypewriterText text="Araştırma Özeti" speed={40} onComplete={() => {}} /> : "Araştırma Özeti"}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div className="text-center">
             <div className="text-2xl font-bold text-brand-primary">
-              {showAnalysisTypewriter ? (
-                <TypewriterText 
-                  text="5"
-                  speed={100}
-                  delay={1000}
-                />
-              ) : (
-                "5"
-              )}
+              {showAnalysisTypewriter ? <TypewriterText text="5" speed={100} delay={1000} /> : "5"}
             </div>
             <div className="text-sm text-text-secondary">Toplam Görüşme</div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-brand-primary">
-              {showAnalysisTypewriter ? (
-                <TypewriterText 
-                  text="42"
-                  speed={100}
-                  delay={1500}
-                />
-              ) : (
-                "42"
-              )}
+              {showAnalysisTypewriter ? <TypewriterText text="42" speed={100} delay={1500} /> : "42"}
             </div>
             <div className="text-sm text-text-secondary">Dakika</div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-brand-primary">
-              {showAnalysisTypewriter ? (
-                <TypewriterText 
-                  text="8"
-                  speed={100}
-                  delay={2000}
-                />
-              ) : (
-                "8"
-              )}
+              {showAnalysisTypewriter ? <TypewriterText text="8" speed={100} delay={2000} /> : "8"}
             </div>
             <div className="text-sm text-text-secondary">Ana Tema</div>
           </div>
@@ -408,16 +355,12 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
       <div className="bg-surface p-6 rounded-lg">
         <h3 className="text-lg font-semibold text-text-primary mb-4">Sorulan Sorular</h3>
         <div className="space-y-3">
-          {discussionGuide?.sections?.map((section: any) => (
-            <div key={section.id} className="border-l-2 border-brand-primary-light pl-4">
+          {discussionGuide?.sections?.map((section: any) => <div key={section.id} className="border-l-2 border-brand-primary-light pl-4">
               <h4 className="font-medium text-text-primary mb-2">{section.title}</h4>
               <ul className="space-y-1">
-                {section.questions.slice(0, 2).map((question: string, index: number) => (
-                  <li key={index} className="text-sm text-text-secondary">• {question}</li>
-                ))}
+                {section.questions.slice(0, 2).map((question: string, index: number) => <li key={index} className="text-sm text-text-secondary">• {question}</li>)}
               </ul>
-            </div>
-          ))}
+            </div>)}
         </div>
       </div>
 
@@ -450,41 +393,17 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-surface p-6 rounded-lg">
           <h3 className="text-lg font-semibold text-text-primary mb-4">
-            {showAnalysisTypewriter ? (
-              <TypewriterText 
-                text="Ortak Noktalar"
-                speed={40}
-                delay={3000}
-              />
-            ) : (
-              "Ortak Noktalar"
-            )}
+            {showAnalysisTypewriter ? <TypewriterText text="Ortak Noktalar" speed={40} delay={3000} /> : "Ortak Noktalar"}
           </h3>
           <div className="space-y-3">
             <div className="flex items-start space-x-3">
               <div className="w-2 h-2 bg-status-success rounded-full mt-2"></div>
               <div>
                 <p className="text-sm font-medium text-text-primary">
-                  {showAnalysisTypewriter ? (
-                    <TypewriterText 
-                      text="Basitlik İsteği"
-                      speed={30}
-                      delay={4000}
-                    />
-                  ) : (
-                    "Basitlik İsteği"
-                  )}
+                  {showAnalysisTypewriter ? <TypewriterText text="Basitlik İsteği" speed={30} delay={4000} /> : "Basitlik İsteği"}
                 </p>
                 <p className="text-xs text-text-secondary">
-                  {showAnalysisTypewriter ? (
-                    <TypewriterText 
-                      text="5/5 katılımcı daha basit arayüz istiyor"
-                      speed={20}
-                      delay={4500}
-                    />
-                  ) : (
-                    "5/5 katılımcı daha basit arayüz istiyor"
-                  )}
+                  {showAnalysisTypewriter ? <TypewriterText text="5/5 katılımcı daha basit arayüz istiyor" speed={20} delay={4500} /> : "5/5 katılımcı daha basit arayüz istiyor"}
                 </p>
               </div>
             </div>
@@ -492,26 +411,10 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
               <div className="w-2 h-2 bg-status-success rounded-full mt-2"></div>
               <div>
                 <p className="text-sm font-medium text-text-primary">
-                  {showAnalysisTypewriter ? (
-                    <TypewriterText 
-                      text="Güvenlik Endişesi"
-                      speed={30}
-                      delay={5000}
-                    />
-                  ) : (
-                    "Güvenlik Endişesi"
-                  )}
+                  {showAnalysisTypewriter ? <TypewriterText text="Güvenlik Endişesi" speed={30} delay={5000} /> : "Güvenlik Endişesi"}
                 </p>
                 <p className="text-xs text-text-secondary">
-                  {showAnalysisTypewriter ? (
-                    <TypewriterText 
-                      text="4/5 katılımcı güvenlik önceliği vurguluyor"
-                      speed={20}
-                      delay={5500}
-                    />
-                  ) : (
-                    "4/5 katılımcı güvenlik önceliği vurguluyor"
-                  )}
+                  {showAnalysisTypewriter ? <TypewriterText text="4/5 katılımcı güvenlik önceliği vurguluyor" speed={20} delay={5500} /> : "4/5 katılımcı güvenlik önceliği vurguluyor"}
                 </p>
               </div>
             </div>
@@ -519,26 +422,10 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
               <div className="w-2 h-2 bg-status-warning rounded-full mt-2"></div>
               <div>
                 <p className="text-sm font-medium text-text-primary">
-                  {showAnalysisTypewriter ? (
-                    <TypewriterText 
-                      text="Mobil Öncelik"
-                      speed={30}
-                      delay={6000}
-                    />
-                  ) : (
-                    "Mobil Öncelik"
-                  )}
+                  {showAnalysisTypewriter ? <TypewriterText text="Mobil Öncelik" speed={30} delay={6000} /> : "Mobil Öncelik"}
                 </p>
                 <p className="text-xs text-text-secondary">
-                  {showAnalysisTypewriter ? (
-                    <TypewriterText 
-                      text="3/5 katılımcı mobil odaklı çözüm istiyor"
-                      speed={20}
-                      delay={6500}
-                    />
-                  ) : (
-                    "3/5 katılımcı mobil odaklı çözüm istiyor"
-                  )}
+                  {showAnalysisTypewriter ? <TypewriterText text="3/5 katılımcı mobil odaklı çözüm istiyor" speed={20} delay={6500} /> : "3/5 katılımcı mobil odaklı çözüm istiyor"}
                 </p>
               </div>
             </div>
@@ -618,254 +505,126 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
           </Button>
         </div>
       </div>
-    </div>
-  );
-
+    </div>;
   if (!discussionGuide) {
-    return (
-      <div className="h-full flex items-center justify-center">
+    return <div className="h-full flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 bg-brand-primary-light rounded-lg flex items-center justify-center mx-auto mb-3">
             <Video className="w-6 h-6 text-brand-primary" />
           </div>
-          <TypewriterText 
-            text="Tartışma kılavuzu oluşturuluyor..."
-            speed={50}
-            className="text-text-secondary"
-            showCursor={true}
-          />
+          <TypewriterText text="Tartışma kılavuzu oluşturuluyor..." speed={50} className="text-text-secondary" showCursor={true} />
         </div>
-      </div>
-    );
+      </div>;
   }
-
-  return (
-    <div className="h-full flex flex-col overflow-hidden">
+  return <div className="h-full flex flex-col overflow-hidden">
       {/* Study Header */}
       <div className="border-b border-border-light p-6 flex-shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
           <div className="group">
-            {showTitleTypewriter ? (
-              <TypewriterText 
-                text={discussionGuide.title}
-                speed={30}
-                className="text-lg font-semibold text-text-primary"
-                enableControls={true}
-                onComplete={() => setShowTitleTypewriter(false)}
-              />
-            ) : (
-              <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>
-            )}
+            {showTitleTypewriter ? <TypewriterText text={discussionGuide.title} speed={30} className="text-lg font-semibold text-text-primary" enableControls={true} onComplete={() => setShowTitleTypewriter(false)} /> : <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>}
           </div>
           
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-            {/* Screen Recording Toggle */}
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-2">
-                <Monitor className={`w-4 h-4 ${isScreenRecording ? 'text-status-success' : 'text-text-muted'}`} />
-                <span className="text-sm font-medium text-text-primary">Ekran Kaydı</span>
-              </div>
-              <Switch 
-                checked={isScreenRecording} 
-                onCheckedChange={setIsScreenRecording}
-                className="data-[state=checked]:bg-status-success"
-              />
-            </div>
-            
-            {/* Camera Recording Toggle */}
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-2">
-                <Camera className={`w-4 h-4 ${isCameraRecording ? 'text-status-success' : 'text-text-muted'}`} />
-                <span className="text-sm font-medium text-text-primary">Kamera</span>
-              </div>
-              <Switch 
-                checked={isCameraRecording} 
-                onCheckedChange={setIsCameraRecording}
-                className="data-[state=checked]:bg-status-success"
-              />
-            </div>
-          </div>
+          
         </div>
         
-        {currentStep === 'run' && participants.length > 0 && (
-          <div className="text-sm text-text-secondary">
+        {currentStep === 'run' && participants.length > 0 && <div className="text-sm text-text-secondary">
             {participants.filter(p => getInterviewStatus(p.id) === 'Tamamlandı').length} / {participants.length} görüşme tamamlandı
-          </div>
-        )}
+          </div>}
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 min-h-0">
-        {currentStep === 'starting' ? renderStartingView() : 
-         currentStep === 'analyze' ? renderAnalysisView() : (
-          <div className="space-y-6">
+        {currentStep === 'starting' ? renderStartingView() : currentStep === 'analyze' ? renderAnalysisView() : <div className="space-y-6">
             {/* Discussion Guide Sections */}
-            {discussionGuide.sections.map((section: any) => (
-              <Card key={section.id} className="p-6">
+            {discussionGuide.sections.map((section: any) => <Card key={section.id} className="p-6">
                 <CardHeader className="p-0 mb-4">
                   <CardTitle className="text-base font-semibold text-text-primary group">
-                    {showSectionTypewriters[section.id] ? (
-                      <TypewriterText 
-                        text={section.title}
-                        speed={25}
-                        delay={discussionGuide.sections.indexOf(section) * 500}
-                        enableControls={true}
-                        onComplete={() => setShowSectionTypewriters(prev => ({ ...prev, [section.id]: false }))}
-                      />
-                    ) : (
-                      section.title
-                    )}
+                    {showSectionTypewriters[section.id] ? <TypewriterText text={section.title} speed={25} delay={discussionGuide.sections.indexOf(section) * 500} enableControls={true} onComplete={() => setShowSectionTypewriters(prev => ({
+                ...prev,
+                [section.id]: false
+              }))} /> : section.title}
                   </CardTitle>
                 </CardHeader>
                 
                 <CardContent className="p-0 space-y-3">
                   {section.questions.map((question: string, index: number) => {
-                    const isRecentlyAdded = typewriterQuestions[section.id]?.includes(question);
-                    const questionKey = `${section.id}-${index}`;
-                    const shouldShowTypewriter = showQuestionTypewriters[questionKey];
-                    
-                    // Calculate delay: 2 seconds base + staggered delay based on position
-                    let globalQuestionIndex = 0;
-                    for (let i = 0; i < discussionGuide.sections.indexOf(section); i++) {
-                      globalQuestionIndex += discussionGuide.sections[i].questions.length;
-                    }
-                    globalQuestionIndex += index;
-                    const questionDelay = 2000 + (globalQuestionIndex * 800); // 2s base + 0.8s between questions
-                    
-                    return (
-                      <div key={`${section.id}-${index}`} className="group flex items-start space-x-2">
+              const isRecentlyAdded = typewriterQuestions[section.id]?.includes(question);
+              const questionKey = `${section.id}-${index}`;
+              const shouldShowTypewriter = showQuestionTypewriters[questionKey];
+
+              // Calculate delay: 2 seconds base + staggered delay based on position
+              let globalQuestionIndex = 0;
+              for (let i = 0; i < discussionGuide.sections.indexOf(section); i++) {
+                globalQuestionIndex += discussionGuide.sections[i].questions.length;
+              }
+              globalQuestionIndex += index;
+              const questionDelay = 2000 + globalQuestionIndex * 800; // 2s base + 0.8s between questions
+
+              return <div key={`${section.id}-${index}`} className="group flex items-start space-x-2">
                         <span className="text-xs text-text-muted mt-2 w-5">
                           {index + 1}.
                         </span>
                         
                         <div className="flex-1">
-                          {editingQuestion === `${section.id}-${index}` ? (
-                              <div className="space-y-2">
-                                <Textarea
-                                  value={editValue}
-                                  onChange={(e) => setEditValue(e.target.value)}
-                                  className="text-sm"
-                                  autoFocus
-                                />
+                          {editingQuestion === `${section.id}-${index}` ? <div className="space-y-2">
+                                <Textarea value={editValue} onChange={e => setEditValue(e.target.value)} className="text-sm" autoFocus />
                                 <div className="flex space-x-2">
-                                  <Button 
-                                    size="sm" 
-                                    onClick={() => handleSaveQuestion(section.id, index)}
-                                  >
+                                  <Button size="sm" onClick={() => handleSaveQuestion(section.id, index)}>
                                     Kaydet
                                   </Button>
-                                  <Button 
-                                    size="sm" 
-                                    variant="outline"
-                                    onClick={() => setEditingQuestion(null)}
-                                  >
+                                  <Button size="sm" variant="outline" onClick={() => setEditingQuestion(null)}>
                                     İptal
                                   </Button>
                                 </div>
-                              </div>
-                          ) : (
-                            <div 
-                              className="text-sm text-text-primary cursor-text hover:bg-surface rounded p-2 -m-2 transition-colors"
-                              onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}
-                            >
-                              {shouldShowTypewriter ? (
-                                <TypewriterText 
-                                  text={question} 
-                                  speed={25}
-                                  className="text-text-primary"
-                                  enableControls={true}
-                                  onComplete={() => setShowQuestionTypewriters(prev => ({ ...prev, [questionKey]: false }))}
-                                />
-                              ) : isRecentlyAdded ? (
-                                <TypewriterText 
-                                  text={question} 
-                                  speed={30}
-                                  className="text-text-primary"
-                                />
-                              ) : shouldShowTypewriter === false ? (
-                                question
-                              ) : null}
-                            </div>
-                          )}
+                              </div> : <div className="text-sm text-text-primary cursor-text hover:bg-surface rounded p-2 -m-2 transition-colors" onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}>
+                              {shouldShowTypewriter ? <TypewriterText text={question} speed={25} className="text-text-primary" enableControls={true} onComplete={() => setShowQuestionTypewriters(prev => ({
+                      ...prev,
+                      [questionKey]: false
+                    }))} /> : isRecentlyAdded ? <TypewriterText text={question} speed={30} className="text-text-primary" /> : shouldShowTypewriter === false ? question : null}
+                            </div>}
                         </div>
                         
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}
-                        >
+                        <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}>
                           <Edit3 className="w-3 h-3" />
                         </Button>
-                      </div>
-                    );
-                  })}
+                      </div>;
+            })}
                   
                    {/* Loading State with Typewriter */}
-                  {loadingQuestions[section.id] && (
-                    <div className="flex items-center space-x-2 p-2 text-text-secondary">
+                  {loadingQuestions[section.id] && <div className="flex items-center space-x-2 p-2 text-text-secondary">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <TypewriterText 
-                        text={loadingMessages[currentLoadingIndex]}
-                        speed={50}
-                        className="text-sm text-text-secondary"
-                        showCursor={false}
-                      />
-                    </div>
-                  )}
+                      <TypewriterText text={loadingMessages[currentLoadingIndex]} speed={50} className="text-sm text-text-secondary" showCursor={false} />
+                    </div>}
                   
                   <div className="flex items-center space-x-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleAddQuestion(section.id)}
-                      className="flex items-center space-x-1 text-text-secondary hover:text-text-primary"
-                      disabled={generatingQuestions[section.id]}
-                    >
+                    <Button size="sm" variant="ghost" onClick={() => handleAddQuestion(section.id)} className="flex items-center space-x-1 text-text-secondary hover:text-text-primary" disabled={generatingQuestions[section.id]}>
                       <Plus className="w-3 h-3" />
                       <span>Soru ekle</span>
                     </Button>
                     
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => generateAIQuestions(section.id, section.title)}
-                      className="flex items-center space-x-1 text-brand-primary hover:text-brand-primary-hover"
-                      disabled={generatingQuestions[section.id] || loadingQuestions[section.id]}
-                    >
-                      {generatingQuestions[section.id] ? (
-                        <RefreshCw className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <Sparkles className="w-3 h-3" />
-                      )}
+                    <Button size="sm" variant="ghost" onClick={() => generateAIQuestions(section.id, section.title)} className="flex items-center space-x-1 text-brand-primary hover:text-brand-primary-hover" disabled={generatingQuestions[section.id] || loadingQuestions[section.id]}>
+                      {generatingQuestions[section.id] ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
                       <span>AI soru üret</span>
                     </Button>
                   </div>
                 </CardContent>
-              </Card>
-            ))}
+              </Card>)}
 
             {/* Participants (when recruited) */}
-            {participants.length > 0 && currentStep !== 'guide' && (
-              <Card className="p-6">
+            {participants.length > 0 && currentStep !== 'guide' && <Card className="p-6">
                 <CardHeader className="p-0 mb-4">
                   <CardTitle className="text-base font-semibold text-text-primary flex items-center space-x-2">
                     <User className="w-4 h-4" />
                     <span>
-                      <TypewriterText 
-                        text={`Katılımcılar (${participants.length})`}
-                        speed={40}
-                        delay={0}
-                      />
+                      <TypewriterText text={`Katılımcılar (${participants.length})`} speed={40} delay={0} />
                     </span>
                   </CardTitle>
                 </CardHeader>
                 
                 <CardContent className="p-0 space-y-3">
                   {participants.map((participant, index) => {
-                    const status = getInterviewStatus(participant.id);
-                    return (
-                      <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg group">
+              const status = getInterviewStatus(participant.id);
+              return <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg group">
                         <div className="flex items-center space-x-3">
                           <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
                             <span className="text-xs font-medium text-brand-primary">
@@ -874,20 +633,10 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                           </div>
                           <div>
                             <p className="text-sm font-medium text-text-primary">
-                              <TypewriterText 
-                                text={participant.name}
-                                speed={20}
-                                delay={index * 200}
-                                showCursor={false}
-                              />
+                              <TypewriterText text={participant.name} speed={20} delay={index * 200} showCursor={false} />
                             </p>
                             <p className="text-xs text-text-secondary">
-                              <TypewriterText 
-                                text={participant.role}
-                                speed={15}
-                                delay={index * 200 + 500}
-                                showCursor={false}
-                              />
+                              <TypewriterText text={participant.role} speed={15} delay={index * 200 + 500} showCursor={false} />
                             </p>
                           </div>
                         </div>
@@ -896,17 +645,12 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                           {getStatusIcon(status)}
                           <span className="text-xs text-text-secondary">{status}</span>
                         </div>
-                      </div>
-                    );
-                  })}
+                      </div>;
+            })}
                 </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
+              </Card>}
+          </div>}
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default StudyPanel;
