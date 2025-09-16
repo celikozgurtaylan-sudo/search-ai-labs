@@ -82,14 +82,14 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
       console.log('Questions initialized. Starting with preamble...');
       
       toast({
-        title: "Interview Starting",
-        description: "Beginning with welcome and introduction...",
+        title: "Görüşme Başlıyor",
+        description: "Karşılama ve tanıtım ile başlıyoruz...",
       });
     } catch (error) {
       console.error('Failed to initialize questions:', error);
       toast({
-        title: "Error",
-        description: "Failed to initialize interview questions",
+        title: "Hata",
+        description: "Görüşme soruları başlatılamadı",
         variant: "destructive",
       });
     }
@@ -105,8 +105,8 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     await getNextQuestion();
     
     toast({
-      title: "Moving to Questions",
-      description: "Now beginning the structured interview questions.",
+      title: "Sorulara Geçiliyor",
+      description: "Şimdi yapılandırılmış görüşme sorularına başlıyoruz.",
     });
   }, []);
 
@@ -123,8 +123,8 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
 
       if (data.progress.isComplete) {
         toast({
-          title: "Interview Complete!",
-          description: "All questions have been answered. Starting analysis...",
+          title: "Görüşme Tamamlandı!",
+          description: "Tüm sorular yanıtlandı. Analiz başlatılıyor...",
         });
         // Trigger analysis
         if (projectContext.projectId) {
@@ -142,14 +142,14 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     try {
       await interviewService.analyzeInterview(projectContext.sessionId, projectContext.projectId);
       toast({
-        title: "Analysis Complete",
-        description: "Interview responses have been analyzed successfully!",
+        title: "Analiz Tamamlandı",
+        description: "Görüşme yanıtları başarıyla analiz edildi!",
       });
     } catch (error) {
       console.error('Failed to analyze interview:', error);
       toast({
-        title: "Analysis Error",
-        description: "Failed to analyze interview responses",
+        title: "Analiz Hatası",
+        description: "Görüşme yanıtları analiz edilemedi",
         variant: "destructive",
       });
     }
