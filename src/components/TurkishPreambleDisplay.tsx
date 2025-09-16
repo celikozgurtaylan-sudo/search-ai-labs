@@ -91,10 +91,21 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
     setIsPlaying(true);
     playCurrentChunk();
   };
+  const moveToNextChunk = useCallback(() => {
+    setCurrentChunk(prev => {
+      const nextChunk = prev + 1;
+      console.log(`Moving to chunk ${nextChunk + 1}/${TURKISH_PREAMBLE_CHUNKS.length}`);
+      return nextChunk;
+    });
+  }, []);
+
   const playCurrentChunk = useCallback(() => {
-    console.log(`🎵 Starting chunk ${currentChunk + 1}/${TURKISH_PREAMBLE_CHUNKS.length}: "${TURKISH_PREAMBLE_CHUNKS[currentChunk]}"`);
+    const chunkIndex = currentChunk;
+    const audioId = `audio-${chunkIndex}-${Date.now()}`;
     
-    if (currentChunk >= TURKISH_PREAMBLE_CHUNKS.length) {
+    console.log(`🎵 [${audioId}] Starting chunk ${chunkIndex + 1}/${TURKISH_PREAMBLE_CHUNKS.length}: "${TURKISH_PREAMBLE_CHUNKS[chunkIndex]}"`);
+    
+    if (chunkIndex >= TURKISH_PREAMBLE_CHUNKS.length) {
       // All chunks completed, now wait for user response
       setIsPlaying(false);
       setPreambleCompleted(true);
@@ -105,105 +116,110 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
 
     // Stop any currently playing audio to prevent overlap
     if (currentAudio) {
-      console.log('🛑 Stopping previous audio to prevent overlap');
+      console.log(`🛑 [${audioId}] Stopping previous audio to prevent overlap`);
       currentAudio.pause();
       currentAudio.currentTime = 0;
       setCurrentAudio(null);
     }
 
     // Play audio if available
-    if (audioQueue[currentChunk]) {
+    if (audioQueue[chunkIndex]) {
       try {
-        console.log(`🎧 Playing audio for chunk ${currentChunk + 1}`);
-        const audio = new Audio(`data:audio/mp3;base64,${audioQueue[currentChunk]}`);
+        console.log(`🎧 [${audioId}] Creating and playing audio for chunk ${chunkIndex + 1}`);
+        const audio = new Audio(`data:audio/mp3;base64,${audioQueue[chunkIndex]}`);
         setCurrentAudio(audio);
         
         let hasEnded = false; // Prevent multiple calls
         
-        audio.onended = () => {
-          if (hasEnded) return;
+        const handleAudioEnd = () => {
+          if (hasEnded) {
+            console.log(`⚠️ [${audioId}] Audio end handler called multiple times, ignoring`);
+            return;
+          }
           hasEnded = true;
-          console.log(`✅ Audio completed for chunk ${currentChunk + 1}, waiting 2s before next...`);
+          console.log(`✅ [${audioId}] Audio completed for chunk ${chunkIndex + 1}, waiting 2s before next...`);
           setCurrentAudio(null);
           setTimeout(() => {
-            setCurrentChunk(prev => prev + 1);
-          }, 2000); // Standardized 2-second pause
+            moveToNextChunk();
+          }, 2000);
         };
         
-        audio.onerror = (e) => {
+        const handleAudioError = (e: any) => {
           if (hasEnded) return;
           hasEnded = true;
-          console.error(`❌ Audio playback error for chunk ${currentChunk + 1}:`, e);
+          console.error(`❌ [${audioId}] Audio playback error for chunk ${chunkIndex + 1}:`, e);
           setCurrentAudio(null);
           setTimeout(() => {
-            setCurrentChunk(prev => prev + 1);
-          }, 2000); // Standardized 2-second pause
+            moveToNextChunk();
+          }, 2000);
         };
+        
+        // Set up event handlers
+        audio.onended = handleAudioEnd;
+        audio.onerror = handleAudioError;
         
         audio.onloadstart = () => {
-          console.log(`📥 Loading audio for chunk ${currentChunk + 1}...`);
+          console.log(`📥 [${audioId}] Loading audio for chunk ${chunkIndex + 1}...`);
         };
 
         audio.oncanplaythrough = () => {
-          console.log(`🎵 Audio ready to play for chunk ${currentChunk + 1}`);
+          console.log(`🎵 [${audioId}] Audio ready to play for chunk ${chunkIndex + 1}`);
         };
         
         // Add timeout protection
         const timeoutId = setTimeout(() => {
           if (!hasEnded) {
-            console.warn(`⏰ Audio timeout for chunk ${currentChunk + 1}, moving to next`);
+            console.warn(`⏰ [${audioId}] Audio timeout for chunk ${chunkIndex + 1}, moving to next`);
             hasEnded = true;
             audio.pause();
             setCurrentAudio(null);
-            setCurrentChunk(prev => prev + 1);
+            moveToNextChunk();
           }
         }, 15000); // 15-second timeout
         
-        audio.onended = () => {
-          clearTimeout(timeoutId);
-          if (hasEnded) return;
-          hasEnded = true;
-          console.log(`✅ Audio completed for chunk ${currentChunk + 1}, waiting 2s before next...`);
-          setCurrentAudio(null);
-          setTimeout(() => {
-            setCurrentChunk(prev => prev + 1);
-          }, 2000);
-        };
-        
         audio.play().catch(error => {
           clearTimeout(timeoutId);
-          console.error(`❌ Failed to play audio for chunk ${currentChunk + 1}:`, error);
+          console.error(`❌ [${audioId}] Failed to play audio for chunk ${chunkIndex + 1}:`, error);
           if (!hasEnded) {
             hasEnded = true;
             setCurrentAudio(null);
             setTimeout(() => {
-              setCurrentChunk(prev => prev + 1);
+              moveToNextChunk();
             }, 2000);
           }
         });
       } catch (error) {
-        console.error(`❌ Audio creation error for chunk ${currentChunk + 1}:`, error);
+        console.error(`❌ [${audioId}] Audio creation error for chunk ${chunkIndex + 1}:`, error);
         setCurrentAudio(null);
         setTimeout(() => {
-          setCurrentChunk(prev => prev + 1);
-        }, 2000); // Standardized 2-second pause
+          moveToNextChunk();
+        }, 2000);
       }
     } else {
       // No audio available - wait for typewriter + standardized pause
-      console.log(`📝 No audio for chunk ${currentChunk + 1}, using text-only with 2s pause`);
+      console.log(`📝 [${audioId}] No audio for chunk ${chunkIndex + 1}, using text-only with 2s pause`);
       setTimeout(() => {
-        setCurrentChunk(prev => prev + 1);
-      }, 2000); // Standardized 2-second pause (text will complete naturally)
+        moveToNextChunk();
+      }, 2000);
     }
-  }, [currentChunk, audioQueue, currentAudio]);
+  }, [currentChunk, audioQueue, currentAudio, moveToNextChunk]);
 
-  // Handle chunk progression
+  // Handle chunk progression - only when explicitly triggered, not in a loop
   useEffect(() => {
-    if (isPlaying && currentChunk < TURKISH_PREAMBLE_CHUNKS.length) {
-      console.log(`Starting chunk ${currentChunk + 1}/${TURKISH_PREAMBLE_CHUNKS.length}`);
+    if (isPlaying && currentChunk < TURKISH_PREAMBLE_CHUNKS.length && currentChunk === 0) {
+      // Only start the first chunk automatically
+      console.log(`🚀 Auto-starting first chunk`);
       playCurrentChunk();
     }
-  }, [currentChunk, isPlaying]);
+  }, [isPlaying]);
+
+  // Manual progression trigger for subsequent chunks
+  useEffect(() => {
+    if (isPlaying && currentChunk > 0 && currentChunk < TURKISH_PREAMBLE_CHUNKS.length) {
+      console.log(`▶️ Playing chunk ${currentChunk + 1}/${TURKISH_PREAMBLE_CHUNKS.length}`);
+      playCurrentChunk();
+    }
+  }, [currentChunk]);
   const handleSkip = () => {
     if (currentAudio) {
       currentAudio.pause();
