@@ -292,11 +292,11 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                 <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg">
                    <div className="flex items-center space-x-3">
                      <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
-                       <span className="text-xs font-medium text-brand-primary">
-                         {participant.name ? 
-                           participant.name.split(' ').map((n: string) => n[0]).join('') : 
-                           participant.email ? participant.email.substring(0, 2).toUpperCase() : 'P'}
-                       </span>
+                        <span className="text-xs font-medium text-brand-primary">
+                          {participant.name ? 
+                            participant.name.split(' ').map((n: string) => n[0]).join('') : 
+                            participant.email ? participant.email.substring(0, 2).toUpperCase() : 'P'}
+                        </span>
                      </div>
                      <span className="text-sm font-medium text-text-primary">
                        {participant.name || participant.email || 'Participant'}
@@ -869,7 +869,7 @@ const StudyPanel = ({ discussionGuide, participants, currentStep, onGuideUpdate,
                         <div className="flex items-center space-x-3">
                           <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
                             <span className="text-xs font-medium text-brand-primary">
-                              {participant.name.split(' ').map((n: string) => n[0]).join('')}
+                              {participant.name ? participant.name.split(' ').map((n: string) => n[0]).join('') : 'P'}
                             </span>
                           </div>
                           <div>

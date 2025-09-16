@@ -230,7 +230,7 @@ const RecruitmentDrawer = ({
                       <div className="flex items-start space-x-3">
                         <div className="w-12 h-12 bg-brand-primary-light rounded-full flex items-center justify-center">
                           <span className="text-sm font-semibold text-brand-primary">
-                            {participant.name.split(' ').map(n => n[0]).join('')}
+                            {participant.name ? participant.name.split(' ').map(n => n[0]).join('') : 'P'}
                           </span>
                         </div>
                         
