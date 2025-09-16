@@ -95,6 +95,9 @@ export const participantService = {
   },
 
   async getParticipantByToken(token: string): Promise<StudyParticipant | null> {
+    console.log('Looking for participant with token:', token);
+    console.log('Current time:', new Date().toISOString());
+    
     const { data, error } = await supabase
       .from('study_participants')
       .select('*')
@@ -103,9 +106,12 @@ export const participantService = {
       .maybeSingle();
 
     if (error) {
-      throw new Error(`Failed to fetch participant: ${error.message}`);
+      console.error('Error fetching participant by token:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      return null;
     }
 
+    console.log('Found participant:', data);
     return data as StudyParticipant | null;
   },
 
