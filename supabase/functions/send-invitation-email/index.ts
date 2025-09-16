@@ -29,7 +29,13 @@ const createEmailTemplate = (
   targetDevice: string = 'both',
   projectDescription?: string
 ) => {
-  const invitationLink = `${Deno.env.get('FRONTEND_URL')}/join/research/${invitationToken}`;
+  // Get frontend URL with fallback
+  const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://beta.searcho.online';
+  console.log('Frontend URL:', frontendUrl);
+  
+  const invitationLink = `${frontendUrl}/join/research/${invitationToken}`;
+  console.log('Generated invitation link:', invitationLink);
+  
   const expirationDate = new Date(expiresAt).toLocaleDateString('tr-TR');
   
   // Dynamic content based on study type and target device
