@@ -341,8 +341,9 @@ const Workspace = () => {
         onOpenChange={setShowRecruitment}
         onParticipantsUpdate={(participants) => {
           setParticipants(participants);
-          setCurrentStep('recruit');
-          setShowRecruitment(false);
+          if (participants.length > 0) {
+            setCurrentStep('recruit');
+          }
         }}
         projectId={projectData.id || ''}
       />
