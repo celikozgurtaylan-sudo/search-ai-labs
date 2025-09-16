@@ -19,6 +19,8 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const [aiTranscript, setAiTranscript] = useState('');
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -44,14 +46,43 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   // Initialize audio context and queue
   useEffect(() => {
     if (isActive && !audioContextRef.current) {
-      audioContextRef.current = new AudioContext({ sampleRate: 24000 });
-      audioQueueRef.current = new AudioQueue(audioContextRef.current);
+      setIsInitializing(true);
+      setAudioError(null);
+      
+      const initAudio = async () => {
+        try {
+          // Request microphone permission
+          await navigator.mediaDevices.getUserMedia({ audio: true });
+          console.log('Microphone permission granted');
+          
+          // Create AudioContext and ensure it's resumed
+          audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+          if (audioContextRef.current.state === 'suspended') {
+            await audioContextRef.current.resume();
+            console.log('AudioContext resumed');
+          }
+          
+          audioQueueRef.current = new AudioQueue(audioContextRef.current);
+          console.log('Audio system initialized');
+        } catch (error) {
+          console.error('Audio initialization failed:', error);
+          setAudioError(error instanceof Error ? error.message : 'Audio setup failed');
+        } finally {
+          setIsInitializing(false);
+        }
+      };
+      
+      initAudio();
     }
     
     return () => {
       if (audioRecorderRef.current) {
         audioRecorderRef.current.stop();
         audioRecorderRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
       }
     };
   }, [isActive]);
@@ -134,43 +165,55 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   }, [isActive, isMuted]);
 
   const handleSearchoMessage = async (data: any) => {
-    console.log('Received message from Searcho:', data);
+    console.log('Received message type:', data.type, data);
     
     switch (data.type) {
       case 'response.audio.delta':
+        console.log('Audio delta received, size:', data.delta?.length);
         if (data.delta && audioQueueRef.current) {
-          // Convert base64 to Uint8Array and play audio
-          const binaryString = atob(data.delta);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
+          try {
+            // Convert base64 to Uint8Array and play audio
+            const binaryString = atob(data.delta);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            console.log('Adding audio chunk to queue, size:', bytes.length);
+            await audioQueueRef.current.addToQueue(bytes);
+            setIsSpeaking(true);
+          } catch (error) {
+            console.error('Error processing audio delta:', error);
           }
-          await audioQueueRef.current.addToQueue(bytes);
         }
-        setIsSpeaking(true);
         break;
       case 'response.audio_transcript.delta':
+        console.log('Transcript delta:', data.delta);
         // Accumulate AI transcript for display
         setAiTranscript(prev => prev + (data.delta || ''));
         break;
       case 'response.audio.done':
+        console.log('Audio response finished');
         setIsSpeaking(false);
         break;
       case 'response.done':
+        console.log('Full response completed');
+        setIsSpeaking(false);
         // Clear transcript for next response
         setTimeout(() => setAiTranscript(''), 2000);
         break;
       case 'input_audio_buffer.speech_started':
+        console.log('Speech started detected');
         setIsListening(true);
         break;
       case 'input_audio_buffer.speech_stopped':
+        console.log('Speech stopped detected');
         setIsListening(false);
         break;
       case 'session.created':
-        console.log('Session created, sending session update');
+        console.log('Session created, sending configuration...');
         // Send session configuration after session is created
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
+          const config = {
             type: "session.update",
             session: {
               modalities: ["text", "audio"],
@@ -201,12 +244,20 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
               temperature: 0.8,
               max_response_output_tokens: "inf"
             }
-          }));
+          };
+          wsRef.current.send(JSON.stringify(config));
+          console.log('Session configuration sent');
         }
         break;
-      case 'error':
-        console.error('Searcho error:', data.message);
+      case 'session.updated':
+        console.log('Session updated successfully');
         break;
+      case 'error':
+        console.error('OpenAI error:', data);
+        setAudioError(data.error?.message || 'API error occurred');
+        break;
+      default:
+        console.log('Unhandled message type:', data.type);
     }
   };
 
@@ -240,6 +291,19 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     <div className="flex flex-col h-full bg-gradient-to-b from-surface to-canvas">
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col items-center justify-center px-6">
+        {/* Error Display */}
+        {audioError && (
+          <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-red-500/20 backdrop-blur-md border border-red-400/50 rounded-lg px-4 py-2 text-red-200 text-sm z-10">
+            Audio Error: {audioError}
+          </div>
+        )}
+
+        {/* Loading State */}
+        {isInitializing && (
+          <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-blue-500/20 backdrop-blur-md border border-blue-400/50 rounded-lg px-4 py-2 text-blue-200 text-sm z-10">
+            Initializing audio system...
+          </div>
+        )}
         {/* Searcho AI Gradient Circle */}
         <div className="relative mb-8">
           {/* Main gradient circle */}
@@ -339,16 +403,24 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
               size="sm"
               onClick={toggleMute}
               className={`
-                ${isMuted ? 'bg-red-500/20 border-red-400 text-red-400' : 'bg-white/10 border-white/20 text-white hover:bg-white/20'}
+                ${isMuted 
+                  ? 'bg-red-500/30 border-red-400 text-red-300 hover:bg-red-500/40' 
+                  : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
+                }
+                min-w-[80px] font-medium
               `}
             >
-              {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              {isMuted ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
+              <span className="hidden sm:inline">
+                {isMuted ? 'Unmute' : 'Mute'}
+              </span>
             </Button>
 
             <Button
               variant="outline"
               size="sm"
               className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+              title="Video options"
             >
               <Video className="w-4 h-4" />
             </Button>
@@ -358,7 +430,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
                 variant="destructive"
                 size="sm"
                 onClick={onSessionEnd}
-                className="bg-red-600 hover:bg-red-700 text-white"
+                className="bg-red-600 hover:bg-red-700 text-white min-w-[100px]"
               >
                 End Session
               </Button>
