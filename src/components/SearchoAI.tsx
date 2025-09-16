@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '../utils/AudioRecorder';
 
 interface SearchoAIProps {
   isActive: boolean;
@@ -19,15 +20,25 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   const [isMuted, setIsMuted] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const audioRecorderRef = useRef<AudioRecorder | null>(null);
+  const audioQueueRef = useRef<AudioQueue | null>(null);
 
-  // Initialize audio context
+  // Initialize audio context and queue
   useEffect(() => {
     if (isActive && !audioContextRef.current) {
       audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+      audioQueueRef.current = new AudioQueue(audioContextRef.current);
     }
+    
+    return () => {
+      if (audioRecorderRef.current) {
+        audioRecorderRef.current.stop();
+        audioRecorderRef.current = null;
+      }
+    };
   }, [isActive]);
 
-  // WebSocket connection for OpenAI Realtime API
+  // WebSocket connection with audio recording
   useEffect(() => {
     if (!isActive) return;
 
@@ -37,29 +48,28 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
         const wsUrl = `wss://gqdvwmwueaqyqepwyifk.functions.supabase.co/functions/v1/searcho-realtime`;
         wsRef.current = new WebSocket(wsUrl);
 
-        wsRef.current.onopen = () => {
+        wsRef.current.onopen = async () => {
           console.log('Connected to Searcho AI');
           setIsConnected(true);
           
-          // Send initial context
-          if (wsRef.current && projectContext) {
-            wsRef.current.send(JSON.stringify({
-              type: 'session.update',
-              session: {
-                instructions: `Sen Searcho, Türkçe konuşan bir UX araştırma asistanısın. 
-                Bu araştırma "${projectContext.title}" projesi hakkında. 
-                Proje açıklaması: ${projectContext.description}
-                Araştırma tipi: ${projectContext.studyType}
-                
-                Görevin:
-                1. Katılımcıyla samimi bir şekilde tanış
-                2. Proje hakkında sorular sor
-                3. Kullanıcı deneyimi üzerine derinlemesine konuş
-                4. Yapıcı geri bildirim topla
-                
-                Türkçe, samimi ve profesyonel bir tonda konuş.`
-              }
-            }));
+          // Initialize audio recording
+          if (audioContextRef.current && !audioRecorderRef.current) {
+            try {
+              audioRecorderRef.current = new AudioRecorder((audioData: Float32Array) => {
+                if (wsRef.current?.readyState === WebSocket.OPEN && !isMuted) {
+                  const encodedAudio = encodeAudioForAPI(audioData);
+                  wsRef.current.send(JSON.stringify({
+                    type: 'input_audio_buffer.append',
+                    audio: encodedAudio
+                  }));
+                }
+              });
+
+              await audioRecorderRef.current.start();
+              console.log('Audio recording started');
+            } catch (error) {
+              console.error('Error starting audio recording:', error);
+            }
           }
         };
 
@@ -89,14 +99,28 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
       if (wsRef.current) {
         wsRef.current.close();
       }
+      if (audioRecorderRef.current) {
+        audioRecorderRef.current.stop();
+        audioRecorderRef.current = null;
+      }
     };
-  }, [isActive, projectContext]);
+  }, [isActive, isMuted]);
 
-  const handleSearchoMessage = (data: any) => {
+  const handleSearchoMessage = async (data: any) => {
+    console.log('Received message from Searcho:', data);
+    
     switch (data.type) {
       case 'response.audio.delta':
+        if (data.delta && audioQueueRef.current) {
+          // Convert base64 to Uint8Array and play audio
+          const binaryString = atob(data.delta);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          await audioQueueRef.current.addToQueue(bytes);
+        }
         setIsSpeaking(true);
-        // Handle audio playback here
         break;
       case 'response.audio.done':
         setIsSpeaking(false);
@@ -107,16 +131,64 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
       case 'input_audio_buffer.speech_stopped':
         setIsListening(false);
         break;
+      case 'session.created':
+        console.log('Session created, sending session update');
+        // Send session configuration after session is created
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: "session.update",
+            session: {
+              modalities: ["text", "audio"],
+              instructions: `Sen Searcho, Türkçe konuşan bir UX araştırma asistanısın. ${projectContext?.studyType || 'Kullanıcı deneyimi'} araştırması yapıyorsun. Samimi ve profesyonel bir şekilde kullanıcılarla konuş. 
+              
+              Bu araştırma "${projectContext?.title || 'Bilinmeyen proje'}" projesi hakkında. 
+              Proje açıklaması: ${projectContext?.description || 'Açıklama yok'}
+              
+              Görevin:
+              1. Katılımcıyla samimi bir şekilde tanış
+              2. Proje hakkında sorular sor
+              3. Kullanıcı deneyimi üzerine derinlemesine konuş
+              4. Yapıcı geri bildirim topla
+              
+              Türkçe, samimi ve profesyonel bir tonda konuş.`,
+              voice: "alloy",
+              input_audio_format: "pcm16",
+              output_audio_format: "pcm16",
+              input_audio_transcription: {
+                model: "whisper-1"
+              },
+              turn_detection: {
+                type: "server_vad",
+                threshold: 0.5,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 1000
+              },
+              temperature: 0.8,
+              max_response_output_tokens: "inf"
+            }
+          }));
+        }
+        break;
+      case 'error':
+        console.error('Searcho error:', data.message);
+        break;
     }
   };
 
   const toggleMute = () => {
-    setIsMuted(!isMuted);
-    if (wsRef.current) {
-      wsRef.current.send(JSON.stringify({
-        type: 'input_audio_buffer.clear'
-      }));
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+    
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      if (newMutedState) {
+        // Clear audio buffer when muting
+        wsRef.current.send(JSON.stringify({
+          type: 'input_audio_buffer.clear'
+        }));
+      }
     }
+    
+    console.log(`Audio ${newMutedState ? 'muted' : 'unmuted'}`);
   };
 
   if (!isActive) return null;

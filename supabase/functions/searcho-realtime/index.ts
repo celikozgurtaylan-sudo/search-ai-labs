@@ -25,9 +25,9 @@ serve(async (req) => {
   socket.onopen = () => {
     console.log("Client connected to Searcho Realtime");
     
-    // Connect to OpenAI Realtime API
+    // Connect to OpenAI Realtime API with GPT-4o mini
     openAISocket = new WebSocket(
-      "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01",
+      "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17",
       ["realtime", `openai-insecure-api-key.${Deno.env.get('OPENAI_API_KEY')}`]
     );
 
