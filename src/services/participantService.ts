@@ -98,11 +98,9 @@ export const participantService = {
     console.log('Looking for participant with token:', token);
     console.log('Current time:', new Date().toISOString());
     
+    // Use the secure function instead of direct table access
     const { data, error } = await supabase
-      .from('study_participants')
-      .select('*')
-      .eq('invitation_token', token)
-      .gt('token_expires_at', new Date().toISOString())
+      .rpc('validate_participant_token', { token_input: token })
       .maybeSingle();
 
     if (error) {

@@ -160,6 +160,17 @@ export type Database = {
         Args: { session_token: string }
         Returns: boolean
       }
+      validate_participant_token: {
+        Args: { token_input: string }
+        Returns: {
+          email: string
+          id: string
+          invitation_token: string
+          name: string
+          project_id: string
+          status: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
