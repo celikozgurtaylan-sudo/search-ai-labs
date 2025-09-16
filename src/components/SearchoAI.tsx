@@ -633,14 +633,6 @@ Conduct the interview in a conversational but structured manner. Make sure to ge
               </span>
             </Button>
 
-            <Button
-              variant="outline"
-              size="lg"
-              className="bg-surface border-border-light text-text-primary hover:bg-surface-hover h-12 px-3 border-2"
-              title="Video options"
-            >
-              <Video className="w-5 h-5" />
-            </Button>
 
             {onSessionEnd && (
               <Button
