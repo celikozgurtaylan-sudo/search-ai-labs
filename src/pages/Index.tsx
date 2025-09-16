@@ -199,7 +199,7 @@ const Index = () => {
           
           <div className="flex items-center justify-end mt-6">
             <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6">
-              {loading ? 'Oluşturuluyor...' : 'Sohbete Başla'} <ArrowRight className="w-4 h-4 ml-2" />
+              {loading ? 'Oluşturuluyor...' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </div>
         </div>
