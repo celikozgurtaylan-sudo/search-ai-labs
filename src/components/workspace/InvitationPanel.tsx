@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Mail, Users, Send, Link2, Copy, Trash2, RefreshCw, Clock, CheckCircle, XCircle } from "lucide-react";
 import { participantService, StudyParticipant } from "@/services/participantService";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 interface InvitationPanelProps {
@@ -28,6 +29,7 @@ const InvitationPanel = ({
   const [newName, setNewName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [resendingEmails, setResendingEmails] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (open && projectId) {
@@ -74,7 +76,29 @@ const InvitationPanel = ({
         token_expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days
       });
 
-      // TODO: Send email invitation here
+      // Send email invitation
+      try {
+        const { data: emailResult, error: emailError } = await supabase.functions.invoke('send-invitation-email', {
+          body: {
+            participantEmail: participant.email,
+            participantName: participant.name,
+            invitationToken: participant.invitation_token,
+            projectTitle: 'Kullanıcı Deneyimi Araştırması',
+            expiresAt: participant.token_expires_at
+          }
+        });
+
+        if (emailError) {
+          console.error('Email sending failed:', emailError);
+          toast.error("Katılımcı oluşturuldu ancak e-posta gönderilemedi");
+        } else {
+          console.log('Email sent successfully:', emailResult);
+          toast.success("Katılımcı davet edildi ve e-posta gönderildi");
+        }
+      } catch (emailError) {
+        console.error('Email sending failed:', emailError);
+        toast.error("Katılımcı oluşturuldu ancak e-posta gönderilemedi");
+      }
       
       setParticipants(prev => [participant, ...prev]);
       onParticipantsUpdate([participant, ...participants]);
@@ -88,6 +112,41 @@ const InvitationPanel = ({
       toast.error("Katılımcı davet edilirken hata oluştu");
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleResendEmail = async (participant: StudyParticipant) => {
+    if (!participant.id) return;
+    
+    setResendingEmails(prev => new Set([...prev, participant.id!]));
+    
+    try {
+      const { data: emailResult, error: emailError } = await supabase.functions.invoke('send-invitation-email', {
+        body: {
+          participantEmail: participant.email,
+          participantName: participant.name,
+          invitationToken: participant.invitation_token,
+          projectTitle: 'Kullanıcı Deneyimi Araştırması',
+          expiresAt: participant.token_expires_at
+        }
+      });
+
+      if (emailError) {
+        console.error('Email resend failed:', emailError);
+        toast.error("E-posta yeniden gönderilemedi");
+      } else {
+        console.log('Email resent successfully:', emailResult);
+        toast.success("Davet e-postası yeniden gönderildi");
+      }
+    } catch (error) {
+      console.error('Email resend failed:', error);
+      toast.error("E-posta yeniden gönderilemedi");
+    } finally {
+      setResendingEmails(prev => {
+        const next = new Set(prev);
+        next.delete(participant.id!);
+        return next;
+      });
     }
   };
 
@@ -265,6 +324,19 @@ const InvitationPanel = ({
                             onClick={() => handleCopyInvitationLink(participant.invitation_token)}
                           >
                             <Copy className="w-4 h-4" />
+                          </Button>
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleResendEmail(participant)}
+                            disabled={resendingEmails.has(participant.id!)}
+                          >
+                            {resendingEmails.has(participant.id!) ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Mail className="w-4 h-4" />
+                            )}
                           </Button>
                           
                           <Button
