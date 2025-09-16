@@ -34,6 +34,7 @@ const Workspace = () => {
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [isResearchRelated, setIsResearchRelated] = useState(false);
+  const [isButtonReady, setIsButtonReady] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('searchai-project');
@@ -77,6 +78,35 @@ const Workspace = () => {
       }, 1000);
     }
   }, [isResearchRelated, discussionGuide, projectData]);
+
+  // Calculate total animation duration and enable button after completion + 15 seconds
+  useEffect(() => {
+    if (discussionGuide && !isButtonReady) {
+      const calculateAnimationDuration = () => {
+        if (!discussionGuide?.sections) return 0;
+        
+        let totalDuration = 2000; // Base delay from StudyPanel
+        
+        discussionGuide.sections.forEach((section: any, sectionIndex: number) => {
+          // Each question has 800ms delay
+          totalDuration += section.questions.length * 800;
+          // Add 400ms buffer between sections (except for last section)
+          if (sectionIndex < discussionGuide.sections.length - 1) {
+            totalDuration += 400;
+          }
+        });
+        
+        return totalDuration;
+      };
+
+      const animationDuration = calculateAnimationDuration();
+      const totalWaitTime = animationDuration + 15000; // Add 15 seconds after animation
+
+      setTimeout(() => {
+        setIsButtonReady(true);
+      }, totalWaitTime);
+    }
+  }, [discussionGuide, isButtonReady]);
 
   // Auto-collapse chat panel when reaching starting stage
   useEffect(() => {
@@ -197,7 +227,7 @@ const Workspace = () => {
           <Button 
             onClick={handleNextStep}
             className="bg-brand-primary hover:bg-brand-primary-hover text-white"
-            disabled={!isResearchRelated || !discussionGuide}
+            disabled={!isResearchRelated || !discussionGuide || !isButtonReady}
           >
             <Users className="w-4 h-4 mr-2" />
             Sonraki: Katılımcıları Ekle →
