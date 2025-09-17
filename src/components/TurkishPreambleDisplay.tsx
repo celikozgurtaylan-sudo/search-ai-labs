@@ -17,7 +17,7 @@ interface TurkishPreambleDisplayProps {
 
 // Turkish preamble text chunks - Split into shorter, more digestible pieces
 const TURKISH_PREAMBLE_CHUNKS = [
-  "Merhaba! Ben SEARCHO, yapay zeka müşteri görüşmecisiyim.",
+  "Merhaba! Ben SEARCHO, yapay zeka destekli müşteri görüşme uzmanınızım.",
   "Bu UX araştırma seansında size eşlik edeceğim.",
   "Bu görüşme tamamen gönüllülük esasına dayanır ve istediğiniz zaman çıkabilirsiniz.",
   "Sizi rahat hissetmeniz için buradayım. Lütfen samimi ve doğal olun.",
@@ -89,8 +89,8 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
   };
   const startPreamble = () => {
     setIsPlaying(true);
-    playCurrentChunk();
   };
+
   const moveToNextChunk = useCallback(() => {
     setCurrentChunk(prev => {
       const nextChunk = prev + 1;
@@ -204,13 +204,16 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
     }
   }, [currentChunk, audioQueue, currentAudio, moveToNextChunk]);
 
-  // Handle chunk progression - only auto-start the first chunk
+  // Handle chunk progression - trigger next chunk after state update
   useEffect(() => {
-    if (isPlaying && currentChunk === 0) {
+    if (isPlaying && currentChunk > 0 && currentChunk < TURKISH_PREAMBLE_CHUNKS.length) {
+      console.log(`🚀 Auto-playing chunk ${currentChunk + 1} after state update`);
+      playCurrentChunk();
+    } else if (isPlaying && currentChunk === 0) {
       console.log(`🚀 Auto-starting first chunk`);
       playCurrentChunk();
     }
-  }, [isPlaying]);
+  }, [isPlaying, currentChunk, playCurrentChunk]);
 
   // Cleanup on unmount
   useEffect(() => {
