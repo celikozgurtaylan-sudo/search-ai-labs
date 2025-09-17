@@ -16,6 +16,7 @@ serve(async (req) => {
 
   try {
     if (!openAIApiKey) {
+      console.error('OpenAI API key not found in environment variables');
       throw new Error('OpenAI API key not configured');
     }
 
@@ -26,6 +27,8 @@ serve(async (req) => {
     }
 
     console.log('Generating Turkish TTS for text:', text.substring(0, 50) + '...');
+    console.log('Using voice:', voice);
+    console.log('API key present:', !!openAIApiKey);
 
     // Generate speech using OpenAI TTS
     const response = await fetch('https://api.openai.com/v1/audio/speech', {
@@ -46,8 +49,12 @@ serve(async (req) => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('OpenAI TTS API error:', errorText);
-      throw new Error(`TTS generation failed: ${response.status}`);
+      console.error('Response status:', response.status);
+      console.error('Response headers:', Object.fromEntries(response.headers.entries()));
+      throw new Error(`TTS generation failed: ${response.status} - ${errorText}`);
     }
+
+    console.log('OpenAI TTS response successful');
 
     // Convert to base64 safely to avoid stack overflow
     const arrayBuffer = await response.arrayBuffer();
@@ -61,6 +68,8 @@ serve(async (req) => {
     }
     
     const base64Audio = btoa(binary);
+    
+    console.log('Successfully generated base64 audio, length:', base64Audio.length);
 
     return new Response(
       JSON.stringify({ 

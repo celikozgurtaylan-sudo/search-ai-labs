@@ -206,11 +206,9 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         }, 2000);
       }
     } else {
-      // No audio available - wait for typewriter + standardized pause
-      console.log(`📝 [${audioId}] No audio for chunk ${chunkIndex + 1}, using text-only with 2s pause`);
-      setTimeout(() => {
-        moveToNextChunk();
-      }, 2000);
+      // No audio available - wait for typewriter to complete, then add 2s pause
+      console.log(`📝 [${audioId}] No audio for chunk ${chunkIndex + 1}, waiting for typewriter + 2s pause`);
+      // Will be handled by typewriter onComplete callback
     }
   }, [currentChunk, audioQueue, currentAudio, moveToNextChunk]);
 
@@ -276,7 +274,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
             <div className="text-center">
               <TypewriterText 
                 text={TURKISH_PREAMBLE_CHUNKS[TURKISH_PREAMBLE_CHUNKS.length - 1]} 
-                speed={50} 
+                speed={100} 
                 className="text-lg leading-relaxed mb-4" 
                 showCursor={false} 
               />
@@ -287,9 +285,18 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
           ) : isPlaying && currentChunk < TURKISH_PREAMBLE_CHUNKS.length ? (
             <TypewriterText 
               text={TURKISH_PREAMBLE_CHUNKS[currentChunk]} 
-              speed={50} 
+              speed={100} 
               className="text-lg leading-relaxed" 
-              showCursor={false} 
+              showCursor={false}
+              onComplete={() => {
+                // When typewriter completes and no audio is playing, wait 2s then move to next
+                if (!currentAudio) {
+                  console.log(`📝 Typewriter completed for chunk ${currentChunk + 1}, waiting 2s before next`);
+                  setTimeout(() => {
+                    moveToNextChunk();
+                  }, 2000);
+                }
+              }}
             />
           ) : !isPlaying && currentChunk === 0 ? (
             <div className="text-muted-foreground">
