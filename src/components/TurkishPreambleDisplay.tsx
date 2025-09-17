@@ -95,6 +95,21 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
     setCurrentChunk(prev => {
       const nextChunk = prev + 1;
       console.log(`Moving to chunk ${nextChunk + 1}/${TURKISH_PREAMBLE_CHUNKS.length}`);
+      
+      // Directly trigger the next chunk after state update
+      setTimeout(() => {
+        if (nextChunk < TURKISH_PREAMBLE_CHUNKS.length) {
+          console.log(`🚀 Direct playback of chunk ${nextChunk + 1}`);
+          playCurrentChunk();
+        } else {
+          // All chunks completed
+          setIsPlaying(false);
+          setPreambleCompleted(true);
+          setIsWaitingForResponse(true);
+          console.log('✅ Preamble completed, waiting for user response...');
+        }
+      }, 100); // Small delay to ensure state is updated
+      
       return nextChunk;
     });
   }, []);
@@ -106,12 +121,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
     console.log(`🎵 [${audioId}] Starting chunk ${chunkIndex + 1}/${TURKISH_PREAMBLE_CHUNKS.length}: "${TURKISH_PREAMBLE_CHUNKS[chunkIndex]}"`);
     
     if (chunkIndex >= TURKISH_PREAMBLE_CHUNKS.length) {
-      // All chunks completed, now wait for user response
-      setIsPlaying(false);
-      setPreambleCompleted(true);
-      setIsWaitingForResponse(true);
-      console.log('✅ Preamble completed, waiting for user response...');
-      return;
+      return; // This case is now handled in moveToNextChunk
     }
 
     // Stop any currently playing audio to prevent overlap
@@ -204,16 +214,13 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
     }
   }, [currentChunk, audioQueue, currentAudio, moveToNextChunk]);
 
-  // Handle chunk progression - trigger next chunk after state update
+  // Handle initial start only
   useEffect(() => {
-    if (isPlaying && currentChunk > 0 && currentChunk < TURKISH_PREAMBLE_CHUNKS.length) {
-      console.log(`🚀 Auto-playing chunk ${currentChunk + 1} after state update`);
-      playCurrentChunk();
-    } else if (isPlaying && currentChunk === 0) {
+    if (isPlaying && currentChunk === 0) {
       console.log(`🚀 Auto-starting first chunk`);
       playCurrentChunk();
     }
-  }, [isPlaying, currentChunk, playCurrentChunk]);
+  }, [isPlaying]);
 
   // Cleanup on unmount
   useEffect(() => {
