@@ -41,6 +41,8 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
   const [canSkip, setCanSkip] = useState(false);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [preambleCompleted, setPreambleCompleted] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [activeTimers, setActiveTimers] = useState<Set<NodeJS.Timeout>>(new Set());
 
   // Generate all audio chunks on mount
   useEffect(() => {
@@ -92,27 +94,42 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
   };
 
   const moveToNextChunk = useCallback(() => {
+    if (isTransitioning) {
+      console.log('⚠️ Already transitioning, ignoring moveToNextChunk call');
+      return;
+    }
+    
+    setIsTransitioning(true);
+    
+    // Clear any existing timers to prevent overlaps
+    activeTimers.forEach(timer => clearTimeout(timer));
+    setActiveTimers(new Set());
+    
     setCurrentChunk(prev => {
       const nextChunk = prev + 1;
       console.log(`Moving to chunk ${nextChunk + 1}/${TURKISH_PREAMBLE_CHUNKS.length}`);
       
-      // Directly trigger the next chunk after state update
-      setTimeout(() => {
-        if (nextChunk < TURKISH_PREAMBLE_CHUNKS.length) {
-          console.log(`🚀 Direct playback of chunk ${nextChunk + 1}`);
-          playCurrentChunk();
-        } else {
-          // All chunks completed
-          setIsPlaying(false);
-          setPreambleCompleted(true);
-          setIsWaitingForResponse(true);
-          console.log('✅ Preamble completed, waiting for user response...');
-        }
-      }, 100); // Small delay to ensure state is updated
+      if (nextChunk < TURKISH_PREAMBLE_CHUNKS.length) {
+        // Add a longer delay between chunks for better pacing
+        const timer = setTimeout(() => {
+          console.log(`🚀 Starting chunk ${nextChunk + 1} after delay`);
+          setIsTransitioning(false);
+          // The playback will be triggered by the useEffect when currentChunk changes
+        }, 1500); // Increased delay to 1.5 seconds
+        
+        setActiveTimers(new Set([timer]));
+      } else {
+        // All chunks completed
+        setIsPlaying(false);
+        setPreambleCompleted(true);
+        setIsWaitingForResponse(true);
+        setIsTransitioning(false);
+        console.log('✅ Preamble completed, waiting for user response...');
+      }
       
       return nextChunk;
     });
-  }, []);
+  }, [isTransitioning, activeTimers]);
 
   const playCurrentChunk = useCallback(() => {
     const chunkIndex = currentChunk;
@@ -147,11 +164,15 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
             return;
           }
           hasEnded = true;
-          console.log(`✅ [${audioId}] Audio completed for chunk ${chunkIndex + 1}, waiting 2s before next...`);
+          console.log(`✅ [${audioId}] Audio completed for chunk ${chunkIndex + 1}, moving to next...`);
           setCurrentAudio(null);
-          setTimeout(() => {
+          
+          // Use a timer that we can track and cancel if needed
+          const timer = setTimeout(() => {
             moveToNextChunk();
-          }, 2000);
+          }, 1000); // Reduced delay since we added delay in moveToNextChunk
+          
+          setActiveTimers(prev => new Set([...prev, timer]));
         };
         
         const handleAudioError = (e: any) => {
@@ -159,9 +180,12 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
           hasEnded = true;
           console.error(`❌ [${audioId}] Audio playback error for chunk ${chunkIndex + 1}:`, e);
           setCurrentAudio(null);
-          setTimeout(() => {
+          
+          const timer = setTimeout(() => {
             moveToNextChunk();
-          }, 2000);
+          }, 1000);
+          
+          setActiveTimers(prev => new Set([...prev, timer]));
         };
         
         // Set up event handlers
@@ -212,23 +236,28 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
     }
   }, [currentChunk, audioQueue, currentAudio, moveToNextChunk]);
 
-  // Handle initial start only
+  // Handle chunk progression with proper timing
   useEffect(() => {
-    if (isPlaying && currentChunk === 0) {
-      console.log(`🚀 Auto-starting first chunk`);
+    if (isPlaying && !isTransitioning) {
+      console.log(`🚀 Playing chunk ${currentChunk + 1}/${TURKISH_PREAMBLE_CHUNKS.length}`);
       playCurrentChunk();
     }
-  }, [isPlaying]);
+  }, [isPlaying, currentChunk, isTransitioning]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      // Clean up audio
       if (currentAudio) {
         currentAudio.pause();
         setCurrentAudio(null);
       }
+      
+      // Clean up all active timers
+      activeTimers.forEach(timer => clearTimeout(timer));
+      setActiveTimers(new Set());
     };
-  }, []);
+  }, [currentAudio, activeTimers]);
   const handleSkip = () => {
     if (currentAudio) {
       currentAudio.pause();
@@ -289,12 +318,14 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
               className="text-lg leading-relaxed" 
               showCursor={false}
               onComplete={() => {
-                // When typewriter completes and no audio is playing, wait 2s then move to next
+                // When typewriter completes and no audio is playing, wait then move to next
                 if (!currentAudio) {
-                  console.log(`📝 Typewriter completed for chunk ${currentChunk + 1}, waiting 2s before next`);
-                  setTimeout(() => {
+                  console.log(`📝 Typewriter completed for chunk ${currentChunk + 1}, waiting before next`);
+                  const timer = setTimeout(() => {
                     moveToNextChunk();
-                  }, 2000);
+                  }, 1500); // Consistent timing with audio completion
+                  
+                  setActiveTimers(prev => new Set([...prev, timer]));
                 }
               }}
             />
