@@ -59,12 +59,18 @@ const StudySession = () => {
       setCameraStream(stream);
       setCameraEnabled(true);
       setCameraPermissionGranted(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      
+      // Ensure video element gets the stream with a small delay to handle React updates
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(console.error);
+        }
+      }, 100);
     } catch (error) {
       console.error('Error accessing camera:', error);
       setCameraPermissionGranted(false);
+      setCameraEnabled(false);
     }
   };
 
@@ -79,7 +85,30 @@ const StudySession = () => {
       }
     } else {
       // Turn on camera
-      await initializeCamera();
+      setCameraEnabled(true); // Set this first for UI feedback
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480 },
+          audio: false // Audio handled by SearchoAI
+        });
+        setCameraStream(stream);
+        setCameraPermissionGranted(true);
+        
+        // Ensure video element gets the stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          // Force the video to load and play
+          try {
+            await videoRef.current.play();
+          } catch (playError) {
+            console.log('Video autoplay prevented, will play on user interaction');
+          }
+        }
+      } catch (error) {
+        console.error('Error accessing camera:', error);
+        setCameraPermissionGranted(false);
+        setCameraEnabled(false); // Reset if failed
+      }
     }
   };
 
@@ -231,26 +260,44 @@ const StudySession = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {cameraEnabled && cameraStream ? (
+                  {cameraEnabled ? (
                     <video
                       ref={videoRef}
                       autoPlay
                       muted
                       className="w-full h-48 bg-surface rounded-lg object-cover"
                       playsInline
+                      onLoadedMetadata={() => {
+                        // Ensure video starts playing when metadata is loaded
+                        if (videoRef.current && cameraStream) {
+                          videoRef.current.play().catch(console.error);
+                        }
+                      }}
+                      style={{ 
+                        display: cameraStream ? 'block' : 'none',
+                        backgroundColor: '#f3f4f6' 
+                      }}
                     />
-                  ) : (
+                  ) : null}
+                  
+                  {/* Always show placeholder when camera is off or no stream */}
+                  {(!cameraEnabled || !cameraStream) && (
                     <div className="w-full h-48 bg-surface rounded-lg flex items-center justify-center">
                       <div className="text-center">
                         <Camera className="w-12 h-12 text-text-muted mx-auto mb-2" />
                         <p className="text-text-secondary text-sm">
-                          {cameraPermissionGranted ? 'Kamera kapalı' : 'Kamera izni gerekli'}
+                          {!cameraEnabled 
+                            ? 'Kamera kapalı' 
+                            : cameraPermissionGranted 
+                              ? 'Kamera başlatılıyor...' 
+                              : 'Kamera izni gerekli'
+                          }
                         </p>
-                        {!cameraPermissionGranted && (
+                        {!cameraPermissionGranted && !cameraEnabled && (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={initializeCamera}
+                            onClick={toggleCamera}
                             className="mt-2"
                           >
                             İzin Ver
@@ -273,7 +320,9 @@ const StudySession = () => {
                           ? 'Ekran paylaşılıyor' 
                           : cameraEnabled && cameraStream 
                             ? 'Kamera aktif' 
-                            : 'Kamera kapalı'}
+                            : cameraEnabled 
+                              ? 'Kamera başlatılıyor...'
+                              : 'Kamera kapalı'}
                       </span>
                     </div>
                   </div>
