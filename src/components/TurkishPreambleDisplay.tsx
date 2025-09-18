@@ -63,7 +63,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         } = await supabase.functions.invoke('turkish-tts', {
           body: {
             text: chunk,
-            voice: 'nova'
+            voice: 'XB0fDUnXU5powFXDhCwa' // Charlotte - ElevenLabs multilingual voice
           }
         });
         if (error) throw error;

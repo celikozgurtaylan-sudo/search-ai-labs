@@ -1,7 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+const elevenlabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,12 +15,13 @@ serve(async (req) => {
   }
 
   try {
-    if (!openAIApiKey) {
-      console.error('OpenAI API key not found in environment variables');
-      throw new Error('OpenAI API key not configured');
+    if (!elevenlabsApiKey) {
+      console.error('ElevenLabs API key not found in environment variables');
+      throw new Error('ElevenLabs API key not configured');
     }
 
-    const { text, voice = 'alloy' } = await req.json();
+    // Default to a Turkish-sounding voice
+    const { text, voice = 'cgSgspJ2msm6clMCkdW9' } = await req.json(); // Jessica voice
 
     if (!text) {
       throw new Error('Text is required for TTS generation');
@@ -28,33 +29,37 @@ serve(async (req) => {
 
     console.log('Generating Turkish TTS for text:', text.substring(0, 50) + '...');
     console.log('Using voice:', voice);
-    console.log('API key present:', !!openAIApiKey);
+    console.log('ElevenLabs API key present:', !!elevenlabsApiKey);
 
-    // Generate speech using OpenAI TTS
-    const response = await fetch('https://api.openai.com/v1/audio/speech', {
+    // Generate speech using ElevenLabs TTS
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
+        'Accept': 'audio/mpeg',
         'Content-Type': 'application/json',
+        'xi-api-key': elevenlabsApiKey,
       },
       body: JSON.stringify({
-        model: 'tts-1',
-        input: text,
-        voice: voice,
-        response_format: 'mp3',
-        speed: 1.0
+        text: text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.5,
+          style: 0.0,
+          use_speaker_boost: true
+        }
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('OpenAI TTS API error:', errorText);
+      console.error('ElevenLabs TTS API error:', errorText);
       console.error('Response status:', response.status);
       console.error('Response headers:', Object.fromEntries(response.headers.entries()));
       throw new Error(`TTS generation failed: ${response.status} - ${errorText}`);
     }
 
-    console.log('OpenAI TTS response successful');
+    console.log('ElevenLabs TTS response successful');
 
     // Convert to base64 safely to avoid stack overflow
     const arrayBuffer = await response.arrayBuffer();
