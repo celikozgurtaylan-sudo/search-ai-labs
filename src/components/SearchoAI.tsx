@@ -66,11 +66,22 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
 
   const initializeInterviewQuestions = async () => {
     if (!projectContext?.sessionId || !projectContext?.projectId || !projectContext?.discussionGuide) {
+      console.error('Missing required data for interview initialization:', {
+        sessionId: projectContext?.sessionId,
+        projectId: projectContext?.projectId,
+        hasDiscussionGuide: !!projectContext?.discussionGuide
+      });
+      setAudioError('Görüşme verisi eksik - session veya proje bilgileri bulunamadı');
       return;
     }
 
     try {
-      console.log('Initializing interview questions...');
+      console.log('🎯 Initializing interview questions...', {
+        sessionId: projectContext.sessionId,
+        projectId: projectContext.projectId,
+        discussionGuide: projectContext.discussionGuide
+      });
+      
       await interviewService.initializeQuestions(
         projectContext.projectId,
         projectContext.sessionId,
@@ -79,17 +90,19 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
       setQuestionsInitialized(true);
       
       // Don't get the first question yet - wait for preamble to complete
-      console.log('Questions initialized. Starting with preamble...');
+      console.log('✅ Questions initialized successfully. Starting with preamble...');
       
       toast({
         title: "Görüşme Başlıyor",
         description: "Karşılama ve tanıtım ile başlıyoruz...",
       });
     } catch (error) {
-      console.error('Failed to initialize questions:', error);
+      console.error('❌ Failed to initialize questions:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Bilinmeyen hata';
+      setAudioError(`Görüşme soruları başlatılamadı: ${errorMessage}`);
       toast({
         title: "Hata",
-        description: "Görüşme soruları başlatılamadı",
+        description: "Görüşme soruları başlatılamadı. Lütfen sayfayı yenileyin.",
         variant: "destructive",
       });
     }
@@ -111,10 +124,16 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   }, []);
 
   const getNextQuestion = useCallback(async () => {
-    if (!projectContext?.sessionId) return;
+    if (!projectContext?.sessionId) {
+      console.error('❌ Cannot get next question: Missing sessionId');
+      return;
+    }
 
     try {
+      console.log('🎯 Getting next question for session:', projectContext.sessionId);
       const data = await interviewService.getNextQuestion(projectContext.sessionId);
+      
+      console.log('📝 Next question data:', data);
       setCurrentQuestion(data.nextQuestion);
       setInterviewProgress(data.progress);
       setIsQuestionComplete(false);
@@ -122,19 +141,42 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
       setIsWaitingForAnswer(false);
 
       if (data.progress.isComplete) {
+        console.log('🎉 Interview completed! Starting analysis...');
         toast({
           title: "Görüşme Tamamlandı!",
           description: "Tüm sorular yanıtlandı. Analiz başlatılıyor...",
         });
         // Trigger analysis
         if (projectContext.projectId) {
-          setTimeout(() => analyzeInterview(), 2000);
+          setTimeout(async () => {
+            try {
+              await interviewService.analyzeInterview(projectContext.sessionId!, projectContext.projectId!);
+              toast({
+                title: "Analiz Tamamlandı",
+                description: "Görüşme yanıtları başarıyla analiz edildi!",
+              });
+            } catch (error) {
+              console.error('Failed to analyze interview:', error);
+              toast({
+                title: "Analiz Hatası",
+                description: "Görüşme yanıtları analiz edilemedi",
+                variant: "destructive",
+              });
+            }
+          }, 2000);
         }
       }
     } catch (error) {
-      console.error('Failed to get next question:', error);
+      console.error('❌ Failed to get next question:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Bilinmeyen hata';
+      setAudioError(`Sonraki soru alınamadı: ${errorMessage}`);
+      toast({
+        title: "Hata",
+        description: "Sonraki soru alınamadı. Görüşme devam edemiyor.",
+        variant: "destructive",
+      });
     }
-  }, [projectContext]); // Add dependencies
+  }, [projectContext]); // Remove analyzeInterview dependency
 
   const analyzeInterview = async () => {
     if (!projectContext?.sessionId || !projectContext?.projectId) return;
@@ -264,8 +306,9 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
         wsRef.current = new WebSocket(wsUrl);
 
         wsRef.current.onopen = async () => {
-          console.log('Connected to Searcho AI');
+          console.log('🔗 Connected to Searcho AI');
           setIsConnected(true);
+          setAudioError(null); // Clear any previous errors
           
           // Initialize audio recording
           if (audioContextRef.current && !audioRecorderRef.current) {
@@ -304,13 +347,17 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
         };
 
         wsRef.current.onerror = (error) => {
-          console.error('WebSocket error:', error);
+          console.error('❌ WebSocket error:', error);
           setIsConnected(false);
+          setAudioError('Bağlantı hatası - AI servisi ile iletişim kurulamadı');
         };
 
         wsRef.current.onclose = () => {
-          console.log('Disconnected from Searcho AI');
+          console.log('❌ Disconnected from Searcho AI');
           setIsConnected(false);
+          if (isActive) {
+            setAudioError('Bağlantı kesildi - AI servisi ile iletişim kayboldu');
+          }
         };
 
       } catch (error) {

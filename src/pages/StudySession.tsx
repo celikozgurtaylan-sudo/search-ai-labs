@@ -257,9 +257,9 @@ const StudySession = () => {
                       description: projectData?.description || '',
                       discussionGuide: projectData?.analysis?.discussionGuide || null,
                       template: 'interview',
-                      sessionId: 'session_' + Date.now(),
+                      sessionId: crypto.randomUUID(),
                       projectId: projectData?.id,
-                      participantId: 'participant_' + Date.now()
+                      participantId: participant?.id || crypto.randomUUID()
                     }}
                     onSessionEnd={handleCompleteSession}
                   />

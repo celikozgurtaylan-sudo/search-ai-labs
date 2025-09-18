@@ -2,11 +2,67 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const elevenlabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
+const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Fallback function using OpenAI TTS
+async function generateWithOpenAI(text: string, corsHeaders: Record<string, string>) {
+  console.log('Using OpenAI TTS fallback...');
+  
+  if (!openAIApiKey) {
+    throw new Error('OpenAI API key not configured for fallback');
+  }
+
+  const response = await fetch('https://api.openai.com/v1/audio/speech', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${openAIApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'tts-1',
+      input: text,
+      voice: 'nova', // Good voice for Turkish
+      response_format: 'mp3',
+      speed: 1.0
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI TTS fallback failed: ${response.status} - ${errorText}`);
+  }
+
+  console.log('OpenAI TTS fallback successful');
+
+  // Convert to base64
+  const arrayBuffer = await response.arrayBuffer();
+  const uint8Array = new Uint8Array(arrayBuffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  
+  for (let i = 0; i < uint8Array.length; i += chunkSize) {
+    const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  
+  const base64Audio = btoa(binary);
+  
+  return new Response(
+    JSON.stringify({ 
+      audioContent: base64Audio,
+      text: text,
+      source: 'openai' // Indicate fallback was used
+    }),
+    {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    },
+  );
+}
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -56,6 +112,13 @@ serve(async (req) => {
       console.error('ElevenLabs TTS API error:', errorText);
       console.error('Response status:', response.status);
       console.error('Response headers:', Object.fromEntries(response.headers.entries()));
+      
+      // If quota exceeded, try OpenAI TTS as fallback
+      if (response.status === 401 && errorText.includes('quota_exceeded')) {
+        console.log('ElevenLabs quota exceeded, falling back to OpenAI TTS...');
+        return await generateWithOpenAI(text, corsHeaders);
+      }
+      
       throw new Error(`TTS generation failed: ${response.status} - ${errorText}`);
     }
 
