@@ -15,6 +15,8 @@ const StudySession = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [cameraPermissionGranted, setCameraPermissionGranted] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -25,10 +27,10 @@ const StudySession = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Initialize camera when session becomes active
+  // Check camera permissions on session start
   useEffect(() => {
     if (sessionStatus === 'active') {
-      initializeCamera();
+      checkCameraPermissions();
     }
     
     return () => {
@@ -38,18 +40,46 @@ const StudySession = () => {
     };
   }, [sessionStatus]);
 
+  const checkCameraPermissions = async () => {
+    try {
+      // Check if camera permission is already granted
+      const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
+      setCameraPermissionGranted(permissionStatus.state === 'granted');
+    } catch (error) {
+      console.error('Error checking camera permissions:', error);
+    }
+  };
+
   const initializeCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 },
-        audio: true
+        audio: false // Audio handled by SearchoAI
       });
       setCameraStream(stream);
+      setCameraEnabled(true);
+      setCameraPermissionGranted(true);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
+      setCameraPermissionGranted(false);
+    }
+  };
+
+  const toggleCamera = async () => {
+    if (cameraEnabled && cameraStream) {
+      // Turn off camera
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+      setCameraEnabled(false);
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    } else {
+      // Turn on camera
+      await initializeCamera();
     }
   };
 
@@ -178,30 +208,72 @@ const StudySession = () => {
                       <Camera className="w-5 h-5" />
                       <span>{isScreenSharing ? 'Ekran Paylaşımı' : 'Kamera'}</span>
                     </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={startScreenShare}
-                      disabled={isScreenSharing}
-                    >
-                      <Monitor className="w-4 h-4 mr-2" />
-                      Ekran Paylaş
-                    </Button>
+                    <div className="flex space-x-2">
+                      <Button
+                        variant={cameraEnabled ? "default" : "outline"}
+                        size="sm"
+                        onClick={toggleCamera}
+                        className={cameraEnabled ? "bg-green-600 hover:bg-green-700" : ""}
+                      >
+                        <Camera className="w-4 h-4 mr-2" />
+                        {cameraEnabled ? 'Kamerayı Kapat' : 'Kamerayı Aç'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={startScreenShare}
+                        disabled={isScreenSharing || !cameraEnabled}
+                      >
+                        <Monitor className="w-4 h-4 mr-2" />
+                        Ekran Paylaş
+                      </Button>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    muted
-                    className="w-full h-48 bg-surface rounded-lg object-cover"
-                    playsInline
-                  />
+                  {cameraEnabled && cameraStream ? (
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      muted
+                      className="w-full h-48 bg-surface rounded-lg object-cover"
+                      playsInline
+                    />
+                  ) : (
+                    <div className="w-full h-48 bg-surface rounded-lg flex items-center justify-center">
+                      <div className="text-center">
+                        <Camera className="w-12 h-12 text-text-muted mx-auto mb-2" />
+                        <p className="text-text-secondary text-sm">
+                          {cameraPermissionGranted ? 'Kamera kapalı' : 'Kamera izni gerekli'}
+                        </p>
+                        {!cameraPermissionGranted && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={initializeCamera}
+                            className="mt-2"
+                          >
+                            İzin Ver
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   <div className="mt-3 flex items-center justify-center space-x-4 text-sm">
                     <div className="flex items-center space-x-2">
-                      <div className={`w-3 h-3 rounded-full ${cameraStream ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                      <div className={`w-3 h-3 rounded-full ${
+                        isScreenSharing 
+                          ? 'bg-blue-500' 
+                          : cameraEnabled && cameraStream 
+                            ? 'bg-green-500' 
+                            : 'bg-red-500'
+                      }`}></div>
                       <span className="text-text-secondary">
-                        {isScreenSharing ? 'Ekran paylaşılıyor' : cameraStream ? 'Kamera aktif' : 'Kamera kapalı'}
+                        {isScreenSharing 
+                          ? 'Ekran paylaşılıyor' 
+                          : cameraEnabled && cameraStream 
+                            ? 'Kamera aktif' 
+                            : 'Kamera kapalı'}
                       </span>
                     </div>
                   </div>

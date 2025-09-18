@@ -4,6 +4,7 @@ import { Mic, MicOff, Video, PhoneOff, CheckCircle2, Circle, ArrowRight } from '
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import MinimalVoiceWaves from '@/components/ui/minimal-voice-waves';
+import EnhancedVoiceIndicator from '@/components/ui/enhanced-voice-indicator';
 import { useToast } from '@/components/ui/use-toast';
 import { AudioRecorder, AudioQueue } from '@/utils/AudioRecorder';
 import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
@@ -31,8 +32,11 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
+  const [microphonePermissionGranted, setMicrophonePermissionGranted] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [userSpeakingLevel, setUserSpeakingLevel] = useState(0);
   const [aiTranscript, setAiTranscript] = useState('');
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -246,11 +250,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
       
       const initAudio = async () => {
         try {
-          // Request microphone permission
-          await navigator.mediaDevices.getUserMedia({ audio: true });
-          console.log('Microphone permission granted');
-          
-          // Create AudioContext and ensure it's resumed
+          // Create AudioContext first
           audioContextRef.current = new AudioContext({ sampleRate: 24000 });
           
           // Add click handler to resume AudioContext on user interaction
@@ -271,6 +271,15 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
           
           // Initialize AudioQueue
           audioQueueRef.current = new AudioQueue(audioContextRef.current);
+          
+          // Check microphone permissions
+          try {
+            const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+            setMicrophonePermissionGranted(permissionStatus.state === 'granted');
+          } catch (error) {
+            console.log('Permission query not supported, will request on first use');
+          }
+          
           console.log('Audio system initialized');
         } catch (error) {
           console.error('Audio initialization failed:', error);
@@ -310,12 +319,20 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
           setIsConnected(true);
           setAudioError(null); // Clear any previous errors
           
-          // Initialize audio recording
-          if (audioContextRef.current && !audioRecorderRef.current) {
+          // Only initialize audio recording if microphone is enabled
+          if (audioContextRef.current && !audioRecorderRef.current && microphoneEnabled) {
             try {
               audioRecorderRef.current = new AudioRecorder((audioData: Float32Array) => {
+                // Calculate speaking level for visualization
+                let sum = 0;
+                for (let i = 0; i < audioData.length; i++) {
+                  sum += Math.abs(audioData[i]);
+                }
+                const avgLevel = sum / audioData.length;
+                setUserSpeakingLevel(avgLevel * 100);
+                
                 if (wsRef.current?.readyState === WebSocket.OPEN && !isMuted) {
-                  // Send audio to WebSocket (assuming encodeAudioForAPI exists)
+                  // Send audio to WebSocket
                   const encodedAudio = btoa(String.fromCharCode(...new Uint8Array(audioData.buffer)));
                   wsRef.current.send(JSON.stringify({
                     type: 'input_audio_buffer.append',
@@ -325,18 +342,11 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
               });
 
               await audioRecorderRef.current.start();
-              
-              // Get audio stream for visualization
-              try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioStreamRef.current = stream;
-              } catch (error) {
-                console.error('Error getting audio stream for visualization:', error);
-              }
-              
+              audioStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
               console.log('Audio recording started');
             } catch (error) {
               console.error('Error starting audio recording:', error);
+              setAudioError('Mikrofon başlatılamadı');
             }
           }
         };
@@ -376,7 +386,36 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
         audioRecorderRef.current = null;
       }
     };
-  }, [isActive, isMuted]);
+  }, [isActive, isMuted, microphoneEnabled]);
+
+  const toggleMicrophone = async () => {
+    if (microphoneEnabled) {
+      // Turn off microphone
+      if (audioRecorderRef.current) {
+        audioRecorderRef.current.stop();
+        audioRecorderRef.current = null;
+      }
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+        audioStreamRef.current = null;
+      }
+      setMicrophoneEnabled(false);
+      setUserSpeakingLevel(0);
+    } else {
+      // Turn on microphone
+      try {
+        // Request permission first
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+        setMicrophonePermissionGranted(true);
+        setMicrophoneEnabled(true);
+        // Audio recording will be initialized in the WebSocket useEffect
+      } catch (error) {
+        console.error('Microphone permission denied:', error);
+        setMicrophonePermissionGranted(false);
+        setAudioError('Mikrofon izni reddedildi');
+      }
+    }
+  };
 
   const handleSearchoMessage = useCallback(async (data: any) => {
     console.log('Received message type:', data.type, data);
@@ -733,63 +772,106 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
             </div>
           </div>
 
-          {/* Voice Wave Visualizer */}
+          {/* Voice Wave Visualizer - Replace with Enhanced Voice Indicator */}
           <div className="flex-1 flex justify-center px-4 sm:px-8">
-            <div className="bg-white/10 rounded-lg px-3 py-2 border border-white/20">
-              <MinimalVoiceWaves 
-                isListening={isListening} 
-                audioStream={audioStreamRef.current}
-                className="opacity-80"
-              />
-            </div>
+            <EnhancedVoiceIndicator 
+              isListening={isListening}
+              isSpeaking={isSpeaking}
+              userSpeakingLevel={userSpeakingLevel}
+              microphoneEnabled={microphoneEnabled}
+              className="opacity-90"
+            />
           </div>
 
           {/* Audio/Video Controls - Enhanced for better accessibility */}
           <div className="flex items-center space-x-2 sm:space-x-3">
+            {/* Microphone Toggle */}
             <Button
               variant="outline"
               size="lg"
-              onClick={toggleMute}
+              onClick={toggleMicrophone}
               className={`
-                ${isMuted 
-                  ? 'bg-red-500/30 border-red-400 text-red-300 hover:bg-red-500/40' 
-                  : 'bg-surface border-border-light text-text-primary hover:bg-surface-hover'
+                ${microphoneEnabled 
+                  ? 'bg-green-500/30 border-green-400 text-green-300 hover:bg-green-500/40' 
+                  : 'bg-red-500/30 border-red-400 text-red-300 hover:bg-red-500/40'
                 }
                 min-w-[90px] h-12 font-medium transition-all duration-200 z-50
                 focus:ring-2 focus:ring-brand-primary/50 focus:ring-offset-2 focus:ring-offset-transparent
                 border-2
               `}
             >
-              {isMuted ? <MicOff className="w-5 h-5 mr-2" /> : <Mic className="w-5 h-5 mr-2" />}
-              <span className="hidden sm:inline text-sm">
-                {isMuted ? 'Unmute' : 'Mute'}
-              </span>
+              {microphoneEnabled ? <Mic className="w-4 h-4 mr-2" /> : <MicOff className="w-4 h-4 mr-2" />}
+              {microphoneEnabled ? 'Mikrofon Aç' : 'Mikrofon Kapat'}
             </Button>
-
-
-            {onSessionEnd && (
+            
+            {/* Mute Toggle - Only show if microphone is enabled */}
+            {microphoneEnabled && (
               <Button
-                variant="destructive"
+                variant="outline"
                 size="lg"
-                onClick={onSessionEnd}
-                className="bg-red-600 hover:bg-red-700 text-white min-w-[100px] h-12 font-medium shadow-lg"
+                onClick={toggleMute}
+                disabled={!microphoneEnabled}
+                className={`
+                  ${isMuted 
+                    ? 'bg-orange-500/30 border-orange-400 text-orange-300 hover:bg-orange-500/40' 
+                    : 'bg-surface border-border-light text-text-primary hover:bg-surface-hover'
+                  }
+                  min-w-[90px] h-12 font-medium transition-all duration-200 z-50
+                  focus:ring-2 focus:ring-brand-primary/50 focus:ring-offset-2 focus:ring-offset-transparent
+                  border-2
+                `}
               >
-                End Session
+                {isMuted ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
+                {isMuted ? 'Sesi Aç' : 'Sustur'}
+              </Button>
+            )}
+            
+            {/* End Session Button */}
+            <Button
+              variant="destructive"
+              size="lg"
+              onClick={() => onSessionEnd?.()}
+              className="min-w-[100px] h-12 font-medium bg-red-600 hover:bg-red-700 text-white border-red-500 border-2 transition-all duration-200"
+            >
+              <PhoneOff className="w-4 h-4 mr-2" />
+              Görüşme Bitir
+            </Button>
+          </div>
+        </div>
+
+        {/* Permission/Error Messages */}
+        {(!microphonePermissionGranted || audioError) && (
+          <div className="mt-4 p-3 bg-red-500/20 border border-red-400/50 rounded-lg text-center">
+            <p className="text-red-300 text-sm">
+              {audioError || 'Mikrofon izni gerekli. Lütfen tarayıcınızdan mikrofon erişimine izin verin.'}
+            </p>
+            {!microphonePermissionGranted && !audioError && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleMicrophone}
+                className="mt-2 text-red-300 border-red-400 hover:bg-red-500/20"
+              >
+                Mikrofon İzni Ver
               </Button>
             )}
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Debug info (only in development) */}
+      {/* Debug Info - Development only */}
       {process.env.NODE_ENV === 'development' && (
-        <div className="absolute top-4 left-4 text-xs text-white/60 space-y-1 bg-black/20 p-2 rounded">
-          <div>Connected: {isConnected ? 'Yes' : 'No'}</div>
-          <div>Listening: {isListening ? 'Yes' : 'No'}</div>
-          <div>Speaking: {isSpeaking ? 'Yes' : 'No'}</div>
-          <div>Muted: {isMuted ? 'Yes' : 'No'}</div>
-          <div>Questions Init: {questionsInitialized ? 'Yes' : 'No'}</div>
-          <div>Current Q: {currentQuestion?.question_order || 'None'}</div>
+        <div className="absolute bottom-4 right-4 bg-black/80 text-white p-3 rounded-lg text-xs font-mono space-y-1 max-w-xs">
+          <div>Connected: {isConnected ? '✅' : '❌'}</div>
+          <div>Listening: {isListening ? '✅' : '❌'}</div>
+          <div>Speaking: {isSpeaking ? '✅' : '❌'}</div>
+          <div>Muted: {isMuted ? '✅' : '❌'}</div>
+          <div>Mic Enabled: {microphoneEnabled ? '✅' : '❌'}</div>
+          <div>Speaking Level: {Math.round(userSpeakingLevel)}</div>
+          <div>Preamble: {isPreamblePhase ? '✅' : '❌'}</div>
+          <div>Questions Init: {questionsInitialized ? '✅' : '❌'}</div>
+          <div>Question: {currentQuestion?.id?.substring(0, 8) || 'None'}</div>
+          <div>Progress: {interviewProgress.completed}/{interviewProgress.total}</div>
         </div>
       )}
     </div>
