@@ -475,11 +475,12 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
         console.log('Session created, sending configuration...');
         // Send session configuration after session is created
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          const config = {
-            event_id: "configure_session",
-            type: "session.update",
-            session: {
-              modalities: ["text", "audio"],
+        const config = {
+          event_id: "configure_session",
+          type: "session.update",
+          session: {
+            type: "realtime",
+            modalities: ["text", "audio"],
               instructions: `You are SEARCHO, a professional UX research interviewer conducting a structured interview.
 
 QUESTION PHASE INSTRUCTIONS:
