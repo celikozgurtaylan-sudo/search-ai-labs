@@ -171,7 +171,7 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
   } catch (error) {
     console.error('Error in generate-questions function:', error);
     return new Response(JSON.stringify({ 
-      error: error.message || 'Internal server error',
+      error: error instanceof Error ? error.message : 'Internal server error',
       questions: [
         'Bu konudaki deneyiminizi anlatır mısınız?',
         'Size en önemli görünen nokta nedir?',

@@ -290,7 +290,7 @@ Sadece 1-2 spesifik soru sor, genel tavsiye verme. Türkçe yanıt ver.`;
   } catch (error) {
     console.error('Error in turkish-chat function:', error);
     return new Response(JSON.stringify({ 
-      error: error.message || 'Internal server error',
+      error: error instanceof Error ? error.message : 'Internal server error',
       reply: 'Üzgünüm, şu anda bir hata oluştu. Lütfen tekrar deneyin.'
     }), {
       status: 500,
