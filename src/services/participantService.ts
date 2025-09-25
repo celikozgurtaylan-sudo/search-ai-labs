@@ -123,6 +123,28 @@ export const participantService = {
     return `session_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
   },
 
+  // Token-based status update using RPC function
+  async updateParticipantStatusByToken(token: string, status: StudyParticipant['status']): Promise<StudyParticipant> {
+    const { data, error } = await supabase
+      .rpc('update_participant_status_by_token', { 
+        token_input: token, 
+        new_status: status 
+      })
+      .single();
+
+    if (error) {
+      console.error('Error updating participant status by token:', error);
+      throw new Error(`Failed to update participant status: ${error.message}`);
+    }
+
+    if (!data || !data.success) {
+      console.error('RPC function returned error:', data?.message || 'Unknown error');
+      throw new Error(data?.message || 'Failed to update participant status');
+    }
+
+    return data.participant_data as any as StudyParticipant;
+  },
+
   // Session management
   async createSession(session: Omit<StudySession, 'id' | 'created_at' | 'updated_at'>): Promise<StudySession> {
     const { data, error } = await supabase

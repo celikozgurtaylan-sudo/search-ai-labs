@@ -287,6 +287,14 @@ export type Database = {
         Args: { session_token: string }
         Returns: boolean
       }
+      update_participant_status_by_token: {
+        Args: { new_status: string; token_input: string }
+        Returns: {
+          message: string
+          participant_data: Json
+          success: boolean
+        }[]
+      }
       validate_participant_token: {
         Args: { token_input: string }
         Returns: {

@@ -51,7 +51,7 @@ const ParticipantLanding = () => {
   };
 
   const handleJoinStudy = async () => {
-    if (!participant?.id || !consentGiven) return;
+    if (!participant?.invitation_token || !consentGiven) return;
 
     try {
       setJoining(true);
@@ -62,7 +62,7 @@ const ParticipantLanding = () => {
         // For now, we'll just proceed with joining
       }
 
-      await participantService.updateParticipantStatus(participant.id, 'joined');
+      await participantService.updateParticipantStatusByToken(participant.invitation_token, 'joined');
       
       // Create a session token for the participant
       const sessionToken = participantService.generateSessionToken();
@@ -84,10 +84,10 @@ const ParticipantLanding = () => {
   };
 
   const handleDeclineStudy = async () => {
-    if (!participant?.id) return;
+    if (!participant?.invitation_token) return;
 
     try {
-      await participantService.updateParticipantStatus(participant.id, 'declined');
+      await participantService.updateParticipantStatusByToken(participant.invitation_token, 'declined');
       toast.success("Davet reddedildi");
       
       // Show decline message
