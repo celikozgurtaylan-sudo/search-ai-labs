@@ -162,33 +162,21 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
             <p className="text-sm mt-2">Sormak istediğiniz her şeyi yazabilirsiniz.</p>
           </div>
         ) : (
-          messages.map((message) => (
+          messages.filter(msg => msg.type === 'user').map((message) => (
             <div
               key={message.id}
-              className={`flex space-x-3 ${message.type === 'user' ? 'justify-start' : 'justify-start'}`}
+              className="flex space-x-3 justify-start"
             >
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden ${
-                message.type === 'user' 
-                  ? 'bg-surface text-text-secondary' 
-                  : 'bg-brand-primary-light text-brand-primary'
-              }`}>
-                {message.type === 'user' ? (
-                  <img 
-                    src={userAvatar} 
-                    alt="User avatar" 
-                    className="w-full h-full object-cover rounded-full"
-                  />
-                ) : (
-                  <Bot className="w-4 h-4" />
-                )}
+              <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-surface text-text-secondary">
+                <img 
+                  src={userAvatar} 
+                  alt="User avatar" 
+                  className="w-full h-full object-cover rounded-full"
+                />
               </div>
               
               <div className="flex-1 max-w-lg">
-                <div className={`rounded-2xl px-4 py-3 ${
-                  message.type === 'user'
-                    ? 'bg-brand-primary text-white'
-                    : 'bg-surface text-text-primary border border-border'
-                }`}>
+                <div className="rounded-2xl px-4 py-3 bg-brand-primary text-white">
                   <p className="text-sm leading-relaxed whitespace-pre-line">
                     {message.content}
                   </p>
