@@ -56,24 +56,17 @@ const ParticipantLanding = () => {
     try {
       setJoining(true);
       
-      // Update participant name if provided
-      if (participantName.trim()) {
-        // We'll need to add an update method to the service
-        // For now, we'll just proceed with joining
-      }
-
+      // Update participant status to joined
       await participantService.updateParticipantStatusByToken(participant.invitation_token, 'joined');
       
-      // Create a session token for the participant
-      const sessionToken = participantService.generateSessionToken();
+      // Create a session record in the database
+      const session = await participantService.createSessionForParticipant(
+        participant.project_id,
+        participant.id!
+      );
       
-      // Redirect to the study interface with session token
-      navigate(`/study-session/${sessionToken}`, { 
-        state: { 
-          participant,
-          projectId: participant.project_id 
-        }
-      });
+      // Redirect to the study interface with the database session token
+      navigate(`/study-session/${session.session_token}`);
       
     } catch (error) {
       console.error('Failed to join study:', error);

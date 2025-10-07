@@ -160,6 +160,36 @@ export const participantService = {
     return data as StudySession;
   },
 
+  async createSessionForParticipant(projectId: string, participantId: string): Promise<StudySession> {
+    const sessionToken = this.generateSessionToken();
+    
+    const session: Omit<StudySession, 'id' | 'created_at' | 'updated_at'> = {
+      project_id: projectId,
+      participant_id: participantId,
+      session_token: sessionToken,
+      status: 'active',
+      started_at: new Date().toISOString(),
+      metadata: {}
+    };
+
+    return this.createSession(session);
+  },
+
+  async getSessionByToken(token: string): Promise<StudySession | null> {
+    const { data, error } = await supabase
+      .from('study_sessions')
+      .select('*')
+      .eq('session_token', token)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching session by token:', error);
+      return null;
+    }
+
+    return data as StudySession | null;
+  },
+
   async getProjectSessions(projectId: string): Promise<StudySession[]> {
     const { data, error } = await supabase
       .from('study_sessions')

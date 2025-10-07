@@ -185,5 +185,18 @@ export const projectService = {
     if (error) {
       throw new Error(`Failed to delete project: ${error.message}`);
     }
+  },
+
+  async getProjectBySessionToken(sessionToken: string): Promise<Project | null> {
+    const { data, error } = await supabase
+      .rpc('get_project_for_session', { session_token_input: sessionToken })
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching project by session token:', error);
+      return null;
+    }
+
+    return data as Project | null;
   }
 };

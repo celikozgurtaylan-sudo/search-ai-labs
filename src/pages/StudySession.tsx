@@ -1,59 +1,90 @@
-import { useEffect, useState, useRef } from "react";
-import { useParams, useLocation } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect, useRef } from "react";
+import { useParams } from "react-router-dom";
+import { Card, CardContent } from "@/components/ui/card";
+import { toast } from "sonner";
 import SearchoAI from "@/components/SearchoAI";
 import { FloatingVideo } from "@/components/FloatingVideo";
-import { supabase } from "@/integrations/supabase/client";
-
-interface ParticipantData {
-  name: string;
-  email: string;
-}
+import { participantService } from "@/services/participantService";
+import { projectService } from "@/services/projectService";
+import { interviewService } from "@/services/interviewService";
+import { CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 
 const StudySession = () => {
   const { sessionToken } = useParams();
-  const location = useLocation();
-  const { participant, projectId, projectData } = location.state || {};
-  const videoRef = useRef<HTMLVideoElement>(null);
   
-  const [sessionStatus, setSessionStatus] = useState<'waiting' | 'active' | 'completed'>('waiting');
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [cameraEnabled, setCameraEnabled] = useState(false);
-  const [hasCameraPermission, setHasCameraPermission] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [participantId, setParticipantId] = useState<string | null>(null);
+  const [participantName, setParticipantName] = useState<string | null>(null);
+  const [projectData, setProjectData] = useState<any>(null);
+  const [sessionStatus, setSessionStatus] = useState<'waiting' | 'active' | 'completed'>('waiting');
+  const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [hasCameraPermission, setHasCameraPermission] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    checkCameraPermissions();
-    createSessionRecord();
+    if (sessionToken) {
+      initializeSession();
+    } else {
+      setError("Geçersiz oturum");
+      setLoading(false);
+    }
     
+    checkCameraPermissions();
+
     return () => {
       if (cameraStream) {
         cameraStream.getTracks().forEach(track => track.stop());
       }
     };
-  }, []);
+  }, [sessionToken]);
 
-  const createSessionRecord = async () => {
-    if (!projectId || !participant?.id || !sessionToken) return;
-
+  const initializeSession = async () => {
     try {
-      const { data, error } = await supabase
-        .from('study_sessions')
-        .insert({
-          project_id: projectId,
-          participant_id: participant.id,
-          session_token: sessionToken,
-          status: 'active',
-          started_at: new Date().toISOString()
-        })
-        .select()
-        .single();
+      setLoading(true);
+      
+      // Fetch session data using the token
+      const session = await participantService.getSessionByToken(sessionToken!);
+      
+      if (!session) {
+        setError("Oturum bulunamadı veya süresi doldu");
+        return;
+      }
 
-      if (error) throw error;
-      setSessionId(data.id);
-      console.log('Session created:', data.id);
+      console.log('Session loaded:', session);
+      setSessionId(session.id!);
+      setParticipantId(session.participant_id || null);
+      
+      // Fetch project data using the session token
+      const project = await projectService.getProjectBySessionToken(sessionToken!);
+      
+      if (!project) {
+        setError("Proje bilgileri yüklenemedi");
+        return;
+      }
+
+      console.log('Project loaded:', project);
+      setProjectData(project);
+      
+      // Initialize interview questions
+      if (project.analysis?.discussionGuide) {
+        console.log('Initializing questions...');
+        await interviewService.initializeQuestions(
+          project.id!,
+          session.id!,
+          project.analysis.discussionGuide
+        );
+      }
+      
+      setSessionStatus('active');
     } catch (error) {
-      console.error('Failed to create session:', error);
+      console.error('Failed to initialize session:', error);
+      setError("Oturum başlatılırken hata oluştu");
+      toast.error("Oturum başlatılırken hata oluştu");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -96,30 +127,49 @@ const StudySession = () => {
     }
   };
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSessionStatus('active');
-    }, 3000);
-
-    return () => clearTimeout(timer);
-  }, []);
-
   const handleCompleteSession = () => {
     setSessionStatus('completed');
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-brand-primary mx-auto mb-4" />
+          <p className="text-text-secondary">Oturum yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center">
+            <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
+            <h2 className="text-lg font-semibold text-text-primary mb-2">Hata</h2>
+            <p className="text-text-secondary">{error}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (sessionStatus === 'completed') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="p-8 max-w-md w-full text-center">
-          <h2 className="text-2xl font-bold mb-4">Teşekkürler!</h2>
-          <p className="text-muted-foreground mb-6">
-            Oturumunuz tamamlandı. Bu araştırmaya katılımınız için teşekkür ederiz.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Bu pencereyi güvenle kapatabilirsiniz.
-          </p>
-        </div>
+      <div className="min-h-screen bg-canvas flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center">
+            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-text-primary mb-2">
+              Oturum Tamamlandı
+            </h2>
+            <p className="text-text-secondary mb-6">
+              Katılımınız için teşekkür ederiz. Bu pencereyi kapatabilirsiniz.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -131,21 +181,21 @@ const StudySession = () => {
         videoRef={videoRef}
         isEnabled={cameraEnabled}
         onToggle={toggleCamera}
-        participantName={participant?.name}
+        participantName={participantName || undefined}
       />
 
       {/* Main Content */}
       <div className="h-screen flex flex-col">
-        {sessionId && (
+        {sessionId && projectData && (
           <SearchoAI
             isActive={sessionStatus === 'active'}
             projectContext={{
-              description: projectData?.description || '',
-              discussionGuide: projectData?.analysis?.discussionGuide || null,
+              description: projectData.description || '',
+              discussionGuide: projectData.analysis?.discussionGuide || null,
               template: 'interview',
               sessionId: sessionId,
-              projectId: projectData?.id,
-              participantId: participant?.id
+              projectId: projectData.id,
+              participantId: participantId
             }}
             onSessionEnd={handleCompleteSession}
           />

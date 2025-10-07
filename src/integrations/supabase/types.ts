@@ -283,6 +283,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_project_for_session: {
+        Args: { session_token_input: string }
+        Returns: {
+          analysis: Json
+          description: string
+          id: string
+          title: string
+        }[]
+      }
       is_valid_participant_token: {
         Args: { session_token: string }
         Returns: boolean
