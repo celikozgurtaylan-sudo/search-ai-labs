@@ -85,9 +85,9 @@ serve(async (req) => {
 });
 
 async function generateAnalysis(interviewData: any[]) {
-  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-  if (!OPENAI_API_KEY) {
-    throw new Error('OpenAI API key not configured');
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  if (!LOVABLE_API_KEY) {
+    throw new Error('Lovable API key not configured');
   }
 
   // Prepare comprehensive analysis prompt
@@ -140,14 +140,14 @@ Please provide analysis in the following JSON format:
 Focus on actionable insights that can drive product decisions. Look for patterns, contradictions, and unexpected findings.
 `;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: 'google/gemini-2.5-pro',
       messages: [
         { role: 'system', content: 'You are a UX research expert. Provide structured, actionable analysis of user interview data.' },
         { role: 'user', content: analysisPrompt }
