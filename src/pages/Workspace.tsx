@@ -9,6 +9,7 @@ import { Search, ArrowLeft, Video, Users, Play, BarChart3, Square, ChevronLeft, 
 import ChatPanel from "@/components/workspace/ChatPanel";
 import StudyPanel from "@/components/workspace/StudyPanel";
 import InvitationPanel from "@/components/workspace/InvitationPanel";
+import AnalysisPanel from "@/components/workspace/AnalysisPanel";
 import { Stepper } from "@/components/ui/stepper";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -36,6 +37,7 @@ const Workspace = () => {
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [isResearchRelated, setIsResearchRelated] = useState(false);
   const [isButtonReady, setIsButtonReady] = useState(false);
+  const [sessionIds, setSessionIds] = useState<string[]>([]);
 
   useEffect(() => {
     // Check for researcher session first
@@ -365,7 +367,12 @@ const Workspace = () => {
           maxSize={isChatCollapsed ? 97 : 80}
           className="min-h-0 min-w-0 overflow-hidden transition-all duration-300"
         >
-          {isResearchRelated ? (
+          {currentStep === 'analyze' ? (
+            <AnalysisPanel 
+              projectId={projectData.id || ''}
+              sessionIds={sessionIds}
+            />
+          ) : isResearchRelated ? (
             <StudyPanel 
               discussionGuide={discussionGuide}
               participants={participants}

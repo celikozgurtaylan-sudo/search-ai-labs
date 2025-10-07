@@ -3,6 +3,7 @@ import { useParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import SearchoAI from "@/components/SearchoAI";
 import { FloatingVideo } from "@/components/FloatingVideo";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ParticipantData {
   name: string;
@@ -19,16 +20,42 @@ const StudySession = () => {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     checkCameraPermissions();
+    createSessionRecord();
     
     return () => {
       if (cameraStream) {
         cameraStream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [sessionStatus]);
+  }, []);
+
+  const createSessionRecord = async () => {
+    if (!projectId || !participant?.id || !sessionToken) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('study_sessions')
+        .insert({
+          project_id: projectId,
+          participant_id: participant.id,
+          session_token: sessionToken,
+          status: 'active',
+          started_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      setSessionId(data.id);
+      console.log('Session created:', data.id);
+    } catch (error) {
+      console.error('Failed to create session:', error);
+    }
+  };
 
   const checkCameraPermissions = async () => {
     try {
@@ -109,18 +136,20 @@ const StudySession = () => {
 
       {/* Main Content */}
       <div className="h-screen flex flex-col">
-        <SearchoAI
-          isActive={sessionStatus === 'active'}
-          projectContext={{
-            description: projectData?.description || '',
-            discussionGuide: projectData?.analysis?.discussionGuide || null,
-            template: 'interview',
-            sessionId: crypto.randomUUID(),
-            projectId: projectData?.id,
-            participantId: participant?.id || crypto.randomUUID()
-          }}
-          onSessionEnd={handleCompleteSession}
-        />
+        {sessionId && (
+          <SearchoAI
+            isActive={sessionStatus === 'active'}
+            projectContext={{
+              description: projectData?.description || '',
+              discussionGuide: projectData?.analysis?.discussionGuide || null,
+              template: 'interview',
+              sessionId: sessionId,
+              projectId: projectData?.id,
+              participantId: participant?.id
+            }}
+            onSessionEnd={handleCompleteSession}
+          />
+        )}
       </div>
     </div>
   );

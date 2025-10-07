@@ -622,11 +622,40 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                 </div>
 
                 {/* Current Question Card */}
-                {currentQuestion && (
-                  <div className="bg-card border border-border rounded-2xl p-8 shadow-sm">
-                    <h3 className="text-2xl font-semibold text-foreground mb-4 text-center">
-                      {currentQuestion.question_text}
-                    </h3>
+                {currentQuestion && !isPreamblePhase && (
+                  <div className="bg-white rounded-2xl p-8 shadow-lg border-2 border-primary/20">
+                    <div className="mb-6">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-semibold text-primary uppercase tracking-wide">
+                          Soru {interviewProgress.completed + 1} / {interviewProgress.total}
+                        </span>
+                        <span className="text-sm font-medium text-muted-foreground">
+                          {Math.round(interviewProgress.percentage)}% Tamamlandı
+                        </span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-primary transition-all duration-500 ease-out"
+                          style={{ width: `${interviewProgress.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {currentQuestion.section && (
+                        <span className="inline-block px-3 py-1 text-xs font-medium text-primary bg-primary/10 rounded-full">
+                          {currentQuestion.section}
+                        </span>
+                      )}
+                      <h3 className="text-2xl font-semibold text-foreground leading-relaxed">
+                        {currentQuestion.question_text}
+                      </h3>
+                      {isWaitingForAnswer && (
+                        <p className="text-sm text-muted-foreground italic">
+                          Lütfen yanıtınızı sesli olarak verin...
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
 
