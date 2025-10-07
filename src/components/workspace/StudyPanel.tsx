@@ -201,6 +201,12 @@ const StudyPanel = ({
 
       console.log('Adding questions:', questions);
 
+      // Set up typewriter effect for new questions
+      setTypewriterQuestions(prev => ({
+        ...prev,
+        [sectionId]: questions
+      }));
+
       // Add questions one by one with typewriter effect
       for (let i = 0; i < questions.length; i++) {
         await new Promise(resolve => setTimeout(resolve, i * 1000));
