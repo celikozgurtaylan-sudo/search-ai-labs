@@ -201,10 +201,10 @@ const StudyPanel = ({
 
       console.log('Adding questions:', questions);
 
-      // Set up typewriter effect for new questions
+      // Set up typewriter effect for new questions - append to existing, don't replace
       setTypewriterQuestions(prev => ({
         ...prev,
-        [sectionId]: questions
+        [sectionId]: [...(prev[sectionId] || []), ...questions]
       }));
 
       // Add questions one by one with typewriter effect
