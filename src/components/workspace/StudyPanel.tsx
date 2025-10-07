@@ -148,6 +148,12 @@ const StudyPanel = ({
       ...prev,
       [sectionId]: true
     }));
+    
+    setLoadingQuestions(prev => ({
+      ...prev,
+      [sectionId]: true
+    }));
+
     try {
       // Get current questions for this section
       const currentSection = discussionGuide?.sections?.find((s: any) => s.id === sectionId);
@@ -160,60 +166,44 @@ const StudyPanel = ({
       // Fallback to stored project data if no chat messages
       const projectDescription = latestUserInput || (localStorage.getItem('searchai-project') ? JSON.parse(localStorage.getItem('searchai-project')!).description : 'Kullanıcı deneyimi araştırması');
 
-      // Random delay between 5-10 seconds
-      const delay = Math.random() * 5000 + 5000;
-      setLoadingQuestions(prev => ({
-        ...prev,
-        [sectionId]: true
-      }));
-      await new Promise(resolve => setTimeout(resolve, delay));
-      const {
-        data,
-        error
-      } = await supabase.functions.invoke('generate-questions', {
+      console.log('Generating questions for:', { sectionTitle, sectionId, projectDescription });
+
+      const { data, error } = await supabase.functions.invoke('generate-questions', {
         body: {
           sectionTitle,
           sectionId,
           projectDescription,
           existingQuestions,
-          validateProject: true // Enable project validation
+          validateProject: false
         }
       });
+
       if (error) {
-        console.error('Error generating questions:', error);
+        console.error('Supabase function error:', error);
+        alert(`Sorular oluşturulurken hata oluştu: ${error.message}`);
         throw error;
       }
 
+      console.log('Generated questions response:', data);
+
       // Check if validation failed
       if (data?.needsElaboration) {
-        setLoadingQuestions(prev => ({
-          ...prev,
-          [sectionId]: false
-        }));
-        setGeneratingQuestions(prev => ({
-          ...prev,
-          [sectionId]: false
-        }));
-
-        // Show a message asking for more elaboration
-        alert(`Lütfen daha detaylı bir araştırma projesi açıklaması yapın. Mevcut metin: "${projectDescription.substring(0, 100)}..." daha spesifik araştırma hedefleri içermiyor.`);
+        alert(`Lütfen daha detaylı bir araştırma projesi açıklaması yapın. ${data.reason || ''}`);
         return;
       }
-      const questions = data?.questions || [];
-      setLoadingQuestions(prev => ({
-        ...prev,
-        [sectionId]: false
-      }));
 
-      // Set up typewriter effect for each question
-      setTypewriterQuestions(prev => ({
-        ...prev,
-        [sectionId]: questions
-      }));
+      const questions = data?.questions || [];
+      
+      if (questions.length === 0) {
+        alert('Soru oluşturulamadı. Lütfen tekrar deneyin.');
+        return;
+      }
+
+      console.log('Adding questions:', questions);
 
       // Add questions one by one with typewriter effect
       for (let i = 0; i < questions.length; i++) {
-        await new Promise(resolve => setTimeout(resolve, i * 2000)); // Stagger the questions
+        await new Promise(resolve => setTimeout(resolve, i * 1000));
 
         const updatedGuide = {
           ...discussionGuide,
@@ -230,13 +220,16 @@ const StudyPanel = ({
         };
         onGuideUpdate(updatedGuide);
       }
+
+      console.log('Questions added successfully');
     } catch (error) {
       console.error('Error generating AI questions:', error);
+      alert(`Beklenmeyen bir hata oluştu: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
+    } finally {
       setLoadingQuestions(prev => ({
         ...prev,
         [sectionId]: false
       }));
-    } finally {
       setGeneratingQuestions(prev => ({
         ...prev,
         [sectionId]: false
