@@ -164,7 +164,7 @@ const InvitationPanel = ({
   };
 
   const handleCopyInvitationLink = (token: string) => {
-    const link = `https://testsession.searcho.online/workspace/session/${token}`;
+    const link = `https://beta.searcho.online/workspace/session/${token}`;
     navigator.clipboard.writeText(link);
     toast.success("Araştırmacı linki kopyalandı");
   };
