@@ -130,7 +130,7 @@ export const participantService = {
         token_input: token, 
         new_status: status 
       })
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('Error updating participant status by token:', error);
