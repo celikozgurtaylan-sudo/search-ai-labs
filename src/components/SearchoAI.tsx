@@ -1,16 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Mic, MicOff, Video, PhoneOff, CheckCircle2, Circle, ArrowRight } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, PhoneOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import MinimalVoiceWaves from '@/components/ui/minimal-voice-waves';
-import EnhancedVoiceIndicator from '@/components/ui/enhanced-voice-indicator';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { AudioRecorder, AudioQueue } from '@/utils/AudioRecorder';
 import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
+import { AudioWaveform } from './AudioWaveform';
 
 interface SearchoAIProps {
   isActive: boolean;
@@ -597,282 +593,136 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
   }
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-surface to-canvas overflow-hidden">
-      {/* Interview Progress Header */}
-      {questionsInitialized && (
-        <div className="bg-white/5 backdrop-blur-sm border-b border-white/10 p-4">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-white/80 text-sm font-medium">
-                Interview Progress
-              </div>
-              <Badge variant="secondary" className="bg-white/10 text-white">
-                {interviewProgress.completed} / {interviewProgress.total}
-              </Badge>
-            </div>
-            <Progress 
-              value={interviewProgress.percentage} 
-              className="h-2 bg-white/10"
-            />
-          </div>
-        </div>
+    <div className="h-full flex flex-col bg-background">
+      {showTurkishPreamble && isPreamblePhase && (
+        <TurkishPreambleDisplay
+          projectContext={projectContext}
+          onComplete={startActualQuestions}
+          onSkip={startActualQuestions}
+        />
       )}
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col items-center justify-start pt-8 px-6 min-h-0">
-        {/* Error Display */}
-        {audioError && (
-          <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-red-500/20 backdrop-blur-md border border-red-400/50 rounded-lg px-4 py-2 text-red-200 text-sm z-10 cursor-pointer"
-               onClick={() => setAudioError(null)}>
-            Audio Error: {audioError}
-            <span className="ml-2 text-xs opacity-75">(click to dismiss)</span>
-          </div>
-        )}
-
-        {/* Loading State */}
-        {isInitializing && (
-          <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-blue-500/20 backdrop-blur-md border border-blue-400/50 rounded-lg px-4 py-2 text-blue-200 text-sm z-10">
-            Initializing audio system...
-          </div>
-        )}
-
-        {/* Current Question Display */}
-        {currentQuestion && (
-          <div className="w-full max-w-4xl mb-6">
-            <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center">
-                  <Badge variant="outline" className="mr-3 bg-primary/20 text-primary border-primary/30">
-                    {currentQuestion.section}
-                  </Badge>
-                  <span className="text-white/60 text-sm">
-                    Question {currentQuestion.question_order}
-                  </span>
-                </div>
-                <div className="flex items-center">
-                  {isQuestionComplete ? (
-                    <CheckCircle2 className="w-5 h-5 text-green-400" />
-                  ) : (
-                    <Circle className="w-5 h-5 text-white/40" />
-                  )}
-                </div>
+      {!showTurkishPreamble && (
+        <>
+          {/* Main Content Area */}
+          <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
+            {isInitializing ? (
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Görüşme başlatılıyor...</p>
               </div>
-              <div className="text-white text-lg leading-relaxed">
-                {currentQuestion.question_text}
-              </div>
-              {isWaitingForAnswer && !isQuestionComplete && (
-                <div className="mt-4 flex items-center text-yellow-400 text-sm">
-                  <ArrowRight className="w-4 h-4 mr-2" />
-                  Waiting for your response...
+            ) : (
+              <div className="w-full max-w-4xl space-y-8">
+                {/* Progress Indicator */}
+                <div className="text-center">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-muted text-sm">
+                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                    Soru {interviewProgress.completed + 1} / {interviewProgress.total}
+                  </div>
                 </div>
-              )}
-            </Card>
-          </div>
-        )}
 
-        {/* Searcho AI Gradient Circle */}
-        <div className="relative mb-8">
-          {/* Main gradient circle */}
-          <div 
-            className={`
-              w-48 h-48 rounded-full relative overflow-hidden transition-all duration-500 ease-in-out
-              ${isSpeaking ? 'scale-110 shadow-2xl' : 'scale-100 shadow-xl'}
-            `}
-            style={{
-              background: `
-                radial-gradient(circle at 30% 30%, #667eea 0%, #764ba2 45%, #f093fb 100%),
-                linear-gradient(135deg, rgba(102, 126, 234, 0.8) 0%, rgba(118, 75, 162, 0.9) 50%, rgba(240, 147, 251, 0.8) 100%)
-              `
-            }}
-          >
-            {/* Inner glow effect */}
-            <div 
-              className={`
-                absolute inset-4 rounded-full transition-all duration-300
-                ${isSpeaking ? 'animate-pulse' : ''}
-              `}
-              style={{
-                background: 'radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.1) 70%, transparent 100%)'
-              }}
-            />
-            
-            {/* Speaking animation waves */}
-            {isSpeaking && (
-              <>
-                <div className="absolute inset-0 rounded-full border-2 border-white/30 animate-ping" />
-                <div className="absolute inset-2 rounded-full border-2 border-white/20 animate-ping animation-delay-75" />
-                <div className="absolute inset-4 rounded-full border-2 border-white/10 animate-ping animation-delay-150" />
-              </>
+                {/* Current Question Card */}
+                {currentQuestion && (
+                  <div className="bg-card border border-border rounded-2xl p-8 shadow-sm">
+                    <h3 className="text-2xl font-semibold text-foreground mb-4 text-center">
+                      {currentQuestion.question_text}
+                    </h3>
+                  </div>
+                )}
+
+                {/* AI Transcript */}
+                {aiTranscript && (
+                  <div className="bg-muted/50 rounded-xl p-6 border border-border/50">
+                    <p className="text-foreground leading-relaxed text-center">
+                      {aiTranscript}
+                    </p>
+                  </div>
+                )}
+
+                {/* Audio Waveform Visualizer */}
+                <div className="flex flex-col items-center gap-4 py-8">
+                  <AudioWaveform 
+                    isActive={isListening} 
+                    isSpeaking={isSpeaking}
+                    className="max-w-2xl"
+                  />
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    {isSpeaking ? (
+                      <>
+                        <Volume2 className="h-4 w-4 animate-pulse" />
+                        <span>AI konuşuyor...</span>
+                      </>
+                    ) : isListening ? (
+                      <>
+                        <Mic className="h-4 w-4" />
+                        <span>Dinliyor...</span>
+                      </>
+                    ) : (
+                      <span>Hazır</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Error Message */}
+                {audioError && (
+                  <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 text-center">
+                    <p className="text-destructive text-sm">{audioError}</p>
+                  </div>
+                )}
+              </div>
             )}
-
           </div>
 
-          {/* Connection status indicator */}
-          <div className={`
-            absolute -top-2 -right-2 w-6 h-6 rounded-full border-2 border-white
-            ${isConnected ? 'bg-green-500' : 'bg-red-500'}
-          `} />
-        </div>
+          {/* Footer Controls Bar */}
+          <div className="border-t border-border bg-card/50 backdrop-blur-sm">
+            <div className="max-w-4xl mx-auto px-6 py-6 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={toggleMicrophone}
+                  variant={microphoneEnabled ? "default" : "outline"}
+                  size="lg"
+                  className="gap-2"
+                  disabled={!isConnected}
+                >
+                  {microphoneEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+                </Button>
 
-        {/* AI Transcript Display */}
-        <div className="w-full max-w-2xl mb-6">
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 min-h-[120px] border border-white/20">
-            <div className="flex items-center mb-2">
-              <div className="text-sm font-medium text-white/80">SEARCHO (Interviewer)</div>
-              <div className={`ml-2 w-2 h-2 rounded-full ${isSpeaking ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} />
-            </div>
-            <div className="text-white text-base leading-relaxed">
-              {aiTranscript || (
-                <span className="text-white/50 italic">
-                  {isConnected ? 
-                    (isPreamblePhase ? 
-                      'Starting with welcome and introduction...' : 
-                      (isListening ? 'Listening...' : 'Ready for questions')
-                    ) : 
-                    'Connecting...'
-                  }
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Question Display - Only show during question phase */}
-        {!isPreamblePhase && currentQuestion && (
-          <div className="w-full max-w-2xl mb-6">
-            <div className="bg-blue-500/10 backdrop-blur-sm rounded-lg p-4 border border-blue-400/30">
-              <div className="text-sm font-medium text-blue-300 mb-2">Current Question</div>
-              <div className="text-white text-base">
-                {currentQuestion.question_text}
+                <Button
+                  onClick={toggleMute}
+                  variant={isMuted ? "outline" : "secondary"}
+                  size="lg"
+                  className="gap-2"
+                >
+                  {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+                </Button>
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* Preamble Phase Indicator */}
-        {isPreamblePhase && (
-          <div className="w-full max-w-2xl mb-6">
-            <div className="bg-green-500/10 backdrop-blur-sm rounded-lg p-4 border border-green-400/30 text-center">
-              <div className="text-sm font-medium text-green-300 mb-2">Welcome Phase</div>
-              <div className="text-white/80 text-sm">
-                SEARCHO will start with a warm welcome and introduction before moving to structured questions
+              <div className="text-sm text-muted-foreground font-mono">
+                {getSessionDuration()}
               </div>
-            </div>
-          </div>
-        )}
-      </div>
 
-      {/* Bottom Controls Bar - Fixed position and always visible */}
-      <div className="bg-white/5 backdrop-blur-sm border-t border-white/10 p-4 mt-auto">
-        <div className="flex items-center justify-between max-w-4xl mx-auto">
-          {/* Session Timer */}
-          <div className="flex items-center space-x-4">
-            <div className="text-white/80 text-sm">
-              <span className="font-medium">{getSessionDuration()}</span>
-            </div>
-          </div>
-
-          {/* Voice Wave Visualizer - Replace with Enhanced Voice Indicator */}
-          <div className="flex-1 flex justify-center px-4 sm:px-8">
-            <EnhancedVoiceIndicator 
-              isListening={isListening}
-              isSpeaking={isSpeaking}
-              userSpeakingLevel={userSpeakingLevel}
-              microphoneEnabled={microphoneEnabled}
-              className="opacity-90"
-            />
-          </div>
-
-          {/* Audio/Video Controls - Enhanced for better accessibility */}
-          <div className="flex items-center space-x-2 sm:space-x-3">
-            {/* Microphone Toggle */}
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={toggleMicrophone}
-              className={`
-                ${microphoneEnabled 
-                  ? 'bg-green-500/30 border-green-400 text-green-300 hover:bg-green-500/40' 
-                  : 'bg-red-500/30 border-red-400 text-red-300 hover:bg-red-500/40'
-                }
-                min-w-[90px] h-12 font-medium transition-all duration-200 z-50
-                focus:ring-2 focus:ring-brand-primary/50 focus:ring-offset-2 focus:ring-offset-transparent
-                border-2
-              `}
-            >
-              {microphoneEnabled ? <Mic className="w-4 h-4 mr-2" /> : <MicOff className="w-4 h-4 mr-2" />}
-              {microphoneEnabled ? 'Mikrofon Aç' : 'Mikrofon Kapat'}
-            </Button>
-            
-            {/* Mute Toggle - Only show if microphone is enabled */}
-            {microphoneEnabled && (
               <Button
-                variant="outline"
+                onClick={() => onSessionEnd?.()}
+                variant="destructive"
                 size="lg"
-                onClick={toggleMute}
-                disabled={!microphoneEnabled}
-                className={`
-                  ${isMuted 
-                    ? 'bg-orange-500/30 border-orange-400 text-orange-300 hover:bg-orange-500/40' 
-                    : 'bg-surface border-border-light text-text-primary hover:bg-surface-hover'
-                  }
-                  min-w-[90px] h-12 font-medium transition-all duration-200 z-50
-                  focus:ring-2 focus:ring-brand-primary/50 focus:ring-offset-2 focus:ring-offset-transparent
-                  border-2
-                `}
+                className="gap-2"
               >
-                {isMuted ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
-                {isMuted ? 'Sesi Aç' : 'Sustur'}
+                <PhoneOff className="h-5 w-5" />
+                Oturumu Bitir
               </Button>
-            )}
-            
-            {/* End Session Button */}
-            <Button
-              variant="destructive"
-              size="lg"
-              onClick={() => onSessionEnd?.()}
-              className="min-w-[100px] h-12 font-medium bg-red-600 hover:bg-red-700 text-white border-red-500 border-2 transition-all duration-200"
-            >
-              <PhoneOff className="w-4 h-4 mr-2" />
-              Görüşme Bitir
-            </Button>
+            </div>
           </div>
-        </div>
 
-        {/* Permission/Error Messages */}
-        {(!microphonePermissionGranted || audioError) && (
-          <div className="mt-4 p-3 bg-red-500/20 border border-red-400/50 rounded-lg text-center">
-            <p className="text-red-300 text-sm">
-              {audioError || 'Mikrofon izni gerekli. Lütfen tarayıcınızdan mikrofon erişimine izin verin.'}
-            </p>
-            {!microphonePermissionGranted && !audioError && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleMicrophone}
-                className="mt-2 text-red-300 border-red-400 hover:bg-red-500/20"
-              >
-                Mikrofon İzni Ver
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Debug Info - Development only */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="absolute bottom-4 right-4 bg-black/80 text-white p-3 rounded-lg text-xs font-mono space-y-1 max-w-xs">
-          <div>Connected: {isConnected ? '✅' : '❌'}</div>
-          <div>Listening: {isListening ? '✅' : '❌'}</div>
-          <div>Speaking: {isSpeaking ? '✅' : '❌'}</div>
-          <div>Muted: {isMuted ? '✅' : '❌'}</div>
-          <div>Mic Enabled: {microphoneEnabled ? '✅' : '❌'}</div>
-          <div>Speaking Level: {Math.round(userSpeakingLevel)}</div>
-          <div>Preamble: {isPreamblePhase ? '✅' : '❌'}</div>
-          <div>Questions Init: {questionsInitialized ? '✅' : '❌'}</div>
-          <div>Question: {currentQuestion?.id?.substring(0, 8) || 'None'}</div>
-          <div>Progress: {interviewProgress.completed}/{interviewProgress.total}</div>
-        </div>
+          {/* Debug Info */}
+          {import.meta.env.DEV && (
+            <div className="bg-slate-900 text-white p-4 text-xs font-mono">
+              <div>Connected: {isConnected ? '✅' : '❌'}</div>
+              <div>Listening: {isListening ? '✅' : '❌'}</div>
+              <div>Speaking: {isSpeaking ? '✅' : '❌'}</div>
+              <div>Mic: {microphoneEnabled ? '✅' : '❌'}</div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
