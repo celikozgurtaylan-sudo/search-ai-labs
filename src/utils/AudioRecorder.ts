@@ -114,7 +114,7 @@ export class AudioQueue {
       const wavData = this.createWavFromPCM(audioData);
       console.log('Decoding audio data...');
       
-      const audioBuffer = await this.audioContext.decodeAudioData(wavData.buffer.slice(0));
+      const audioBuffer = await this.audioContext.decodeAudioData(wavData.buffer.slice(0) as ArrayBuffer);
       console.log('Audio decoded successfully, duration:', audioBuffer.duration);
       
       const source = this.audioContext.createBufferSource();

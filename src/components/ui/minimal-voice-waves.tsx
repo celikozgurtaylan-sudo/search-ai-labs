@@ -64,14 +64,15 @@ const MinimalVoiceWaves: React.FC<MinimalVoiceWavesProps> = ({
 
     if (!analyser || !dataArray) return;
 
-    analyser.getByteFrequencyData(dataArray);
+    const typedArray = new Uint8Array(dataArray.buffer as ArrayBuffer);
+    analyser.getByteFrequencyData(typedArray);
     
     // Calculate average amplitude from frequency data
     let sum = 0;
-    for (let i = 0; i < dataArray.length; i++) {
-      sum += dataArray[i];
+    for (let i = 0; i < typedArray.length; i++) {
+      sum += typedArray[i];
     }
-    const avgAmplitude = sum / dataArray.length / 255;
+    const avgAmplitude = sum / typedArray.length / 255;
     setAmplitude(avgAmplitude);
 
     animationRef.current = requestAnimationFrame(analyzeAudio);
