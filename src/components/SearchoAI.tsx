@@ -7,7 +7,7 @@ import { AudioRecorder, AudioQueue } from '@/utils/AudioRecorder';
 import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
 import { AudioWaveform } from './AudioWaveform';
-import { SequentialTTS, TTSSentence } from '@/services/textToSpeechService';
+
 
 interface SearchoAIProps {
   isActive: boolean;
@@ -51,12 +51,10 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   const [preambleComplete, setPreambleComplete] = useState(false);
   const [showTurkishPreamble, setShowTurkishPreamble] = useState(true);
 
-  // TTS state
-  const [ttsInstance, setTtsInstance] = useState<SequentialTTS | null>(null);
-  const [currentSentence, setCurrentSentence] = useState<TTSSentence | null>(null);
-  const [ttsSentences, setTtsSentences] = useState<TTSSentence[]>([]);
-  const [isTtsPlaying, setIsTtsPlaying] = useState(false);
-  const [ttsSentenceIndex, setTtsSentenceIndex] = useState(0);
+  // Visual sentence state
+  const [sentences, setSentences] = useState<string[]>([]);
+  const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -587,96 +585,59 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // Auto-start TTS when a new question appears
-  useEffect(() => {
-    if (!currentQuestion?.question_text || isPreamblePhase) return;
-
-    console.log('🔊 Starting TTS for new question');
-    
-    // Clean up previous TTS instance
-    if (ttsInstance) {
-      ttsInstance.stop();
-    }
-
-    // Create new TTS instance
-    const tts = new SequentialTTS(currentQuestion.question_text);
-    
-    tts.onSentenceStart = (sentence) => {
-      console.log('🔊 Speaking sentence:', sentence.text);
-      setCurrentSentence(sentence);
-      setTtsSentenceIndex(sentence.index);
-      setIsTtsPlaying(true);
-    };
-
-    tts.onSentenceEnd = (sentence) => {
-      console.log('✅ Completed sentence:', sentence.text);
-    };
-
-    tts.onComplete = () => {
-      console.log('✅ All sentences completed');
-      setIsTtsPlaying(false);
-      setCurrentSentence(null);
-    };
-
-    tts.onError = (error) => {
-      console.error('❌ TTS error:', error);
-      toast({
-        title: "Ses hatası",
-        description: "Metni okurken bir hata oluştu.",
-        variant: "destructive",
-      });
-      setIsTtsPlaying(false);
-    };
-
-    setTtsSentences(tts.getSentences());
-    setTtsInstance(tts);
-    
-    // Auto-start after a short delay
-    setTimeout(() => {
-      tts.start();
-    }, 500);
-
-    return () => {
-      tts.stop();
-    };
-  }, [currentQuestion?.question_text, isPreamblePhase]);
-
-  const toggleTtsPlayPause = () => {
-    if (!ttsInstance) return;
-    
-    if (isTtsPlaying) {
-      ttsInstance.pause();
-      setIsTtsPlaying(false);
-    } else {
-      ttsInstance.resume();
-      setIsTtsPlaying(true);
-    }
+  // Split text into sentences
+  const splitIntoSentences = (text: string): string[] => {
+    return text
+      .split(/([.!?]+\s+)/)
+      .reduce((acc, curr, i, arr) => {
+        if (i % 2 === 0 && curr.trim()) {
+          acc.push(curr + (arr[i + 1] || '').trim());
+        }
+        return acc;
+      }, [] as string[])
+      .filter(s => s.length > 0);
   };
 
-  const skipTtsSentence = () => {
-    if (!ttsInstance) return;
+  // Initialize sentences when question changes
+  useEffect(() => {
+    if (!currentQuestion?.question_text || isPreamblePhase) {
+      setSentences([]);
+      return;
+    }
+
+    const splitSentences = splitIntoSentences(currentQuestion.question_text);
+    setSentences(splitSentences);
+    setCurrentSentenceIndex(0);
+    setIsAutoPlaying(true);
+  }, [currentQuestion?.question_text, isPreamblePhase]);
+
+  // Auto-advance through sentences
+  useEffect(() => {
+    if (!isAutoPlaying || sentences.length === 0) return;
     
-    ttsInstance.stop();
-    const nextIndex = ttsSentenceIndex + 1;
+    const interval = setInterval(() => {
+      setCurrentSentenceIndex(prev => {
+        if (prev < sentences.length - 1) {
+          return prev + 1;
+        } else {
+          setIsAutoPlaying(false);
+          return prev;
+        }
+      });
+    }, 3000); // 3 seconds per sentence
     
-    if (nextIndex < ttsSentences.length) {
-      // Create new instance starting from next sentence
-      const remainingText = ttsSentences
-        .slice(nextIndex)
-        .map(s => s.text)
-        .join(' ');
-      
-      const newTts = new SequentialTTS(remainingText);
-      newTts.onSentenceStart = ttsInstance.onSentenceStart;
-      newTts.onSentenceEnd = ttsInstance.onSentenceEnd;
-      newTts.onComplete = ttsInstance.onComplete;
-      newTts.onError = ttsInstance.onError;
-      
-      setTtsInstance(newTts);
-      newTts.start();
+    return () => clearInterval(interval);
+  }, [sentences, isAutoPlaying]);
+
+  const togglePlayPause = () => {
+    setIsAutoPlaying(prev => !prev);
+  };
+
+  const skipSentence = () => {
+    if (currentSentenceIndex < sentences.length - 1) {
+      setCurrentSentenceIndex(prev => prev + 1);
     } else {
-      setIsTtsPlaying(false);
-      setCurrentSentence(null);
+      setIsAutoPlaying(false);
     }
   };
 
@@ -752,17 +713,19 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                       {/* Question text with sentence highlighting */}
                       <div className="space-y-2">
                         <h3 className="text-2xl font-semibold text-foreground leading-relaxed">
-                          {ttsSentences.length > 0 ? (
-                            ttsSentences.map((sentence, idx) => (
+                          {sentences.length > 0 ? (
+                            sentences.map((sentence, idx) => (
                               <span
                                 key={idx}
-                                className={`transition-all duration-300 ${
-                                  currentSentence?.index === idx
-                                    ? 'bg-primary/20 px-2 py-1 rounded'
-                                    : ''
+                                className={`transition-all duration-500 ${
+                                  idx === currentSentenceIndex
+                                    ? 'bg-primary/20 px-2 py-1 rounded font-semibold'
+                                    : idx < currentSentenceIndex
+                                    ? 'text-muted-foreground/70'
+                                    : 'text-muted-foreground/40'
                                 }`}
                               >
-                                {sentence.text}{' '}
+                                {sentence}{' '}
                               </span>
                             ))
                           ) : (
@@ -770,17 +733,17 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                           )}
                         </h3>
                         
-                        {/* TTS Controls & Progress */}
-                        {ttsSentences.length > 0 && (
+                        {/* Visual Controls & Progress */}
+                        {sentences.length > 0 && (
                           <div className="flex items-center gap-3 pt-2">
                             <div className="flex items-center gap-2">
                               <Button
-                                onClick={toggleTtsPlayPause}
+                                onClick={togglePlayPause}
                                 variant="outline"
                                 size="sm"
                                 className="gap-2"
                               >
-                                {isTtsPlaying ? (
+                                {isAutoPlaying ? (
                                   <>
                                     <Pause className="h-3 w-3" />
                                     Duraklat
@@ -793,13 +756,13 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                                 )}
                               </Button>
                               
-                              {ttsSentences.length > 1 && (
+                              {sentences.length > 1 && (
                                 <Button
-                                  onClick={skipTtsSentence}
+                                  onClick={skipSentence}
                                   variant="ghost"
                                   size="sm"
                                   className="gap-2"
-                                  disabled={!isTtsPlaying}
+                                  disabled={currentSentenceIndex >= sentences.length - 1}
                                 >
                                   <SkipForward className="h-3 w-3" />
                                   İleri
@@ -808,14 +771,9 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                             </div>
                             
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              {isTtsPlaying && (
-                                <>
-                                  <Volume2 className="h-3 w-3 animate-pulse" />
-                                  <span>
-                                    Cümle {(currentSentence?.index || 0) + 1} / {ttsSentences.length}
-                                  </span>
-                                </>
-                              )}
+                              <span>
+                                Cümle {currentSentenceIndex + 1} / {sentences.length}
+                              </span>
                             </div>
                           </div>
                         )}
