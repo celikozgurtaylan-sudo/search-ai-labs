@@ -52,17 +52,13 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({ project
     return () => clearTimeout(timer);
   }, []);
 
-  // Auto-advance to next chunk after typewriter completes
+  // Only advance on manual "Geç" click
   const handleTypewriterComplete = () => {
-    if (currentChunk < TURKISH_PREAMBLE_CHUNKS.length - 1) {
-      // Wait 3 seconds then move to next chunk
-      timerRef.current = setTimeout(() => {
-        setCurrentChunk((prev) => prev + 1);
-      }, 3000);
-    } else {
-      // All chunks completed
+    // Only check if we've reached the last chunk
+    if (currentChunk === TURKISH_PREAMBLE_CHUNKS.length - 1) {
       setPreambleCompleted(true);
     }
+    // No auto-advance - user must click "Geç" to proceed
   };
 
   // Cleanup timer on unmount
