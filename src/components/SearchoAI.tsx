@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Mic, MicOff, Volume2, VolumeX, PhoneOff } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, PhoneOff, Play, Pause, SkipForward } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { AudioRecorder, AudioQueue } from '@/utils/AudioRecorder';
 import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
 import { AudioWaveform } from './AudioWaveform';
+import { SequentialTTS, TTSSentence } from '@/services/textToSpeechService';
 
 interface SearchoAIProps {
   isActive: boolean;
@@ -49,6 +50,13 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   const [isPreamblePhase, setIsPreamblePhase] = useState(true);
   const [preambleComplete, setPreambleComplete] = useState(false);
   const [showTurkishPreamble, setShowTurkishPreamble] = useState(true);
+
+  // TTS state
+  const [ttsInstance, setTtsInstance] = useState<SequentialTTS | null>(null);
+  const [currentSentence, setCurrentSentence] = useState<TTSSentence | null>(null);
+  const [ttsSentences, setTtsSentences] = useState<TTSSentence[]>([]);
+  const [isTtsPlaying, setIsTtsPlaying] = useState(false);
+  const [ttsSentenceIndex, setTtsSentenceIndex] = useState(0);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -579,6 +587,99 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  // Auto-start TTS when a new question appears
+  useEffect(() => {
+    if (!currentQuestion?.question_text || isPreamblePhase) return;
+
+    console.log('🔊 Starting TTS for new question');
+    
+    // Clean up previous TTS instance
+    if (ttsInstance) {
+      ttsInstance.stop();
+    }
+
+    // Create new TTS instance
+    const tts = new SequentialTTS(currentQuestion.question_text);
+    
+    tts.onSentenceStart = (sentence) => {
+      console.log('🔊 Speaking sentence:', sentence.text);
+      setCurrentSentence(sentence);
+      setTtsSentenceIndex(sentence.index);
+      setIsTtsPlaying(true);
+    };
+
+    tts.onSentenceEnd = (sentence) => {
+      console.log('✅ Completed sentence:', sentence.text);
+    };
+
+    tts.onComplete = () => {
+      console.log('✅ All sentences completed');
+      setIsTtsPlaying(false);
+      setCurrentSentence(null);
+    };
+
+    tts.onError = (error) => {
+      console.error('❌ TTS error:', error);
+      toast({
+        title: "Ses hatası",
+        description: "Metni okurken bir hata oluştu.",
+        variant: "destructive",
+      });
+      setIsTtsPlaying(false);
+    };
+
+    setTtsSentences(tts.getSentences());
+    setTtsInstance(tts);
+    
+    // Auto-start after a short delay
+    setTimeout(() => {
+      tts.start();
+    }, 500);
+
+    return () => {
+      tts.stop();
+    };
+  }, [currentQuestion?.question_text, isPreamblePhase]);
+
+  const toggleTtsPlayPause = () => {
+    if (!ttsInstance) return;
+    
+    if (isTtsPlaying) {
+      ttsInstance.pause();
+      setIsTtsPlaying(false);
+    } else {
+      ttsInstance.resume();
+      setIsTtsPlaying(true);
+    }
+  };
+
+  const skipTtsSentence = () => {
+    if (!ttsInstance) return;
+    
+    ttsInstance.stop();
+    const nextIndex = ttsSentenceIndex + 1;
+    
+    if (nextIndex < ttsSentences.length) {
+      // Create new instance starting from next sentence
+      const remainingText = ttsSentences
+        .slice(nextIndex)
+        .map(s => s.text)
+        .join(' ');
+      
+      const newTts = new SequentialTTS(remainingText);
+      newTts.onSentenceStart = ttsInstance.onSentenceStart;
+      newTts.onSentenceEnd = ttsInstance.onSentenceEnd;
+      newTts.onComplete = ttsInstance.onComplete;
+      newTts.onError = ttsInstance.onError;
+      
+      setTtsInstance(newTts);
+      newTts.start();
+    } else {
+      setIsTtsPlaying(false);
+      setCurrentSentence(null);
+    }
+  };
+
   if (!isActive) return null;
 
   // Show Turkish preamble if in preamble phase
@@ -647,9 +748,79 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                           {currentQuestion.section}
                         </span>
                       )}
-                      <h3 className="text-2xl font-semibold text-foreground leading-relaxed">
-                        {currentQuestion.question_text}
-                      </h3>
+                      
+                      {/* Question text with sentence highlighting */}
+                      <div className="space-y-2">
+                        <h3 className="text-2xl font-semibold text-foreground leading-relaxed">
+                          {ttsSentences.length > 0 ? (
+                            ttsSentences.map((sentence, idx) => (
+                              <span
+                                key={idx}
+                                className={`transition-all duration-300 ${
+                                  currentSentence?.index === idx
+                                    ? 'bg-primary/20 px-2 py-1 rounded'
+                                    : ''
+                                }`}
+                              >
+                                {sentence.text}{' '}
+                              </span>
+                            ))
+                          ) : (
+                            currentQuestion.question_text
+                          )}
+                        </h3>
+                        
+                        {/* TTS Controls & Progress */}
+                        {ttsSentences.length > 0 && (
+                          <div className="flex items-center gap-3 pt-2">
+                            <div className="flex items-center gap-2">
+                              <Button
+                                onClick={toggleTtsPlayPause}
+                                variant="outline"
+                                size="sm"
+                                className="gap-2"
+                              >
+                                {isTtsPlaying ? (
+                                  <>
+                                    <Pause className="h-3 w-3" />
+                                    Duraklat
+                                  </>
+                                ) : (
+                                  <>
+                                    <Play className="h-3 w-3" />
+                                    Devam Et
+                                  </>
+                                )}
+                              </Button>
+                              
+                              {ttsSentences.length > 1 && (
+                                <Button
+                                  onClick={skipTtsSentence}
+                                  variant="ghost"
+                                  size="sm"
+                                  className="gap-2"
+                                  disabled={!isTtsPlaying}
+                                >
+                                  <SkipForward className="h-3 w-3" />
+                                  İleri
+                                </Button>
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              {isTtsPlaying && (
+                                <>
+                                  <Volume2 className="h-3 w-3 animate-pulse" />
+                                  <span>
+                                    Cümle {(currentSentence?.index || 0) + 1} / {ttsSentences.length}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
                       {isWaitingForAnswer && (
                         <p className="text-sm text-muted-foreground italic">
                           Lütfen yanıtınızı sesli olarak verin...

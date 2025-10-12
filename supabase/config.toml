@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.turkish-tts]
 verify_jwt = false
+
+[functions.text-to-speech]
+verify_jwt = false
