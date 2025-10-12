@@ -6,7 +6,7 @@ import { useToast } from '@/hooks/use-toast';
 import { AudioRecorder, AudioQueue } from '@/utils/AudioRecorder';
 import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
-import { AudioWaveform } from './AudioWaveform';
+import MinimalVoiceWaves from './ui/minimal-voice-waves';
 
 
 interface SearchoAIProps {
@@ -800,9 +800,10 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
 
                 {/* Audio Waveform Visualizer */}
                 <div className="flex flex-col items-center gap-4 py-8">
-                  <AudioWaveform 
-                    isActive={isListening} 
-                    isSpeaking={isSpeaking}
+                  <MinimalVoiceWaves 
+                    isListening={isListening}
+                    audioStream={audioStreamRef.current}
+                    userSpeakingLevel={userSpeakingLevel}
                     className="max-w-2xl"
                   />
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
