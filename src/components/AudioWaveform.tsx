@@ -17,9 +17,18 @@ export const AudioWaveform = ({ isActive, isSpeaking, className = '' }: AudioWav
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Get the actual color value from CSS variable
+    const getPrimaryColor = () => {
+      const style = getComputedStyle(document.documentElement);
+      const primaryValue = style.getPropertyValue('--primary').trim();
+      // Convert "0 0% 9%" to "hsl(0, 0%, 9%)"
+      return `hsl(${primaryValue.replace(/\s+/g, ', ')})`;
+    };
+
     const bars = 30;
     const barWidth = canvas.width / bars;
     let phase = 0;
+    const primaryColor = getPrimaryColor();
 
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -40,8 +49,8 @@ export const AudioWaveform = ({ isActive, isSpeaking, className = '' }: AudioWav
         }
 
         const gradient = ctx.createLinearGradient(0, canvas.height, 0, canvas.height - height);
-        gradient.addColorStop(0, 'hsl(var(--primary))');
-        gradient.addColorStop(1, 'hsl(var(--primary) / 0.5)');
+        gradient.addColorStop(0, primaryColor);
+        gradient.addColorStop(1, primaryColor.replace(')', ' / 0.5)'));
         
         ctx.fillStyle = gradient;
         ctx.fillRect(x + barWidth * 0.2, canvas.height - height, barWidth * 0.6, height);
