@@ -119,6 +119,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     console.log('Transitioning from preamble to questions...');
     setIsPreamblePhase(false);
     setPreambleComplete(true);
+    setShowTurkishPreamble(false); // Hide preamble display
     
     // Now get the first actual question
     await getNextQuestion();
