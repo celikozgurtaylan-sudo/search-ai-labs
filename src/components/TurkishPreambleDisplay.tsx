@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import TypewriterText from '@/components/ui/typewriter-text';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/components/ui/use-toast';
-import { Badge } from '@/components/ui/badge';
-import { Play, SkipForward, Volume2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import TypewriterText from "@/components/ui/typewriter-text";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/components/ui/use-toast";
+import { Badge } from "@/components/ui/badge";
+import { Play, SkipForward, Volume2 } from "lucide-react";
 interface TurkishPreambleDisplayProps {
   projectContext?: {
     description: string;
@@ -18,21 +18,15 @@ interface TurkishPreambleDisplayProps {
 // Turkish preamble text chunks - Split into shorter, more digestible pieces
 const TURKISH_PREAMBLE_CHUNKS = [
   "Merhaba! Ben Searcho, yapay zeka destekli müşteri görüşme uzmanınızım.",
-  "Bu UX araştırma seansında size eşlik edeceğim.",
+  "Bu UX araştırması seansında size eşlik edeceğim.",
   "Bu görüşme tamamen gönüllülük esasına dayanır ve istediğiniz zaman çıkabilirsiniz.",
-  "Sizi rahat hissetmeniz için buradayım. Lütfen samimi ve doğal olun.",
-  "Bu araştırma, ürün geliştirme sürecimize yardımcı olacak değerli bilgiler sağlayacak.",
+  "Görüşmemiz esnasında Lütfen samimi ve doğal olun.",
+  "Bu araştırma, ürün geliştirme sürecimize sizlerin değerli görüşleriyle yardımcı olacak.",
   "Birkaç dakika sonra yapılandırılmış sorularımıza geçeceğiz.",
-  "Başlamadan önce herhangi bir sorunuz var mı?"
+  "Başlamadan önce sizi biraz tanıyabilir miyiz?",
 ];
-const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
-  projectContext,
-  onComplete,
-  onSkip
-}) => {
-  const {
-    toast
-  } = useToast();
+const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({ projectContext, onComplete, onSkip }) => {
+  const { toast } = useToast();
   const [currentChunk, setCurrentChunk] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioQueue, setAudioQueue] = useState<string[]>([]);
@@ -59,17 +53,14 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
     const audioData: string[] = [];
     try {
       for (const chunk of TURKISH_PREAMBLE_CHUNKS) {
-        const {
-          data,
-          error
-        } = await supabase.functions.invoke('turkish-tts', {
+        const { data, error } = await supabase.functions.invoke("turkish-tts", {
           body: {
             text: chunk,
-            voice: 'XB0fDUnXU5powFXDhCwa' // Charlotte - ElevenLabs multilingual voice
-          }
+            voice: "XB0fDUnXU5powFXDhCwa", // Charlotte - ElevenLabs multilingual voice
+          },
         });
         if (error) throw error;
-        if (!data?.audioContent) throw new Error('No audio content received');
+        if (!data?.audioContent) throw new Error("No audio content received");
         audioData.push(data.audioContent);
       }
       setAudioQueue(audioData);
@@ -78,12 +69,12 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
       // Auto-start playing after generation
       setTimeout(() => startPreamble(), 500);
     } catch (error) {
-      console.error('Failed to generate Turkish audio:', error);
+      console.error("Failed to generate Turkish audio:", error);
       setIsGeneratingAudio(false);
       toast({
         title: "Ses Hatası",
         description: "Türkçe ses oluşturulamadı. Sadece metin gösterilecek.",
-        variant: "destructive"
+        variant: "destructive",
       });
       // Continue with text-only
       setTimeout(() => startPreamble(), 500);
@@ -95,20 +86,20 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
 
   const moveToNextChunk = useCallback(() => {
     if (isTransitioning) {
-      console.log('⚠️ Already transitioning, ignoring moveToNextChunk call');
+      console.log("⚠️ Already transitioning, ignoring moveToNextChunk call");
       return;
     }
-    
+
     setIsTransitioning(true);
-    
+
     // Clear any existing timers to prevent overlaps
-    activeTimers.forEach(timer => clearTimeout(timer));
+    activeTimers.forEach((timer) => clearTimeout(timer));
     setActiveTimers(new Set());
-    
-    setCurrentChunk(prev => {
+
+    setCurrentChunk((prev) => {
       const nextChunk = prev + 1;
       console.log(`Moving to chunk ${nextChunk + 1}/${TURKISH_PREAMBLE_CHUNKS.length}`);
-      
+
       if (nextChunk < TURKISH_PREAMBLE_CHUNKS.length) {
         // Add a longer delay between chunks for better pacing
         const timer = setTimeout(() => {
@@ -116,7 +107,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
           setIsTransitioning(false);
           // The playback will be triggered by the useEffect when currentChunk changes
         }, 1500); // Increased delay to 1.5 seconds
-        
+
         setActiveTimers(new Set([timer]));
       } else {
         // All chunks completed
@@ -124,9 +115,9 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         setPreambleCompleted(true);
         setIsWaitingForResponse(true);
         setIsTransitioning(false);
-        console.log('✅ Preamble completed, waiting for user response...');
+        console.log("✅ Preamble completed, waiting for user response...");
       }
-      
+
       return nextChunk;
     });
   }, [isTransitioning, activeTimers]);
@@ -134,9 +125,11 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
   const playCurrentChunk = useCallback(() => {
     const chunkIndex = currentChunk;
     const audioId = `audio-${chunkIndex}-${Date.now()}`;
-    
-    console.log(`🎵 [${audioId}] Starting chunk ${chunkIndex + 1}/${TURKISH_PREAMBLE_CHUNKS.length}: "${TURKISH_PREAMBLE_CHUNKS[chunkIndex]}"`);
-    
+
+    console.log(
+      `🎵 [${audioId}] Starting chunk ${chunkIndex + 1}/${TURKISH_PREAMBLE_CHUNKS.length}: "${TURKISH_PREAMBLE_CHUNKS[chunkIndex]}"`,
+    );
+
     if (chunkIndex >= TURKISH_PREAMBLE_CHUNKS.length) {
       return; // This case is now handled in moveToNextChunk
     }
@@ -155,9 +148,9 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         console.log(`🎧 [${audioId}] Creating and playing audio for chunk ${chunkIndex + 1}`);
         const audio = new Audio(`data:audio/mp3;base64,${audioQueue[chunkIndex]}`);
         setCurrentAudio(audio);
-        
+
         let hasEnded = false; // Prevent multiple calls
-        
+
         const handleAudioEnd = () => {
           if (hasEnded) {
             console.log(`⚠️ [${audioId}] Audio end handler called multiple times, ignoring`);
@@ -166,32 +159,32 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
           hasEnded = true;
           console.log(`✅ [${audioId}] Audio completed for chunk ${chunkIndex + 1}, moving to next...`);
           setCurrentAudio(null);
-          
+
           // Use a timer that we can track and cancel if needed
           const timer = setTimeout(() => {
             moveToNextChunk();
           }, 1000); // Reduced delay since we added delay in moveToNextChunk
-          
-          setActiveTimers(prev => new Set([...prev, timer]));
+
+          setActiveTimers((prev) => new Set([...prev, timer]));
         };
-        
+
         const handleAudioError = (e: any) => {
           if (hasEnded) return;
           hasEnded = true;
           console.error(`❌ [${audioId}] Audio playback error for chunk ${chunkIndex + 1}:`, e);
           setCurrentAudio(null);
-          
+
           const timer = setTimeout(() => {
             moveToNextChunk();
           }, 1000);
-          
-          setActiveTimers(prev => new Set([...prev, timer]));
+
+          setActiveTimers((prev) => new Set([...prev, timer]));
         };
-        
+
         // Set up event handlers
         audio.onended = handleAudioEnd;
         audio.onerror = handleAudioError;
-        
+
         audio.onloadstart = () => {
           console.log(`📥 [${audioId}] Loading audio for chunk ${chunkIndex + 1}...`);
         };
@@ -199,7 +192,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         audio.oncanplaythrough = () => {
           console.log(`🎵 [${audioId}] Audio ready to play for chunk ${chunkIndex + 1}`);
         };
-        
+
         // Add timeout protection
         const timeoutId = setTimeout(() => {
           if (!hasEnded) {
@@ -210,8 +203,8 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
             moveToNextChunk();
           }
         }, 15000); // 15-second timeout
-        
-        audio.play().catch(error => {
+
+        audio.play().catch((error) => {
           clearTimeout(timeoutId);
           console.error(`❌ [${audioId}] Failed to play audio for chunk ${chunkIndex + 1}:`, error);
           if (!hasEnded) {
@@ -252,9 +245,9 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
         currentAudio.pause();
         setCurrentAudio(null);
       }
-      
+
       // Clean up all active timers
-      activeTimers.forEach(timer => clearTimeout(timer));
+      activeTimers.forEach((timer) => clearTimeout(timer));
       setActiveTimers(new Set());
     };
   }, [currentAudio, activeTimers]);
@@ -273,7 +266,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
   };
 
   const handleContinue = () => {
-    console.log('User chose to continue to structured questions');
+    console.log("User chose to continue to structured questions");
     setIsWaitingForResponse(false);
     onComplete();
   };
@@ -283,11 +276,10 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
       startPreamble();
     }
   };
-  return <div className="flex flex-col items-center justify-center min-h-[400px] p-6">
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] p-6">
       <Card className="w-full max-w-2xl p-8 text-center">
         <div className="mb-6">
-          
-          
           <div className="text-sm text-muted-foreground mb-4">
             {currentChunk + 1} / {TURKISH_PREAMBLE_CHUNKS.length}
           </div>
@@ -301,21 +293,21 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
             </div>
           ) : isWaitingForResponse ? (
             <div className="text-center">
-              <TypewriterText 
-                text={TURKISH_PREAMBLE_CHUNKS[TURKISH_PREAMBLE_CHUNKS.length - 1]} 
-                speed={100} 
-                className="text-lg leading-relaxed mb-4" 
-                showCursor={false} 
+              <TypewriterText
+                text={TURKISH_PREAMBLE_CHUNKS[TURKISH_PREAMBLE_CHUNKS.length - 1]}
+                speed={100}
+                className="text-lg leading-relaxed mb-4"
+                showCursor={false}
               />
               <div className="text-sm text-muted-foreground mt-4">
                 Devam etmek için butona basın veya "hayır" / "yok" deyin
               </div>
             </div>
           ) : isPlaying && currentChunk < TURKISH_PREAMBLE_CHUNKS.length ? (
-            <TypewriterText 
-              text={TURKISH_PREAMBLE_CHUNKS[currentChunk]} 
-              speed={100} 
-              className="text-lg leading-relaxed" 
+            <TypewriterText
+              text={TURKISH_PREAMBLE_CHUNKS[currentChunk]}
+              speed={100}
+              className="text-lg leading-relaxed"
               showCursor={false}
               onComplete={() => {
                 // When typewriter completes and no audio is playing, wait then move to next
@@ -324,19 +316,15 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
                   const timer = setTimeout(() => {
                     moveToNextChunk();
                   }, 1500); // Consistent timing with audio completion
-                  
-                  setActiveTimers(prev => new Set([...prev, timer]));
+
+                  setActiveTimers((prev) => new Set([...prev, timer]));
                 }
               }}
             />
           ) : !isPlaying && currentChunk === 0 ? (
-            <div className="text-muted-foreground">
-              Başlamak için butona basın
-            </div>
+            <div className="text-muted-foreground">Başlamak için butona basın</div>
           ) : (
-            <div className="text-lg text-primary font-medium">
-              Yapılandırılmış görüşmeye geçiliyor...
-            </div>
+            <div className="text-lg text-primary font-medium">Yapılandırılmış görüşmeye geçiliyor...</div>
           )}
         </div>
 
@@ -347,14 +335,14 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
               Başlat
             </Button>
           )}
-          
+
           {isWaitingForResponse && (
             <Button onClick={handleContinue} className="flex items-center gap-2">
               <SkipForward className="w-4 h-4" />
               Devam Et
             </Button>
           )}
-          
+
           {isPlaying && canSkip && !isWaitingForResponse && (
             <Button variant="outline" onClick={handleSkip} className="flex items-center gap-2">
               <SkipForward className="w-4 h-4" />
@@ -363,6 +351,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({
           )}
         </div>
       </Card>
-    </div>;
+    </div>
+  );
 };
 export default TurkishPreambleDisplay;
