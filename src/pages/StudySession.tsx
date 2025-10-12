@@ -9,22 +9,61 @@ import { projectService } from "@/services/projectService";
 import { interviewService } from "@/services/interviewService";
 import { CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 
+// Mock data for design mode
+const MOCK_PROJECT_DATA = {
+  id: 'mock-project-id',
+  title: 'Kullanıcı Deneyimi Araştırması',
+  description: 'Bu bir örnek araştırma projesidir. Kullanıcıların mobil uygulama deneyimlerini anlamak için tasarlanmıştır.',
+  analysis: {
+    discussionGuide: {
+      sections: [
+        {
+          title: 'Giriş ve Isınma',
+          questions: [
+            'Kendinizden bahseder misiniz?',
+            'Günlük teknoloji kullanımınızdan bahseder misiniz?'
+          ]
+        },
+        {
+          title: 'Ana Sorular',
+          questions: [
+            'Mobil uygulamaları kullanırken en çok neye dikkat ediyorsunuz?',
+            'En son karşılaştığınız kullanıcı deneyimi problemi neydi?'
+          ]
+        }
+      ]
+    }
+  }
+};
+
 const StudySession = () => {
   const { sessionToken } = useParams();
   
-  const [loading, setLoading] = useState(true);
+  // Check if we're in design mode (placeholder tokens or special keywords)
+  const isDesignMode = !sessionToken || 
+    sessionToken.includes(':') || 
+    ['mock', 'design', 'preview', 'test'].includes(sessionToken.toLowerCase());
+  
+  const [loading, setLoading] = useState(!isDesignMode);
   const [error, setError] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [participantId, setParticipantId] = useState<string | null>(null);
-  const [participantName, setParticipantName] = useState<string | null>(null);
-  const [projectData, setProjectData] = useState<any>(null);
-  const [sessionStatus, setSessionStatus] = useState<'waiting' | 'active' | 'completed'>('waiting');
+  const [sessionId, setSessionId] = useState<string | null>(isDesignMode ? 'mock-session-id' : null);
+  const [participantId, setParticipantId] = useState<string | null>(isDesignMode ? 'mock-participant-id' : null);
+  const [participantName, setParticipantName] = useState<string | null>(isDesignMode ? 'Örnek Katılımcı' : null);
+  const [projectData, setProjectData] = useState<any>(isDesignMode ? MOCK_PROJECT_DATA : null);
+  const [sessionStatus, setSessionStatus] = useState<'waiting' | 'active' | 'completed'>(isDesignMode ? 'active' : 'waiting');
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
+    // Skip initialization in design mode
+    if (isDesignMode) {
+      console.log('Design mode active - using mock data');
+      setLoading(false);
+      return;
+    }
+    
     if (sessionToken) {
       initializeSession();
     } else {
@@ -176,6 +215,13 @@ const StudySession = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Design Mode Indicator */}
+      {isDesignMode && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-brand-primary/90 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg backdrop-blur-sm">
+          🎨 Tasarım Modu
+        </div>
+      )}
+      
       {/* Floating Video */}
       <FloatingVideo
         videoRef={videoRef}
