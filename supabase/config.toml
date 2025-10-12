@@ -1,5 +1,8 @@
 project_id = "gqdvwmwueaqyqepwyifk"
 
+[functions.speech-to-text]
+verify_jwt = false
+
 [functions.turkish-chat]
 verify_jwt = false
 
