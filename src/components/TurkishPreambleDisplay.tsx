@@ -17,7 +17,7 @@ interface TurkishPreambleDisplayProps {
 
 // Turkish preamble text chunks - Split into shorter, more digestible pieces
 const TURKISH_PREAMBLE_CHUNKS = [
-  "Merhaba! Ben SEARCHO, yapay zeka destekli müşteri görüşme uzmanınızım.",
+  "Merhaba! Ben Searcho, yapay zeka destekli müşteri görüşme uzmanınızım.",
   "Bu UX araştırma seansında size eşlik edeceğim.",
   "Bu görüşme tamamen gönüllülük esasına dayanır ve istediğiniz zaman çıkabilirsiniz.",
   "Sizi rahat hissetmeniz için buradayım. Lütfen samimi ve doğal olun.",
