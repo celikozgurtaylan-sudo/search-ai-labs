@@ -145,6 +145,8 @@ async function saveResponse(sessionId: string, responseData: any) {
       participant_id: responseData.participantId,
       transcription: responseData.transcription,
       response_text: responseData.responseText,
+      video_url: responseData.videoUrl,
+      video_duration_ms: responseData.videoDuration,
       audio_duration_ms: responseData.audioDuration,
       confidence_score: responseData.confidenceScore,
       is_complete: responseData.isComplete || false,

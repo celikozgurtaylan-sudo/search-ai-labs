@@ -86,6 +86,8 @@ export type Database = {
           session_id: string
           transcription: string | null
           updated_at: string
+          video_duration_ms: number | null
+          video_url: string | null
         }
         Insert: {
           analyzed?: boolean | null
@@ -101,6 +103,8 @@ export type Database = {
           session_id: string
           transcription?: string | null
           updated_at?: string
+          video_duration_ms?: number | null
+          video_url?: string | null
         }
         Update: {
           analyzed?: boolean | null
@@ -116,6 +120,8 @@ export type Database = {
           session_id?: string
           transcription?: string | null
           updated_at?: string
+          video_duration_ms?: number | null
+          video_url?: string | null
         }
         Relationships: [
           {

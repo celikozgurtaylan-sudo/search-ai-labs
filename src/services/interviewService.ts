@@ -136,6 +136,8 @@ export const interviewService = {
     participantId?: string
     transcription?: string
     responseText?: string
+    videoUrl?: string
+    videoDuration?: number
     audioDuration?: number
     confidenceScore?: number
     isComplete?: boolean

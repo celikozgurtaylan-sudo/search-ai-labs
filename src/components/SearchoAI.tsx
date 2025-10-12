@@ -55,6 +55,10 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
   const [sentences, setSentences] = useState<string[]>([]);
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
+  const [isRecordingVideo, setIsRecordingVideo] = useState(false);
+  
+  const videoRecorderRef = useRef<MediaRecorder | null>(null);
+  const videoChunksRef = useRef<Blob[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -114,6 +118,81 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     }
   };
 
+  // Video recording functions
+  const startVideoRecording = useCallback(async (videoStream: MediaStream) => {
+    if (!videoStream) return;
+    
+    try {
+      const mediaRecorder = new MediaRecorder(videoStream, {
+        mimeType: 'video/webm;codecs=vp8,opus',
+        videoBitsPerSecond: 2500000
+      });
+      
+      videoChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          videoChunksRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorder.start(1000);
+      videoRecorderRef.current = mediaRecorder;
+      setIsRecordingVideo(true);
+      
+      console.log('📹 Video recording started');
+    } catch (error) {
+      console.error('Failed to start video recording:', error);
+    }
+  }, []);
+
+  const stopVideoRecording = useCallback((): Promise<Blob | null> => {
+    return new Promise((resolve) => {
+      if (!videoRecorderRef.current || videoRecorderRef.current.state === 'inactive') {
+        resolve(null);
+        return;
+      }
+      
+      videoRecorderRef.current.onstop = () => {
+        const videoBlob = new Blob(videoChunksRef.current, { type: 'video/webm' });
+        console.log('📹 Video recording stopped, size:', videoBlob.size);
+        setIsRecordingVideo(false);
+        resolve(videoBlob);
+      };
+      
+      videoRecorderRef.current.stop();
+    });
+  }, []);
+
+  const uploadVideo = useCallback(async (videoBlob: Blob, sessionId: string, questionId: string): Promise<{ url: string; duration: number } | null> => {
+    try {
+      const fileName = `${sessionId}/${questionId}_${Date.now()}.webm`;
+      
+      const { data, error } = await supabase.storage
+        .from('interview-videos')
+        .upload(fileName, videoBlob, {
+          contentType: 'video/webm',
+          upsert: false
+        });
+      
+      if (error) throw error;
+      
+      const { data: { publicUrl } } = supabase.storage
+        .from('interview-videos')
+        .getPublicUrl(fileName);
+      
+      // Calculate video duration (approximate based on size)
+      const duration = Math.floor((videoBlob.size / 2500000) * 8000);
+      
+      console.log('✅ Video uploaded:', publicUrl);
+      return { url: publicUrl, duration };
+      
+    } catch (error) {
+      console.error('Failed to upload video:', error);
+      return null;
+    }
+  }, []);
+
   // Function to transition from preamble to questions
   const startActualQuestions = useCallback(async () => {
     console.log('Transitioning from preamble to questions...');
@@ -149,6 +228,12 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
 
       if (data.progress.isComplete) {
         console.log('🎉 Interview completed! Starting analysis...');
+        
+        // Stop any ongoing video recording
+        if (isRecordingVideo) {
+          await stopVideoRecording();
+        }
+        
         toast({
           title: "Görüşme Tamamlandı!",
           description: "Tüm sorular yanıtlandı. Analiz başlatılıyor...",
@@ -172,6 +257,11 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
             }
           }, 2000);
         }
+      } else if (data.nextQuestion) {
+        // Start video recording for new question
+        if (audioStreamRef.current) {
+          await startVideoRecording(audioStreamRef.current);
+        }
       }
     } catch (error) {
       console.error('❌ Failed to get next question:', error);
@@ -183,7 +273,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
         variant: "destructive",
       });
     }
-  }, [projectContext]); // Remove analyzeInterview dependency
+  }, [projectContext, isRecordingVideo, stopVideoRecording, startVideoRecording]);
 
   const analyzeInterview = async () => {
     if (!projectContext?.sessionId || !projectContext?.projectId) return;
@@ -208,21 +298,43 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     if (!projectContext?.sessionId || !currentQuestion) return;
 
     try {
+      let videoUrl = null;
+      let videoDuration = null;
+      
+      // If question is complete, stop video recording and upload
+      if (isComplete && isRecordingVideo) {
+        const videoBlob = await stopVideoRecording();
+        
+        if (videoBlob && projectContext.sessionId) {
+          const uploadResult = await uploadVideo(
+            videoBlob, 
+            projectContext.sessionId, 
+            currentQuestion.id
+          );
+          
+          if (uploadResult) {
+            videoUrl = uploadResult.url;
+            videoDuration = uploadResult.duration;
+          }
+        }
+      }
+      
       await interviewService.saveResponse(projectContext.sessionId, {
         questionId: currentQuestion.id,
         participantId: projectContext.participantId,
         transcription,
         responseText: transcription,
         isComplete,
+        videoUrl,
+        videoDuration,
         metadata: {
           timestamp: new Date().toISOString(),
-          questionText: currentQuestion.question_text
+          questionText: currentQuestion.question_text,
         }
       });
 
       if (isComplete) {
         setIsQuestionComplete(true);
-        // Move to next question after a short delay
         setTimeout(() => {
           getNextQuestion();
         }, 2000);
@@ -230,7 +342,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
     } catch (error) {
       console.error('Failed to save response:', error);
     }
-  }, [projectContext, currentQuestion]);
+  }, [projectContext, currentQuestion, isRecordingVideo, getNextQuestion, stopVideoRecording, uploadVideo]);
 
   // Initialize session timer
   useEffect(() => {
@@ -482,6 +594,7 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
           event_id: "configure_session",
           type: "session.update",
           session: {
+            type: "realtime",
             modalities: ["text", "audio"],
               instructions: `You are SEARCHO, a professional UX research interviewer conducting a structured interview.
 
