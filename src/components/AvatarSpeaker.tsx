@@ -71,7 +71,7 @@ export const AvatarSpeaker = ({
         });
 
         await avatarInstance.createStartAvatar({
-          quality: 'low' as any,
+          quality: 'high' as any,
           avatarName: 'default'
         });
 
@@ -171,7 +171,7 @@ export const AvatarSpeaker = ({
       />
       <canvas
         ref={canvasRef}
-        className="w-full h-full object-cover"
+        className="w-full h-full object-contain"
       />
       {isInitializing && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/90">
