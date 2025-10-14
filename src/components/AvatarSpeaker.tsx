@@ -21,6 +21,7 @@ export const AvatarSpeaker = ({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
 
   // Get session token from edge function
@@ -95,11 +96,56 @@ export const AvatarSpeaker = ({
     };
   }, []);
 
-  // Display video stream
+  // Apply chroma key effect to remove green background
+  const applyChromaKey = () => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    
+    if (!canvas || !video || video.readyState < 2) return;
+    
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    const processFrame = () => {
+      if (!video.paused && !video.ended) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        
+        // Remove green pixels (chroma key)
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          
+          // Detect green background (adjust threshold as needed)
+          if (g > 90 && r < 90 && b < 90) {
+            data[i + 3] = 0; // Make transparent
+          }
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+        requestAnimationFrame(processFrame);
+      }
+    };
+    
+    processFrame();
+  };
+
+  // Display video stream and start chroma key effect
   useEffect(() => {
     if (stream && videoRef.current) {
       console.log('Setting video stream');
       videoRef.current.srcObject = stream;
+      
+      // Wait for video to be ready, then start chroma key
+      videoRef.current.onloadedmetadata = () => {
+        console.log('Video metadata loaded, starting chroma key effect');
+        applyChromaKey();
+      };
     }
   }, [stream]);
 
@@ -115,15 +161,20 @@ export const AvatarSpeaker = ({
   }, [questionText, avatar, isInitializing]);
 
   return (
-    <div className="relative w-full max-w-2xl aspect-video bg-background/50 rounded-lg overflow-hidden border">
+    <div className="relative w-full max-w-2xl aspect-video bg-white rounded-lg overflow-hidden border">
       <video
         ref={videoRef}
         autoPlay
         playsInline
+        muted
+        className="hidden"
+      />
+      <canvas
+        ref={canvasRef}
         className="w-full h-full object-cover"
       />
       {isInitializing && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+        <div className="absolute inset-0 flex items-center justify-center bg-white/90">
           <div className="flex flex-col items-center gap-2">
             <div className="animate-pulse text-foreground">Avatar yükleniyor...</div>
             <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
