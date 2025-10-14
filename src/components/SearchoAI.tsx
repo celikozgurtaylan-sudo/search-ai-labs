@@ -7,6 +7,7 @@ import { AudioRecorder, AudioQueue } from '@/utils/AudioRecorder';
 import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
 import MinimalVoiceWaves from './ui/minimal-voice-waves';
+import { AvatarSpeaker } from './AvatarSpeaker';
 
 
 interface SearchoAIProps {
@@ -798,52 +799,56 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
 
                 {/* Current Question Card */}
                 {currentQuestion && !isPreamblePhase && (
-                  <div className="bg-white rounded-2xl p-8 shadow-lg border-2 border-primary/20">
-                    <div className="mb-6">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm font-semibold text-primary uppercase tracking-wide">
-                          Soru {interviewProgress.completed + 1} / {interviewProgress.total}
-                        </span>
-                        <span className="text-sm font-medium text-muted-foreground">
-                          {Math.round(interviewProgress.percentage)}% Tamamlandı
-                        </span>
-                      </div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-primary transition-all duration-500 ease-out"
-                          style={{ width: `${interviewProgress.percentage}%` }}
-                        />
-                      </div>
+                  <div className="space-y-6">
+                    {/* Avatar Display */}
+                    <div className="flex justify-center">
+                      <AvatarSpeaker
+                        questionText={currentQuestion.question_text}
+                        onSpeakingStart={() => {
+                          setIsSpeaking(true);
+                          setIsWaitingForAnswer(false);
+                        }}
+                        onSpeakingComplete={() => {
+                          setIsSpeaking(false);
+                          setIsWaitingForAnswer(true);
+                          // Start video recording when avatar finishes speaking
+                          if (audioStreamRef.current) {
+                            startVideoRecording(audioStreamRef.current);
+                          }
+                        }}
+                      />
                     </div>
-                    
-                    <div className="space-y-4">
+
+                    {/* Progress Bar */}
+                    <div className="bg-card rounded-xl p-6 shadow border">
+                      <div className="mb-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-semibold text-primary uppercase tracking-wide">
+                            Soru {interviewProgress.completed + 1} / {interviewProgress.total}
+                          </span>
+                          <span className="text-sm font-medium text-muted-foreground">
+                            {Math.round(interviewProgress.percentage)}% Tamamlandı
+                          </span>
+                        </div>
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-primary transition-all duration-500 ease-out"
+                            style={{ width: `${interviewProgress.percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Question Section Badge */}
                       {currentQuestion.section && (
                         <span className="inline-block px-3 py-1 text-xs font-medium text-primary bg-primary/10 rounded-full">
                           {currentQuestion.section}
                         </span>
                       )}
                       
-                      {/* Question text with sentence highlighting */}
+                      {/* Question Text */}
                       <div className="space-y-2">
-                        <h3 className="text-2xl font-semibold text-foreground leading-relaxed">
-                          {sentences.length > 0 ? (
-                            sentences.map((sentence, idx) => (
-                              <span
-                                key={idx}
-                                className={`transition-all duration-500 ${
-                                  idx === currentSentenceIndex
-                                    ? 'bg-primary/20 px-2 py-1 rounded font-semibold'
-                                    : idx < currentSentenceIndex
-                                    ? 'text-muted-foreground/70'
-                                    : 'text-muted-foreground/40'
-                                }`}
-                              >
-                                {sentence}{' '}
-                              </span>
-                            ))
-                          ) : (
-                            currentQuestion.question_text
-                          )}
+                        <h3 className="text-xl font-semibold text-foreground leading-relaxed">
+                          {currentQuestion.question_text}
                         </h3>
                         
                         {/* Visual Controls & Progress */}

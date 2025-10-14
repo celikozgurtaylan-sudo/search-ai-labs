@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.text-to-speech]
 verify_jwt = false
+
+[functions.heygen-session]
+verify_jwt = false
