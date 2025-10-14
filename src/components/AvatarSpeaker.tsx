@@ -73,9 +73,6 @@ export const AvatarSpeaker = ({
         await avatarInstance.createStartAvatar({
           quality: 'high' as any,
           avatarName: 'default',
-          voice: {
-            voiceId: 'default',
-          },
           knowledgeBase: '',
           disableIdleTimeout: true
         });
