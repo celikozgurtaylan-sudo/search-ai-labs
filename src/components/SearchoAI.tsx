@@ -25,8 +25,10 @@ const SearchoAI = ({
   projectContext,
   onSessionEnd
 }: SearchoAIProps) => {
-  const { toast } = useToast();
-  
+  const {
+    toast
+  } = useToast();
+
   // State management
   const [isListening, setIsListening] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
@@ -64,7 +66,6 @@ const SearchoAI = ({
       initializeInterviewQuestions();
     }
   }, [isActive, projectContext, questionsInitialized]);
-
   const initializeInterviewQuestions = async () => {
     if (!projectContext?.sessionId || !projectContext?.projectId || !projectContext?.discussionGuide) {
       console.error('Missing required data for interview initialization:', {
@@ -179,27 +180,14 @@ const SearchoAI = ({
   }, []);
   const getNextQuestion = useCallback(async () => {
     if (!projectContext?.sessionId) return;
-    
-    // Stop any active transcription before moving to next question
-    if (audioTranscriberRef.current) {
-      console.log('🛑 Stopping transcription before next question');
-      audioTranscriberRef.current.stop();
-      audioTranscriberRef.current = null;
-    }
-    
     setUserTranscript('');
-    setEditableTranscript('');
     setIsTranscribing(false);
-    setIsListening(false);
-    setIsReviewingTranscript(false);
-    
     try {
       console.log('🎯 Getting next question...');
       const data = await interviewService.getNextQuestion(projectContext.sessionId);
       setCurrentQuestion(data.nextQuestion);
       setInterviewProgress(data.progress);
       setIsWaitingForAnswer(false);
-      
       if (data.progress.isComplete) {
         console.log('🎉 Interview completed!');
         if (isRecordingVideo) {
@@ -209,7 +197,6 @@ const SearchoAI = ({
           title: "Görüşme Tamamlandı!",
           description: "Tüm sorular yanıtlandı"
         });
-        
         if (projectContext.projectId) {
           setTimeout(async () => {
             try {
@@ -238,12 +225,10 @@ const SearchoAI = ({
     if (!projectContext?.sessionId || !currentQuestion) {
       throw new Error('Session or question not available');
     }
-    
     try {
       console.log('💾 saveResponse called for question:', currentQuestion.id);
       let videoUrl = null;
       let videoDuration = null;
-
       if (isRecordingVideo) {
         const videoBlob = await stopVideoRecording();
         if (videoBlob && projectContext.sessionId) {
@@ -254,7 +239,6 @@ const SearchoAI = ({
           }
         }
       }
-      
       await interviewService.saveResponse(projectContext.sessionId, {
         questionId: currentQuestion.id,
         participantId: projectContext.participantId,
@@ -268,7 +252,6 @@ const SearchoAI = ({
           questionText: currentQuestion.question_text
         }
       });
-      
       console.log('✅ Response saved to database');
     } catch (error) {
       console.error('❌ Failed to save response:', error);
@@ -284,16 +267,7 @@ const SearchoAI = ({
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
-    
-    // Cleanup function to stop transcription when component unmounts or becomes inactive
-    return () => {
-      clearInterval(timer);
-      if (audioTranscriberRef.current) {
-        console.log('🧹 Cleaning up transcriber on unmount/inactive');
-        audioTranscriberRef.current.stop();
-        audioTranscriberRef.current = null;
-      }
-    };
+    return () => clearInterval(timer);
   }, [isActive, sessionStartTime]);
 
   // Start listening for user response
@@ -301,7 +275,6 @@ const SearchoAI = ({
     if (audioTranscriberRef.current) {
       audioTranscriberRef.current.stop();
     }
-
     setUserTranscript('');
     setIsTranscribing(true);
     setIsListening(true);
@@ -310,30 +283,20 @@ const SearchoAI = ({
     if (audioStreamRef.current) {
       await startVideoRecording(audioStreamRef.current);
     }
-
     const transcriber = new AudioTranscriber();
-    
     transcriber.onTranscriptionUpdate = (text: string) => {
       setUserTranscript(text);
     };
-
     transcriber.onComplete = async (finalText: string) => {
       console.log('Transcription complete:', finalText);
       setUserTranscript(finalText);
       setEditableTranscript(finalText);
-      
-      // CRITICAL: Stop the transcriber immediately to prevent further captures
-      if (audioTranscriberRef.current) {
-        audioTranscriberRef.current.stop();
-      }
-      
       setIsTranscribing(false);
       setIsListening(false);
       setIsWaitingForAnswer(false);
       setIsReviewingTranscript(true);
       // Don't auto-save - wait for user confirmation
     };
-
     transcriber.onError = (error: string) => {
       console.error('Transcription error:', error);
       setIsTranscribing(false);
@@ -344,22 +307,17 @@ const SearchoAI = ({
         variant: "destructive"
       });
     };
-
     audioTranscriberRef.current = transcriber;
     await transcriber.start();
   };
-
   const toggleMicrophone = () => {
     if (isListening) {
-      console.log('🛑 Manually stopping transcription');
       setIsListening(false);
-      setIsTranscribing(false);
       if (audioTranscriberRef.current) {
         audioTranscriberRef.current.stop();
         audioTranscriberRef.current = null;
       }
     } else {
-      console.log('🎙️ Manually starting transcription');
       startListening();
     }
   };
@@ -374,32 +332,29 @@ const SearchoAI = ({
       });
       return;
     }
-
     try {
       console.log('💾 Saving response:', editableTranscript.substring(0, 50) + '...');
       setIsReviewingTranscript(false);
-      
+
       // Save the response and wait for it to complete
       await saveResponse(editableTranscript);
       console.log('✅ Response saved successfully');
-      
+
       // Mark question as complete
       if (projectContext?.sessionId && currentQuestion?.id) {
         await interviewService.completeQuestion(projectContext.sessionId, currentQuestion.id);
         console.log('✅ Question marked as complete');
       }
-      
+
       // Clear the transcripts
       setUserTranscript('');
       setEditableTranscript('');
-      
+
       // Wait a moment before getting next question
       await new Promise(resolve => setTimeout(resolve, 500));
-      
       console.log('📥 Fetching next question...');
       await getNextQuestion();
       console.log('✅ Next question loaded');
-      
     } catch (error) {
       console.error('❌ Error in confirmAndSaveResponse:', error);
       // Reset review state so user can try again
@@ -414,22 +369,11 @@ const SearchoAI = ({
 
   // Re-record the answer
   const reRecordAnswer = async () => {
-    // CRITICAL: Stop any existing transcription first
-    if (audioTranscriberRef.current) {
-      audioTranscriberRef.current.stop();
-      audioTranscriberRef.current = null;
-    }
-    
     setIsReviewingTranscript(false);
     setUserTranscript('');
     setEditableTranscript('');
-    setIsTranscribing(false);
-    setIsListening(false);
     setIsWaitingForAnswer(true);
-    
-    // Wait a moment to ensure cleanup, then start fresh
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
+
     // Automatically start listening just like the initial flow
     await startListening();
   };
@@ -440,18 +384,17 @@ const SearchoAI = ({
       setIsReviewingTranscript(false);
       setUserTranscript('');
       setEditableTranscript('');
-      
       toast({
         title: "Soru Atlandı",
         description: "Sonraki soruya geçiliyor..."
       });
-      
+
       // Mark current question as complete even though we're skipping
       if (projectContext?.sessionId && currentQuestion?.id) {
         await interviewService.completeQuestion(projectContext.sessionId, currentQuestion.id);
         console.log('✅ Question skipped and marked as complete');
       }
-      
+
       // Move to next question without saving
       setTimeout(async () => {
         await getNextQuestion();
@@ -460,7 +403,6 @@ const SearchoAI = ({
       console.error('Error skipping question:', error);
     }
   };
-
   const getSessionDuration = () => {
     if (!sessionStartTime) return '00:00';
     const duration = Math.floor((currentTime.getTime() - sessionStartTime.getTime()) / 1000);
@@ -468,7 +410,6 @@ const SearchoAI = ({
     const seconds = duration % 60;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
-
   if (!isActive) return null;
 
   // Show Turkish preamble if in preamble phase
@@ -494,25 +435,23 @@ const SearchoAI = ({
                 {currentQuestion && !isPreamblePhase && <div className="space-y-6">
                     {/* Avatar Display */}
                     <div className="flex justify-center">
-                      <AvatarSpeaker 
-                        questionText={currentQuestion.question_text} 
-                        onSpeakingStart={() => {
-                          setIsWaitingForAnswer(false);
-                        }} 
-                        onSpeakingComplete={async () => {
-                          setIsWaitingForAnswer(true);
-                          // Get audio stream for video recording
-                          if (!audioStreamRef.current) {
-                            try {
-                              audioStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-                            } catch (error) {
-                              console.error('Failed to get audio stream:', error);
-                            }
-                          }
-                          // Automatically start listening after avatar finishes
-                          await startListening();
-                        }} 
-                      />
+                      <AvatarSpeaker questionText={currentQuestion.question_text} onSpeakingStart={() => {
+                setIsWaitingForAnswer(false);
+              }} onSpeakingComplete={async () => {
+                setIsWaitingForAnswer(true);
+                // Get audio stream for video recording
+                if (!audioStreamRef.current) {
+                  try {
+                    audioStreamRef.current = await navigator.mediaDevices.getUserMedia({
+                      audio: true
+                    });
+                  } catch (error) {
+                    console.error('Failed to get audio stream:', error);
+                  }
+                }
+                // Automatically start listening after avatar finishes
+                await startListening();
+              }} />
                     </div>
 
                     {/* Progress Bar */}
@@ -547,8 +486,7 @@ const SearchoAI = ({
                       
                       {/* Live Recording Section - Always Visible */}
                       <div className="mt-6 min-h-[120px]">
-                        {isTranscribing ? (
-                          <div className="bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-950/30 dark:to-pink-950/30 rounded-2xl p-6 border-2 border-red-300 dark:border-red-700 shadow-lg">
+                        {isTranscribing ? <div className="bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-950/30 dark:to-pink-950/30 rounded-2xl p-6 border-2 border-red-300 dark:border-red-700 shadow-lg">
                             <div className="flex items-center gap-3 mb-3">
                               <div className="relative">
                                 <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
@@ -563,9 +501,7 @@ const SearchoAI = ({
                                 {userTranscript || 'Konuşmanız yazıya dönüştürülüyor...'}
                               </p>
                             </div>
-                          </div>
-                        ) : isReviewingTranscript ? (
-                          <div className="bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-950/30 dark:to-amber-950/30 rounded-2xl p-6 border-2 border-yellow-400 dark:border-yellow-600 shadow-lg">
+                          </div> : isReviewingTranscript ? <div className="bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-950/30 dark:to-amber-950/30 rounded-2xl p-6 border-2 border-yellow-400 dark:border-yellow-600 shadow-lg">
                             <div className="flex items-center justify-between mb-3">
                               <span className="text-sm font-bold text-yellow-800 dark:text-yellow-300 uppercase tracking-wide">
                                 ✏️ YANITI KONTROL EDİN
@@ -576,40 +512,21 @@ const SearchoAI = ({
                             </div>
                             
                             {/* Editable Textarea */}
-                            <Textarea
-                              value={editableTranscript}
-                              onChange={(e) => setEditableTranscript(e.target.value)}
-                              className="w-full min-h-[100px] text-lg font-medium leading-relaxed resize-none"
-                              placeholder="Yanıtınızı buraya yazın..."
-                            />
+                            <Textarea value={editableTranscript} onChange={e => setEditableTranscript(e.target.value)} className="w-full min-h-[100px] text-lg font-medium leading-relaxed resize-none" placeholder="Yanıtınızı buraya yazın..." />
                             
                             {/* Action Buttons */}
                             <div className="flex gap-3 mt-4">
-                              <Button
-                                onClick={confirmAndSaveResponse}
-                                className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                                size="lg"
-                              >
+                              <Button onClick={confirmAndSaveResponse} className="flex-1 bg-green-600 hover:bg-green-700 text-white" size="lg">
                                 ✓ Onayla ve Kaydet
                               </Button>
-                              <Button
-                                onClick={reRecordAnswer}
-                                variant="outline"
-                                size="lg"
-                              >
+                              <Button onClick={reRecordAnswer} variant="outline" size="lg">
                                 🎙️ Tekrar Kaydet
                               </Button>
-                              <Button
-                                onClick={skipQuestion}
-                                variant="outline"
-                                size="lg"
-                              >
+                              <Button onClick={skipQuestion} variant="outline" size="lg">
                                 ⏭️ Atla
                               </Button>
                             </div>
-                          </div>
-                        ) : userTranscript ? (
-                          <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-2xl p-6 border-2 border-green-300 dark:border-green-700 shadow-lg">
+                          </div> : userTranscript ? <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-2xl p-6 border-2 border-green-300 dark:border-green-700 shadow-lg">
                             <div className="flex items-center gap-2 mb-3">
                               <span className="text-sm font-bold text-green-700 dark:text-green-300 uppercase tracking-wide">
                                 ✓ YANIT ALINDI
@@ -620,17 +537,14 @@ const SearchoAI = ({
                                 "{userTranscript}"
                               </p>
                             </div>
-                          </div>
-                        ) : isWaitingForAnswer ? (
-                          <div className="bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-900/30 dark:to-slate-900/30 rounded-2xl p-6 border-2 border-dashed border-gray-300 dark:border-gray-700">
+                          </div> : isWaitingForAnswer ? <div className="bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-900/30 dark:to-slate-900/30 rounded-2xl p-6 border-2 border-dashed border-gray-300 dark:border-gray-700">
                             <div className="flex flex-col items-center justify-center gap-3 min-h-[80px]">
                               <Mic className="h-8 w-8 text-gray-400 dark:text-gray-600 animate-pulse" />
                               <p className="text-base text-gray-600 dark:text-gray-400 font-medium text-center">
                                 Lütfen yanıtınızı sesli olarak verin...
                               </p>
                             </div>
-                          </div>
-                        ) : null}
+                          </div> : null}
                       </div>
                     </div>
                   </div>}
@@ -642,38 +556,18 @@ const SearchoAI = ({
           <div className="border-t border-border bg-card/50 backdrop-blur-sm">
             <div className="max-w-4xl mx-auto px-6 py-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Button 
-                  onClick={toggleMicrophone} 
-                  variant={isListening ? "default" : "outline"} 
-                  size="lg" 
-                  className={`gap-2 ${isListening ? 'ring-2 ring-green-500 ring-offset-2' : ''}`}
-                  disabled={isReviewingTranscript}
-                >
-                  {isListening ? (
-                    <>
+                <Button onClick={toggleMicrophone} variant={isListening ? "default" : "outline"} size="lg" className={`gap-2 ${isListening ? 'ring-2 ring-green-500 ring-offset-2' : ''}`} disabled={isReviewingTranscript}>
+                  {isListening ? <>
                       <Mic className="h-5 w-5" />
                       <span className="hidden sm:inline">Kaydediliyor</span>
-                    </>
-                  ) : (
-                    <>
+                    </> : <>
                       <MicOff className="h-5 w-5" />
                       <span className="hidden sm:inline">Mikrofon</span>
-                    </>
-                  )}
+                    </>}
                 </Button>
                 
                 {/* Skip Question Button - Always available when there's a question */}
-                {currentQuestion && (
-                  <Button 
-                    onClick={skipQuestion} 
-                    variant="ghost" 
-                    size="lg" 
-                    className="gap-2 text-muted-foreground hover:text-foreground"
-                  >
-                    <SkipForward className="h-5 w-5" />
-                    <span className="hidden sm:inline">Soruyu Atla</span>
-                  </Button>
-                )}
+                {currentQuestion}
               </div>
 
               <div className="text-sm text-muted-foreground font-mono">
