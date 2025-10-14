@@ -54,6 +54,32 @@ serve(async (req) => {
 async function initializeQuestions(projectId: string, sessionId: string, discussionGuide: any) {
   console.log('Initializing questions for session:', sessionId);
   
+  // Check if questions already exist for this session to prevent duplicates
+  const { data: existingQuestions, error: checkError } = await supabase
+    .from('interview_questions')
+    .select('id')
+    .eq('session_id', sessionId)
+    .limit(1);
+  
+  if (checkError) {
+    console.error('Error checking existing questions:', checkError);
+  }
+  
+  // If questions already exist, return them without inserting duplicates
+  if (existingQuestions && existingQuestions.length > 0) {
+    console.log('Questions already initialized for session, skipping duplicate insertion');
+    const { data: allQuestions } = await supabase
+      .from('interview_questions')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('question_order');
+    
+    return new Response(
+      JSON.stringify({ success: true, questions: allQuestions, skipped: true }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+  
   // Parse discussion guide and create question records
   const questions: any[] = [];
   let order = 1;
