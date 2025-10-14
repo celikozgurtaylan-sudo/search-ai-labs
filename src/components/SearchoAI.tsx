@@ -53,6 +53,8 @@ const SearchoAI = ({
   const [isQuestionComplete, setIsQuestionComplete] = useState(false);
   const [questionsInitialized, setQuestionsInitialized] = useState(false);
   const [isWaitingForAnswer, setIsWaitingForAnswer] = useState(false);
+  const [userTranscript, setUserTranscript] = useState<string>('');
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
   // Preamble state
   const [isPreamblePhase, setIsPreamblePhase] = useState(true);
@@ -206,6 +208,12 @@ const SearchoAI = ({
       console.error('❌ Cannot get next question: Missing sessionId');
       return;
     }
+    
+    // Clear transcript state when moving to next question
+    setUserTranscript('');
+    setCurrentResponse('');
+    setIsTranscribing(false);
+    
     try {
       console.log('🎯 Getting next question for session:', projectContext.sessionId);
       const data = await interviewService.getNextQuestion(projectContext.sessionId);
@@ -540,18 +548,29 @@ const SearchoAI = ({
       case 'input_audio_buffer.speech_started':
         console.log('Speech started detected');
         setIsListening(true);
+        setIsTranscribing(true);
+        setUserTranscript(''); // Clear previous transcript
         break;
       case 'input_audio_buffer.speech_stopped':
         console.log('Speech stopped detected');
         setIsListening(false);
-        // Save the response when user stops speaking
-        if (currentResponse) {
-          saveResponse(currentResponse, true);
-        }
+        // Don't save here - wait for transcription to complete
         break;
       case 'conversation.item.input_audio_transcription.completed':
         console.log('User transcription completed:', data.transcript);
-        setCurrentResponse(data.transcript);
+        const transcript = data.transcript || '';
+        setCurrentResponse(transcript);
+        setUserTranscript(transcript);
+        setIsTranscribing(false);
+        
+        // NOW save the response with the completed transcription
+        if (transcript.trim()) {
+          await saveResponse(transcript, false);
+        }
+        break;
+      case 'conversation.item.input_audio_transcription.delta':
+        console.log('Transcription delta:', data.delta);
+        setUserTranscript(prev => prev + (data.delta || ''));
         break;
       case 'session.created':
         console.log('Session created, sending configuration...');
@@ -825,6 +844,35 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                       {aiTranscript}
                     </p>
                   </div>}
+
+                {/* User Transcription Display */}
+                {isTranscribing && (
+                  <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-6 border-2 border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                      <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                        Kaydediliyor...
+                      </span>
+                    </div>
+                    <p className="text-gray-700 dark:text-gray-300 italic">
+                      {userTranscript || 'Dinleniyor...'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Show completed response */}
+                {!isTranscribing && userTranscript && (
+                  <div className="bg-green-50 dark:bg-green-950/30 rounded-xl p-6 border-2 border-green-200 dark:border-green-800">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-sm font-medium text-green-900 dark:text-green-100">
+                        Yanıtınız:
+                      </span>
+                    </div>
+                    <p className="text-gray-700 dark:text-gray-300">
+                      {userTranscript}
+                    </p>
+                  </div>
+                )}
 
                 {/* Audio Waveform Visualizer */}
                 <div className="flex flex-col items-center gap-4 py-8">
