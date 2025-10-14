@@ -32,7 +32,7 @@ const SearchoAI = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
+  const [microphoneEnabled, setMicrophoneEnabled] = useState(true);
   const [microphonePermissionGranted, setMicrophonePermissionGranted] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
@@ -80,6 +80,24 @@ const SearchoAI = ({
       initializeInterviewQuestions();
     }
   }, [isActive, projectContext, questionsInitialized]);
+
+  // Auto-request microphone permission when session starts
+  useEffect(() => {
+    if (isActive && !microphonePermissionGranted) {
+      const requestMicPermission = async () => {
+        try {
+          await navigator.mediaDevices.getUserMedia({ audio: true });
+          setMicrophonePermissionGranted(true);
+          console.log('✅ Microphone permission granted automatically');
+        } catch (error) {
+          console.error('❌ Microphone permission denied:', error);
+          setAudioError('Mikrofon izni gerekli - lütfen tarayıcı ayarlarından izin verin');
+          setMicrophoneEnabled(false);
+        }
+      };
+      requestMicPermission();
+    }
+  }, [isActive, microphonePermissionGranted]);
   const initializeInterviewQuestions = async () => {
     if (!projectContext?.sessionId || !projectContext?.projectId || !projectContext?.discussionGuide) {
       console.error('Missing required data for interview initialization:', {
@@ -832,24 +850,30 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                           </div>}
                       </div>
                       
-                      {isWaitingForAnswer && (
-                        isTranscribing ? (
-                          <div className="flex items-center gap-2">
+                      {/* User Transcription - Always Visible */}
+                      <div className="mt-2">
+                        {isTranscribing ? (
+                          <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
                             <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                             <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
                               {userTranscript || 'Dinleniyor...'}
                             </p>
                           </div>
                         ) : userTranscript ? (
-                          <p className="text-sm font-medium text-green-600 dark:text-green-400">
-                            "{userTranscript}"
-                          </p>
-                        ) : (
-                          <p className="text-sm text-muted-foreground italic">
+                          <div className="p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
+                            <span className="text-xs font-medium text-green-700 dark:text-green-300 mb-1 block">
+                              Yanıtınız:
+                            </span>
+                            <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                              "{userTranscript}"
+                            </p>
+                          </div>
+                        ) : isWaitingForAnswer ? (
+                          <p className="text-sm text-muted-foreground italic text-center">
                             Lütfen yanıtınızı sesli olarak verin...
                           </p>
-                        )
-                      )}
+                        ) : null}
+                      </div>
                     </div>
                   </div>}
 
@@ -876,8 +900,24 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
           <div className="border-t border-border bg-card/50 backdrop-blur-sm">
             <div className="max-w-4xl mx-auto px-6 py-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Button onClick={toggleMicrophone} variant={microphoneEnabled ? "default" : "outline"} size="lg" className="gap-2" disabled={!isConnected}>
-                  {microphoneEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+                <Button 
+                  onClick={toggleMicrophone} 
+                  variant={microphoneEnabled ? "default" : "outline"} 
+                  size="lg" 
+                  className={`gap-2 ${microphoneEnabled ? 'ring-2 ring-green-500 ring-offset-2' : ''}`}
+                  disabled={!isConnected}
+                >
+                  {microphoneEnabled ? (
+                    <>
+                      <Mic className="h-5 w-5" />
+                      <span className="hidden sm:inline">Mikrofon Açık</span>
+                    </>
+                  ) : (
+                    <>
+                      <MicOff className="h-5 w-5" />
+                      <span className="hidden sm:inline">Mikrofon Kapalı</span>
+                    </>
+                  )}
                 </Button>
 
                 <Button onClick={toggleMute} variant={isMuted ? "outline" : "secondary"} size="lg" className="gap-2">
