@@ -594,7 +594,6 @@ const SearchoAI = ({ isActive, projectContext, onSessionEnd }: SearchoAIProps) =
           event_id: "configure_session",
           type: "session.update",
           session: {
-            type: "realtime",
             modalities: ["text", "audio"],
               instructions: `You are SEARCHO, a professional UX research interviewer conducting a structured interview.
 
