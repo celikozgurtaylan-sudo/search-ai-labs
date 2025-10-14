@@ -225,8 +225,12 @@ const SearchoAI = ({
     }
   }, [projectContext, isRecordingVideo, stopVideoRecording, startVideoRecording]);
   const saveResponse = useCallback(async (transcription: string) => {
-    if (!projectContext?.sessionId || !currentQuestion) return;
+    if (!projectContext?.sessionId || !currentQuestion) {
+      throw new Error('Session or question not available');
+    }
+    
     try {
+      console.log('💾 saveResponse called for question:', currentQuestion.id);
       let videoUrl = null;
       let videoDuration = null;
 
@@ -254,8 +258,11 @@ const SearchoAI = ({
           questionText: currentQuestion.question_text
         }
       });
+      
+      console.log('✅ Response saved to database');
     } catch (error) {
-      console.error('Failed to save response:', error);
+      console.error('❌ Failed to save response:', error);
+      throw error; // Re-throw so caller knows it failed
     }
   }, [projectContext, currentQuestion, isRecordingVideo, stopVideoRecording, uploadVideo]);
 
@@ -341,20 +348,31 @@ const SearchoAI = ({
     }
 
     try {
+      console.log('💾 Saving response:', editableTranscript.substring(0, 50) + '...');
       setIsReviewingTranscript(false);
-      await saveResponse(editableTranscript);
       
-      // Small delay before next question
-      setTimeout(async () => {
-        setUserTranscript('');
-        setEditableTranscript('');
-        await getNextQuestion();
-      }, 500);
+      // Save the response and wait for it to complete
+      await saveResponse(editableTranscript);
+      console.log('✅ Response saved successfully');
+      
+      // Clear the transcripts
+      setUserTranscript('');
+      setEditableTranscript('');
+      
+      // Wait a moment before getting next question
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      console.log('📥 Fetching next question...');
+      await getNextQuestion();
+      console.log('✅ Next question loaded');
+      
     } catch (error) {
-      console.error('Error saving response:', error);
+      console.error('❌ Error in confirmAndSaveResponse:', error);
+      // Reset review state so user can try again
+      setIsReviewingTranscript(true);
       toast({
         title: "Hata",
-        description: "Yanıt kaydedilemedi",
+        description: "Yanıt kaydedilemedi. Lütfen tekrar deneyin.",
         variant: "destructive"
       });
     }
