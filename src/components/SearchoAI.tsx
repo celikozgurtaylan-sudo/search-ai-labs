@@ -850,28 +850,47 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                           </div>}
                       </div>
                       
-                      {/* User Transcription - Always Visible */}
-                      <div className="mt-2">
+                      {/* Live Recording Section - Always Visible */}
+                      <div className="mt-6 min-h-[120px]">
                         {isTranscribing ? (
-                          <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
-                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                            <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
-                              {userTranscript || 'Dinleniyor...'}
-                            </p>
+                          <div className="bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-950/30 dark:to-pink-950/30 rounded-2xl p-6 border-2 border-red-300 dark:border-red-700 shadow-lg">
+                            <div className="flex items-center gap-3 mb-3">
+                              <div className="relative">
+                                <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
+                                <div className="absolute inset-0 w-4 h-4 bg-red-500 rounded-full animate-ping"></div>
+                              </div>
+                              <span className="text-sm font-bold text-red-700 dark:text-red-300 uppercase tracking-wide">
+                                🎙️ KAYIT YAPILIYOR
+                              </span>
+                            </div>
+                            <div className="bg-white/80 dark:bg-black/40 rounded-xl p-4 min-h-[60px]">
+                              <p className="text-lg font-medium text-gray-900 dark:text-gray-100 leading-relaxed">
+                                {userTranscript || 'Konuşmanız yazıya dönüştürülüyor...'}
+                              </p>
+                            </div>
                           </div>
                         ) : userTranscript ? (
-                          <div className="p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
-                            <span className="text-xs font-medium text-green-700 dark:text-green-300 mb-1 block">
-                              Yanıtınız:
-                            </span>
-                            <p className="text-sm font-medium text-green-600 dark:text-green-400">
-                              "{userTranscript}"
-                            </p>
+                          <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-2xl p-6 border-2 border-green-300 dark:border-green-700 shadow-lg">
+                            <div className="flex items-center gap-2 mb-3">
+                              <span className="text-sm font-bold text-green-700 dark:text-green-300 uppercase tracking-wide">
+                                ✓ YANIT ALINDI
+                              </span>
+                            </div>
+                            <div className="bg-white/80 dark:bg-black/40 rounded-xl p-4">
+                              <p className="text-lg font-medium text-gray-900 dark:text-gray-100 leading-relaxed">
+                                "{userTranscript}"
+                              </p>
+                            </div>
                           </div>
                         ) : isWaitingForAnswer ? (
-                          <p className="text-sm text-muted-foreground italic text-center">
-                            Lütfen yanıtınızı sesli olarak verin...
-                          </p>
+                          <div className="bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-900/30 dark:to-slate-900/30 rounded-2xl p-6 border-2 border-dashed border-gray-300 dark:border-gray-700">
+                            <div className="flex flex-col items-center justify-center gap-3 min-h-[80px]">
+                              <Mic className="h-8 w-8 text-gray-400 dark:text-gray-600 animate-pulse" />
+                              <p className="text-base text-gray-600 dark:text-gray-400 font-medium text-center">
+                                Lütfen yanıtınızı sesli olarak verin...
+                              </p>
+                            </div>
+                          </div>
                         ) : null}
                       </div>
                     </div>
