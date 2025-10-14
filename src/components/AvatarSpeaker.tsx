@@ -33,8 +33,8 @@ export const AvatarSpeaker = ({
       throw error;
     }
     
-    console.log('Session token received');
-    return data.data.access_token;
+    console.log('API key received');
+    return data.api_key;
   };
 
   // Initialize avatar session

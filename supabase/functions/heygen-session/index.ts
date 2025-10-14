@@ -17,32 +17,9 @@ serve(async (req) => {
       throw new Error('HEYGEN_API_KEY is not configured');
     }
 
-    console.log('Creating HeyGen streaming session...');
+    console.log('Returning HeyGen API key for client-side session creation');
     
-    // Create streaming session with default settings
-    // HeyGen will auto-detect language from the text
-    const response = await fetch('https://api.heygen.com/v1/streaming.new', {
-      method: 'POST',
-      headers: {
-        'X-Api-Key': HEYGEN_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        quality: 'high',
-        avatar_name: 'default'
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('HeyGen API error:', response.status, errorText);
-      throw new Error(`HeyGen API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log('HeyGen session created successfully');
-    
-    return new Response(JSON.stringify(data), {
+    return new Response(JSON.stringify({ api_key: HEYGEN_API_KEY }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
