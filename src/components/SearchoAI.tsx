@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Mic, MicOff, Volume2, VolumeX, PhoneOff } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, PhoneOff, SkipForward } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { AudioTranscriber } from '@/utils/AudioTranscriber';
 import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
@@ -43,6 +44,8 @@ const SearchoAI = ({
   const [isWaitingForAnswer, setIsWaitingForAnswer] = useState(false);
   const [userTranscript, setUserTranscript] = useState<string>('');
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isReviewingTranscript, setIsReviewingTranscript] = useState(false);
+  const [editableTranscript, setEditableTranscript] = useState('');
 
   // Preamble state
   const [isPreamblePhase, setIsPreamblePhase] = useState(true);
@@ -291,21 +294,12 @@ const SearchoAI = ({
     transcriber.onComplete = async (finalText: string) => {
       console.log('Transcription complete:', finalText);
       setUserTranscript(finalText);
+      setEditableTranscript(finalText);
       setIsTranscribing(false);
       setIsListening(false);
       setIsWaitingForAnswer(false);
-
-      // Save the response
-      try {
-        await saveResponse(finalText);
-        
-        // Small delay before next question
-        setTimeout(async () => {
-          await getNextQuestion();
-        }, 1000);
-      } catch (error) {
-        console.error('Error processing response:', error);
-      }
+      setIsReviewingTranscript(true);
+      // Don't auto-save - wait for user confirmation
     };
 
     transcriber.onError = (error: string) => {
@@ -332,6 +326,67 @@ const SearchoAI = ({
       }
     } else {
       startListening();
+    }
+  };
+
+  // Confirm and save the edited transcription
+  const confirmAndSaveResponse = async () => {
+    if (!editableTranscript.trim()) {
+      toast({
+        title: "Hata",
+        description: "Yanıt boş olamaz",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setIsReviewingTranscript(false);
+      await saveResponse(editableTranscript);
+      
+      // Small delay before next question
+      setTimeout(async () => {
+        setUserTranscript('');
+        setEditableTranscript('');
+        await getNextQuestion();
+      }, 500);
+    } catch (error) {
+      console.error('Error saving response:', error);
+      toast({
+        title: "Hata",
+        description: "Yanıt kaydedilemedi",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Re-record the answer
+  const reRecordAnswer = () => {
+    setIsReviewingTranscript(false);
+    setUserTranscript('');
+    setEditableTranscript('');
+    setIsWaitingForAnswer(true);
+    // User can click microphone button to start again
+  };
+
+  // Skip the current question
+  const skipQuestion = async () => {
+    try {
+      setIsReviewingTranscript(false);
+      setUserTranscript('');
+      setEditableTranscript('');
+      
+      toast({
+        title: "Soru Atlandı",
+        description: "Sonraki soruya geçiliyor..."
+      });
+      
+      // Move to next question without saving
+      setTimeout(async () => {
+        await getNextQuestion();
+      }, 500);
+    } catch (error) {
+      console.error('Error skipping question:', error);
     }
   };
 
@@ -438,6 +493,50 @@ const SearchoAI = ({
                               </p>
                             </div>
                           </div>
+                        ) : isReviewingTranscript ? (
+                          <div className="bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-950/30 dark:to-amber-950/30 rounded-2xl p-6 border-2 border-yellow-400 dark:border-yellow-600 shadow-lg">
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-sm font-bold text-yellow-800 dark:text-yellow-300 uppercase tracking-wide">
+                                ✏️ YANITI KONTROL EDİN
+                              </span>
+                              <span className="text-xs text-yellow-700 dark:text-yellow-400">
+                                Düzenleyebilir veya kaydedebilirsiniz
+                              </span>
+                            </div>
+                            
+                            {/* Editable Textarea */}
+                            <Textarea
+                              value={editableTranscript}
+                              onChange={(e) => setEditableTranscript(e.target.value)}
+                              className="w-full min-h-[100px] text-lg font-medium leading-relaxed resize-none"
+                              placeholder="Yanıtınızı buraya yazın..."
+                            />
+                            
+                            {/* Action Buttons */}
+                            <div className="flex gap-3 mt-4">
+                              <Button
+                                onClick={confirmAndSaveResponse}
+                                className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                                size="lg"
+                              >
+                                ✓ Onayla ve Kaydet
+                              </Button>
+                              <Button
+                                onClick={reRecordAnswer}
+                                variant="outline"
+                                size="lg"
+                              >
+                                🎙️ Tekrar Kaydet
+                              </Button>
+                              <Button
+                                onClick={skipQuestion}
+                                variant="outline"
+                                size="lg"
+                              >
+                                ⏭️ Atla
+                              </Button>
+                            </div>
+                          </div>
                         ) : userTranscript ? (
                           <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-2xl p-6 border-2 border-green-300 dark:border-green-700 shadow-lg">
                             <div className="flex items-center gap-2 mb-3">
@@ -477,6 +576,7 @@ const SearchoAI = ({
                   variant={isListening ? "default" : "outline"} 
                   size="lg" 
                   className={`gap-2 ${isListening ? 'ring-2 ring-green-500 ring-offset-2' : ''}`}
+                  disabled={isReviewingTranscript}
                 >
                   {isListening ? (
                     <>
@@ -490,6 +590,19 @@ const SearchoAI = ({
                     </>
                   )}
                 </Button>
+                
+                {/* Skip Question Button - Always available */}
+                {!isReviewingTranscript && currentQuestion && (
+                  <Button 
+                    onClick={skipQuestion} 
+                    variant="ghost" 
+                    size="lg" 
+                    className="gap-2 text-muted-foreground hover:text-foreground"
+                  >
+                    <SkipForward className="h-5 w-5" />
+                    <span className="hidden sm:inline">Soruyu Atla</span>
+                  </Button>
+                )}
               </div>
 
               <div className="text-sm text-muted-foreground font-mono">
