@@ -72,7 +72,12 @@ export const AvatarSpeaker = ({
 
         await avatarInstance.createStartAvatar({
           quality: 'high' as any,
-          avatarName: 'default'
+          avatarName: 'default',
+          voice: {
+            voiceId: 'default',
+          },
+          knowledgeBase: '',
+          disableIdleTimeout: true
         });
 
         console.log('Avatar created successfully');
@@ -156,7 +161,7 @@ export const AvatarSpeaker = ({
       console.log('Speaking question:', questionText);
       avatar.speak({
         text: questionText,
-        task_type: TaskType.TALK,
+        task_type: TaskType.REPEAT,
       });
     }
   }, [questionText, avatar, isInitializing]);
