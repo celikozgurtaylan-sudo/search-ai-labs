@@ -609,8 +609,8 @@ const SearchoAI = ({
                   )}
                 </Button>
                 
-                {/* Skip Question Button - Always available */}
-                {!isReviewingTranscript && currentQuestion && (
+                {/* Skip Question Button - Always available when there's a question */}
+                {currentQuestion && (
                   <Button 
                     onClick={skipQuestion} 
                     variant="ghost" 
