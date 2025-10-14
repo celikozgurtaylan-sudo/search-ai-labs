@@ -108,6 +108,7 @@ export const AvatarSpeaker = ({
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
+    console.log('Canvas dimensions:', canvas.width, 'x', canvas.height);
     
     const processFrame = () => {
       if (!video.paused && !video.ended) {
@@ -166,7 +167,6 @@ export const AvatarSpeaker = ({
         ref={videoRef}
         autoPlay
         playsInline
-        muted
         className="hidden"
       />
       <canvas
