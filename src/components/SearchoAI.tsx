@@ -385,12 +385,14 @@ const SearchoAI = ({
   };
 
   // Re-record the answer
-  const reRecordAnswer = () => {
+  const reRecordAnswer = async () => {
     setIsReviewingTranscript(false);
     setUserTranscript('');
     setEditableTranscript('');
     setIsWaitingForAnswer(true);
-    // User can click microphone button to start again
+    
+    // Automatically start listening just like the initial flow
+    await startListening();
   };
 
   // Skip the current question
