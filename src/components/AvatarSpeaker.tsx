@@ -71,10 +71,7 @@ export const AvatarSpeaker = ({
 
         await avatarInstance.createStartAvatar({
           quality: 'low' as any,
-          avatarName: 'default',
-          voice: {
-            voiceId: 'turkish_female_1'
-          }
+          avatarName: 'default'
         });
 
         console.log('Avatar created successfully');

@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.heygen-session]
 verify_jwt = false
+
+[functions.heygen-list-voices]
+verify_jwt = false

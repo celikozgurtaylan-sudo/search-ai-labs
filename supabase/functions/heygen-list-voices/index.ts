@@ -17,20 +17,14 @@ serve(async (req) => {
       throw new Error('HEYGEN_API_KEY is not configured');
     }
 
-    console.log('Creating HeyGen streaming session...');
+    console.log('Fetching available HeyGen voices...');
     
-    // Create streaming session with default settings
-    // HeyGen will auto-detect language from the text
-    const response = await fetch('https://api.heygen.com/v1/streaming.new', {
-      method: 'POST',
+    // Fetch available voices from HeyGen API
+    const response = await fetch('https://api.heygen.com/v2/voices', {
+      method: 'GET',
       headers: {
         'X-Api-Key': HEYGEN_API_KEY,
-        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        quality: 'high',
-        avatar_name: 'default'
-      })
     });
 
     if (!response.ok) {
@@ -40,13 +34,29 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    console.log('HeyGen session created successfully');
+    console.log('Voices fetched successfully');
     
-    return new Response(JSON.stringify(data), {
+    // Filter for Turkish voices if requested
+    const { filterLanguage } = await req.json().catch(() => ({}));
+    
+    let voices = data.data?.voices || data.voices || [];
+    
+    if (filterLanguage) {
+      voices = voices.filter((voice: any) => 
+        voice.language?.toLowerCase().includes(filterLanguage.toLowerCase()) ||
+        voice.language_code?.toLowerCase().includes(filterLanguage.toLowerCase())
+      );
+      console.log(`Filtered ${voices.length} voices for language: ${filterLanguage}`);
+    }
+    
+    return new Response(JSON.stringify({ 
+      voices,
+      count: voices.length 
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Error in heygen-session:', error);
+    console.error('Error in heygen-list-voices:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
