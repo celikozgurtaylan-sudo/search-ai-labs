@@ -34,7 +34,7 @@ export const AvatarSpeaker = ({
     }
     
     console.log('Session token received');
-    return data.data.token;
+    return data.data.access_token;
   };
 
   // Initialize avatar session
