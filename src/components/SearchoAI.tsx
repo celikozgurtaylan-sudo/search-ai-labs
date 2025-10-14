@@ -180,8 +180,18 @@ const SearchoAI = ({
   const getNextQuestion = useCallback(async () => {
     if (!projectContext?.sessionId) return;
     
+    // Stop any active transcription before moving to next question
+    if (audioTranscriberRef.current) {
+      console.log('🛑 Stopping transcription before next question');
+      audioTranscriberRef.current.stop();
+      audioTranscriberRef.current = null;
+    }
+    
     setUserTranscript('');
+    setEditableTranscript('');
     setIsTranscribing(false);
+    setIsListening(false);
+    setIsReviewingTranscript(false);
     
     try {
       console.log('🎯 Getting next question...');
@@ -274,7 +284,16 @@ const SearchoAI = ({
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
-    return () => clearInterval(timer);
+    
+    // Cleanup function to stop transcription when component unmounts or becomes inactive
+    return () => {
+      clearInterval(timer);
+      if (audioTranscriberRef.current) {
+        console.log('🧹 Cleaning up transcriber on unmount/inactive');
+        audioTranscriberRef.current.stop();
+        audioTranscriberRef.current = null;
+      }
+    };
   }, [isActive, sessionStartTime]);
 
   // Start listening for user response
@@ -302,6 +321,12 @@ const SearchoAI = ({
       console.log('Transcription complete:', finalText);
       setUserTranscript(finalText);
       setEditableTranscript(finalText);
+      
+      // CRITICAL: Stop the transcriber immediately to prevent further captures
+      if (audioTranscriberRef.current) {
+        audioTranscriberRef.current.stop();
+      }
+      
       setIsTranscribing(false);
       setIsListening(false);
       setIsWaitingForAnswer(false);
@@ -326,12 +351,15 @@ const SearchoAI = ({
 
   const toggleMicrophone = () => {
     if (isListening) {
+      console.log('🛑 Manually stopping transcription');
       setIsListening(false);
+      setIsTranscribing(false);
       if (audioTranscriberRef.current) {
         audioTranscriberRef.current.stop();
         audioTranscriberRef.current = null;
       }
     } else {
+      console.log('🎙️ Manually starting transcription');
       startListening();
     }
   };
@@ -386,10 +414,21 @@ const SearchoAI = ({
 
   // Re-record the answer
   const reRecordAnswer = async () => {
+    // CRITICAL: Stop any existing transcription first
+    if (audioTranscriberRef.current) {
+      audioTranscriberRef.current.stop();
+      audioTranscriberRef.current = null;
+    }
+    
     setIsReviewingTranscript(false);
     setUserTranscript('');
     setEditableTranscript('');
+    setIsTranscribing(false);
+    setIsListening(false);
     setIsWaitingForAnswer(true);
+    
+    // Wait a moment to ensure cleanup, then start fresh
+    await new Promise(resolve => setTimeout(resolve, 300));
     
     // Automatically start listening just like the initial flow
     await startListening();
