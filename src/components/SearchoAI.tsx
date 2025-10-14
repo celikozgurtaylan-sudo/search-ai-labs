@@ -566,8 +566,6 @@ const SearchoAI = ({
                     </>}
                 </Button>
                 
-                {/* Skip Question Button - Always available when there's a question */}
-                {currentQuestion}
               </div>
 
               <div className="text-sm text-muted-foreground font-mono">
