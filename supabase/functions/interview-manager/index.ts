@@ -127,7 +127,8 @@ async function getNextQuestion(sessionId: string) {
       progress: {
         completed: completedQuestions,
         total: totalQuestions,
-        isComplete: completedQuestions === totalQuestions
+        isComplete: completedQuestions === totalQuestions,
+        percentage: totalQuestions > 0 ? (completedQuestions / totalQuestions) * 100 : 0
       }
     }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
