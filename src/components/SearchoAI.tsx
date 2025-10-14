@@ -355,6 +355,12 @@ const SearchoAI = ({
       await saveResponse(editableTranscript);
       console.log('✅ Response saved successfully');
       
+      // Mark question as complete
+      if (projectContext?.sessionId && currentQuestion?.id) {
+        await interviewService.completeQuestion(projectContext.sessionId, currentQuestion.id);
+        console.log('✅ Question marked as complete');
+      }
+      
       // Clear the transcripts
       setUserTranscript('');
       setEditableTranscript('');
@@ -398,6 +404,12 @@ const SearchoAI = ({
         title: "Soru Atlandı",
         description: "Sonraki soruya geçiliyor..."
       });
+      
+      // Mark current question as complete even though we're skipping
+      if (projectContext?.sessionId && currentQuestion?.id) {
+        await interviewService.completeQuestion(projectContext.sessionId, currentQuestion.id);
+        console.log('✅ Question skipped and marked as complete');
+      }
       
       // Move to next question without saving
       setTimeout(async () => {
