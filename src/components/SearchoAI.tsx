@@ -832,9 +832,24 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                           </div>}
                       </div>
                       
-                      {isWaitingForAnswer && <p className="text-sm text-muted-foreground italic">
-                          Lütfen yanıtınızı sesli olarak verin...
-                        </p>}
+                      {isWaitingForAnswer && (
+                        isTranscribing ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                            <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                              {userTranscript || 'Dinleniyor...'}
+                            </p>
+                          </div>
+                        ) : userTranscript ? (
+                          <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                            "{userTranscript}"
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground italic">
+                            Lütfen yanıtınızı sesli olarak verin...
+                          </p>
+                        )
+                      )}
                     </div>
                   </div>}
 
@@ -845,34 +860,6 @@ Current question context: ${currentQuestion?.question_text || 'No current questi
                     </p>
                   </div>}
 
-                {/* User Transcription Display */}
-                {isTranscribing && (
-                  <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-6 border-2 border-blue-200 dark:border-blue-800">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                      <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                        Kaydediliyor...
-                      </span>
-                    </div>
-                    <p className="text-gray-700 dark:text-gray-300 italic">
-                      {userTranscript || 'Dinleniyor...'}
-                    </p>
-                  </div>
-                )}
-
-                {/* Show completed response */}
-                {!isTranscribing && userTranscript && (
-                  <div className="bg-green-50 dark:bg-green-950/30 rounded-xl p-6 border-2 border-green-200 dark:border-green-800">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-sm font-medium text-green-900 dark:text-green-100">
-                        Yanıtınız:
-                      </span>
-                    </div>
-                    <p className="text-gray-700 dark:text-gray-300">
-                      {userTranscript}
-                    </p>
-                  </div>
-                )}
 
                 {/* Audio Waveform Visualizer */}
                 <div className="flex flex-col items-center gap-4 py-8">
