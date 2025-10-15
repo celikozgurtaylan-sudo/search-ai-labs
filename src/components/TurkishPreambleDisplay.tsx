@@ -23,7 +23,6 @@ const TURKISH_PREAMBLE_CHUNKS = [
   "Görüşmemiz esnasında Lütfen samimi ve doğal olun.",
   "Bu araştırma, ürün geliştirme sürecimize sizlerin değerli görüşleriyle yardımcı olacak.",
   "Birkaç dakika sonra yapılandırılmış sorularımıza geçeceğiz.",
-  "Başlamadan önce sizi biraz tanıyabilir miyiz?",
 ];
 const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({ projectContext, onComplete, onSkip }) => {
   const [currentChunk, setCurrentChunk] = useState(0);
@@ -225,17 +224,6 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({ project
     }
   };
 
-  // Start recording when preamble completes
-  useEffect(() => {
-    if (preambleCompleted && !isRecording && !recordingSaved) {
-      // Small delay before starting recording
-      const timeout = setTimeout(() => {
-        startRecording();
-      }, 1000);
-      
-      return () => clearTimeout(timeout);
-    }
-  }, [preambleCompleted]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -266,46 +254,9 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({ project
               <div className="text-lg leading-relaxed mb-4">
                 {TURKISH_PREAMBLE_CHUNKS[TURKISH_PREAMBLE_CHUNKS.length - 1]}
               </div>
-              
-              {/* Recording indicator */}
-              {isRecording && (
-                <div className="flex flex-col items-center gap-3 mt-6">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-destructive rounded-full animate-pulse" />
-                    <span className="text-sm font-medium">Kayıt ediliyor...</span>
-                  </div>
-                  <div className="text-2xl font-mono">
-                    {Math.floor(recordingDuration / 60).toString().padStart(2, '0')}:
-                    {(recordingDuration % 60).toString().padStart(2, '0')} / 00:20
-                  </div>
-                </div>
-              )}
-              
-              {/* Transcribing indicator */}
-              {isTranscribing && (
-                <div className="flex items-center justify-center gap-2 mt-6">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span className="text-sm">Çevriliyor...</span>
-                </div>
-              )}
-              
-              {/* Success message */}
-              {recordingSaved && (
-                <div className="mt-6 space-y-4">
-                  <div className="flex items-center justify-center gap-2 text-green-600">
-                    <Check className="w-5 h-5" />
-                    <span className="font-medium">Yanıtınız kaydedildi!</span>
-                  </div>
-                  {preambleResponse && (
-                    <div className="bg-muted p-4 rounded-lg text-sm text-left">
-                      "{preambleResponse}"
-                    </div>
-                  )}
-                  <div className="text-sm text-muted-foreground">
-                    Devam etmek için butona basın
-                  </div>
-                </div>
-              )}
+              <div className="text-sm text-muted-foreground mt-6">
+                Yapılandırılmış sorulara geçmek için devam edin
+              </div>
             </div>
           ) : isPlaying ? (
             <TypewriterText
@@ -328,17 +279,10 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({ project
             </Button>
           )}
 
-          {preambleCompleted && recordingSaved && (
+          {preambleCompleted && (
             <Button onClick={handleContinue} className="flex items-center gap-2">
               <SkipForward className="w-4 h-4" />
               Devam Et
-            </Button>
-          )}
-          
-          {preambleCompleted && isRecording && (
-            <Button variant="destructive" onClick={stopRecording} className="flex items-center gap-2">
-              <Square className="w-4 h-4" />
-              Kaydı Durdur
             </Button>
           )}
 
