@@ -19,6 +19,10 @@ serve(async (req) => {
     }
 
     const { message, conversationHistory = [] } = await req.json();
+    
+    // Track conversation depth (each full exchange = 2 messages)
+    const conversationDepth = Math.floor(conversationHistory.length / 2);
+    console.log('Conversation depth:', conversationDepth);
 
     // Check if this is a template-based message
     const isNPSTemplate = message.includes('NPS tabanlı araştırma metodolojisi') || message.includes('müşteri memnuniyeti ve sadakat düzeyini ölçmeye');
@@ -130,7 +134,8 @@ SADECE "NET" veya "BELIRSIZ" yanıtı ver, başka hiçbir şey yazma.`
       console.log('Specificity analysis:', specificityData.choices[0].message.content);
       console.log('Is request specific:', isSpecific);
       
-      if (isSpecific || isTemplateMessage) {
+      // Generate plan if: specific request, template, OR after 2+ exchanges
+      if (isSpecific || isTemplateMessage || conversationDepth >= 2) {
         // Clear request or template - generate structured plan immediately
         shouldGenerateResearchPlan = true;
         
@@ -175,7 +180,19 @@ TEMEL ARAŞTIRMA İÇİN KATILIMCILARA SORULACAK SORULAR:
 - Gelecekteki beklenti ve trendler`;
         }
         
-        systemPrompt = `${templateSpecificPrompt}
+        // Add conversation context if we've had clarifying exchanges
+        let conversationContext = '';
+        if (conversationDepth >= 2) {
+          const userMessages = conversationHistory
+            .filter(msg => msg.role === 'user')
+            .map(msg => msg.content)
+            .join(' | ');
+          
+          conversationContext = `\n\nKULLANICI KONUŞMA BAĞLAMI (önceki yanıtlar): ${userMessages}
+Bu bilgileri kullanarak kullanıcının ihtiyaçlarına uygun, spesifik ve hedef odaklı sorular oluştur.`;
+        }
+        
+        systemPrompt = `${templateSpecificPrompt}${conversationContext}
 
 YANIT FORMATI:
 {
