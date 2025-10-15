@@ -162,29 +162,47 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
             <p className="text-sm mt-2">Sormak istediğiniz her şeyi yazabilirsiniz.</p>
           </div>
         ) : (
-          messages.filter(msg => msg.type === 'user').map((message) => (
-            <div
-              key={message.id}
-              className="flex space-x-3 justify-start"
-            >
-              <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-surface text-text-secondary">
-                <img 
-                  src={userAvatar} 
-                  alt="User avatar" 
-                  className="w-full h-full object-cover rounded-full"
-                />
-              </div>
-              
-              <div className="flex-1 max-w-lg">
-                <div className="rounded-2xl px-4 py-3 bg-brand-primary text-white">
-                  <p className="text-sm leading-relaxed whitespace-pre-line">
-                    {message.content}
-                  </p>
+          messages.map((message) => (
+            <div key={message.id}>
+              {message.type === 'user' ? (
+                <div className="flex space-x-3 justify-end">
+                  <div className="flex-1 max-w-lg">
+                    <div className="rounded-2xl px-4 py-3 bg-brand-primary text-white">
+                      <p className="text-sm leading-relaxed whitespace-pre-line">
+                        {message.content}
+                      </p>
+                    </div>
+                    <p className="text-xs text-text-muted mt-1 ml-4">
+                      {message.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-surface text-text-secondary">
+                    <img 
+                      src={userAvatar} 
+                      alt="User avatar" 
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  </div>
                 </div>
-                <p className="text-xs text-text-muted mt-1 ml-4">
-                  {message.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-                </p>
-              </div>
+              ) : (
+                <div className="flex space-x-3 justify-start">
+                  <div className="w-8 h-8 bg-brand-primary-light text-brand-primary rounded-full flex items-center justify-center flex-shrink-0">
+                    <Bot className="w-4 h-4" />
+                  </div>
+                  
+                  <div className="flex-1 max-w-lg">
+                    <div className="rounded-2xl px-4 py-3 bg-surface border border-border text-text-primary">
+                      <p className="text-sm leading-relaxed whitespace-pre-line">
+                        {message.content}
+                      </p>
+                    </div>
+                    <p className="text-xs text-text-muted mt-1 ml-4">
+                      {message.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           ))
         )}
