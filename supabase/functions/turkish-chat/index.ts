@@ -196,7 +196,7 @@ Bu bilgileri kullanarak kullanıcının ihtiyaçlarına uygun, spesifik ve hedef
 
 YANIT FORMATI:
 {
-  "chatResponse": "Seçtiğin araştırma türü için özel hazırlanmış görüşme sorularını sağ panelde bulabilirsin. Bu sorularla hemen araştırmana başlayabilirsin.",
+  "chatResponse": "Araştırma planı hazırlandı. Soruları sağ panelde düzenleyebilirsin.",
   "researchPlan": {
     "title": "[Araştırma türüne uygun başlık]",
     "sections": [

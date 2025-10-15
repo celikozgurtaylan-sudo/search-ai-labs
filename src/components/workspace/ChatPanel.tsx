@@ -73,28 +73,35 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
         throw error;
       }
 
-      // Remove loading message and add AI response
-      setMessages(prev => {
-        const filtered = prev.filter(msg => !msg.id.includes('loading'));
-        const assistantMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          type: 'ai',
-          content: data.reply,
-          timestamp: new Date()
-        };
-        return [...filtered, assistantMessage];
-      });
-      
       setConversationHistory(data.conversationHistory || []);
-      
-      // Check if the conversation became research-related
-      if (data.isResearchRelated && onResearchDetected) {
-        onResearchDetected(true);
-      }
       
       // Handle research plan generation
       if (data.researchPlan && onResearchPlanGenerated) {
+        // Remove loading message without adding chat response
+        setMessages(prev => prev.filter(msg => !msg.id.includes('loading')));
+        
+        // Trigger research panel with structured questions
         onResearchPlanGenerated(data.researchPlan);
+        if (onResearchDetected) {
+          onResearchDetected(true);
+        }
+      } else {
+        // Only add AI chat response if no research plan was generated
+        setMessages(prev => {
+          const filtered = prev.filter(msg => !msg.id.includes('loading'));
+          const assistantMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            type: 'ai',
+            content: data.reply,
+            timestamp: new Date()
+          };
+          return [...filtered, assistantMessage];
+        });
+        
+        // Check if conversation became research-related (for future plan generation)
+        if (data.isResearchRelated && onResearchDetected) {
+          onResearchDetected(true);
+        }
       }
       
     } catch (error) {
