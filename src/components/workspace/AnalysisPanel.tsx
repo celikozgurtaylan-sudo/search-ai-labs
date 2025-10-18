@@ -3,9 +3,101 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { RefreshCw, Download, TrendingUp, Users, MessageSquare } from "lucide-react";
+import { RefreshCw, Download, TrendingUp, Users, MessageSquare, FileText, Target, AlertCircle, Quote } from "lucide-react";
 import { interviewService } from "@/services/interviewService";
 import { useToast } from "@/hooks/use-toast";
+
+// Mock data for demo purposes
+const DEMO_ANALYSIS_DATA = {
+  insights: [
+    "Kullanıcılar widget'ların ana sayfada çok fazla yer kapladığını ve önemli bilgileri gölgelediğini belirtti",
+    "Yatırım widget'larında gerçek zamanlı fiyat güncellemelerinin görünür ve anlaşılır olması en çok talep edilen özellik",
+    "Katılımcıların %75'i widget'ları kişiselleştirme ve sıralama yapabilme özelliği istiyor",
+    "Hızlı işlem yapabilme (al-sat) özelliğinin widget içinde olması kullanıcı deneyimini büyük ölçüde artırıyor",
+    "Mobil cihazlarda widget'ların küçük ekranlarda okunabilirliği ciddi bir sorun olarak öne çıkıyor"
+  ],
+  personas: [
+    {
+      name: "Deneyimli Yatırımcı Ahmet",
+      age: "35-45",
+      occupation: "Finans Müdürü",
+      experience: "10+ yıl yatırım deneyimi",
+      goals: "Portföyünü sürekli takip etmek, hızlı işlem yapmak",
+      painPoints: "Widget'lar yeterince detaylı bilgi vermiyor, grafik analizi eksik",
+      quote: "Ana sayfadan direkt işlem yapabilmek istiyorum, detay sayfasına girmek zaman kaybı"
+    },
+    {
+      name: "Yeni Başlayan Zeynep",
+      age: "25-30",
+      occupation: "Pazarlama Uzmanı",
+      experience: "1-2 yıl yatırım deneyimi",
+      goals: "Yatırım araçlarını öğrenmek, güvenli yatırım yapmak",
+      painPoints: "Widget'lardaki terimler çok teknik, ne anlama geldiğini anlamakta zorlanıyor",
+      quote: "Bazen widget'larda gördüğüm kısaltmaların ne anlama geldiğini bilmiyorum"
+    },
+    {
+      name: "Teknoloji Meraklısı Can",
+      age: "28-35",
+      occupation: "Yazılım Geliştirici",
+      experience: "3-5 yıl yatırım deneyimi",
+      goals: "Yenilikçi yatırım araçlarını keşfetmek, teknoloji hisselerine yatırım yapmak",
+      painPoints: "Widget'lar görsel olarak sıkıcı, animasyon ve interaktif özellikler yok",
+      quote: "Widget'ların tasarımı 2010'lardan kalma gibi, daha modern bir arayüz bekliyorum"
+    }
+  ],
+  recommendations: [
+    {
+      category: "Kişiselleştirme",
+      suggestion: "Widget'ları sürükle-bırak ile yeniden düzenleyebilme",
+      userQuotes: [
+        "Benim için önemli olan hisse widget'ını en üstte görmek istiyorum",
+        "Her gün kullanmadığım widget'ları gizleyebilmek çok işime yarardı"
+      ],
+      priority: "high"
+    },
+    {
+      category: "Bilgi Görünürlüğü",
+      suggestion: "Gerçek zamanlı fiyat değişimlerini renkli ve animasyonlu gösterme",
+      userQuotes: [
+        "Hisse fiyatı değiştiğinde yeşil veya kırmızı yanıp sönse dikkatimi çeker",
+        "Anlık değişimleri göremiyorum, sürekli yenilemem gerekiyor"
+      ],
+      priority: "high"
+    },
+    {
+      category: "Hızlı İşlem",
+      suggestion: "Widget içinden direkt al-sat butonları ekleme",
+      userQuotes: [
+        "Detay sayfasına girmeden alım yapabilseydim çok zaman kazanırdım",
+        "Fırsatı kaçırmamak için hızlı hareket etmem gerekiyor"
+      ],
+      priority: "medium"
+    },
+    {
+      category: "Eğitim ve Yardım",
+      suggestion: "Widget üzerinde bilgi ikonu ile terim açıklamaları",
+      userQuotes: [
+        "P/E ratio'nun ne olduğunu her seferinde Google'da arıyorum",
+        "Yeni başlayanlar için açıklayıcı notlar çok faydalı olur"
+      ],
+      priority: "medium"
+    }
+  ],
+  themes: [
+    "Kişiselleştirme İhtiyacı",
+    "Hız ve Verimlilik",
+    "Görsel Tasarım",
+    "Bilgi Erişilebilirliği",
+    "Mobil Uyumluluk",
+    "Güven ve Güvenlik",
+    "Eğitim Desteği"
+  ],
+  participantSummaries: [
+    "Deneyimli yatırımcı, widget'ların daha fazla teknik analiz aracı içermesini bekliyor",
+    "Yeni başlayan kullanıcı, widget'lardaki terimleri anlamakta zorlanıyor ve rehberlik istiyor",
+    "Aktif trader, widget'lardan direkt işlem yapabilmeyi ve gerçek zamanlı bildirimleri önemsiyor"
+  ]
+};
 
 interface AnalysisPanelProps {
   projectId: string;
@@ -14,8 +106,9 @@ interface AnalysisPanelProps {
 
 const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
   const { toast } = useToast();
-  const [analysisData, setAnalysisData] = useState<any>(null);
+  const [analysisData, setAnalysisData] = useState<any>(DEMO_ANALYSIS_DATA);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGeneratingPPT, setIsGeneratingPPT] = useState(false);
 
   useEffect(() => {
     if (sessionIds.length > 0) {
@@ -65,6 +158,49 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
     }
   };
 
+  const handleGeneratePPT = async () => {
+    setIsGeneratingPPT(true);
+    toast({
+      title: "Sunum Hazırlanıyor",
+      description: "PowerPoint sunumu oluşturuluyor...",
+    });
+
+    // Simulate PPT generation
+    setTimeout(() => {
+      setIsGeneratingPPT(false);
+      toast({
+        title: "Sunum Hazır!",
+        description: "Sunum başarıyla oluşturuldu ve indiriliyor...",
+      });
+    }, 2500);
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'high':
+        return 'bg-red-100 text-red-800 border-red-300';
+      case 'medium':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      case 'low':
+        return 'bg-green-100 text-green-800 border-green-300';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-300';
+    }
+  };
+
+  const getPriorityLabel = (priority: string) => {
+    switch (priority) {
+      case 'high':
+        return 'Yüksek Öncelik';
+      case 'medium':
+        return 'Orta Öncelik';
+      case 'low':
+        return 'Düşük Öncelik';
+      default:
+        return 'Öncelik';
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center bg-white">
@@ -111,6 +247,14 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
               </p>
             </div>
             <div className="flex gap-2">
+              <Button 
+                onClick={handleGeneratePPT} 
+                disabled={isGeneratingPPT}
+                className="bg-brand-primary hover:bg-brand-primary/90"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                {isGeneratingPPT ? "Hazırlanıyor..." : "Sunum Oluştur"}
+              </Button>
               <Button onClick={regenerateAnalysis} variant="outline" size="sm">
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Yeniden Analiz Et
@@ -139,6 +283,55 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                     {index + 1}
                   </div>
                   <p className="text-text-primary flex-1">{insight}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Personas */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Kullanıcı Personaları
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {analysisData.personas?.map((persona: any, index: number) => (
+                <div key={index} className="border rounded-lg p-4 space-y-3 bg-gray-50">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-brand-primary text-white flex items-center justify-center text-lg font-bold">
+                      {persona.name.split(' ').map((n: string) => n[0]).join('')}
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-text-primary">{persona.name}</h4>
+                      <p className="text-sm text-text-muted">{persona.age} · {persona.occupation}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="font-medium text-text-primary">Deneyim:</span>
+                      <p className="text-text-muted">{persona.experience}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-text-primary">Hedefler:</span>
+                      <p className="text-text-muted">{persona.goals}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-text-primary">Zorluklar:</span>
+                      <p className="text-text-muted">{persona.painPoints}</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t">
+                    <div className="flex gap-2 items-start">
+                      <Quote className="w-4 h-4 text-brand-primary flex-shrink-0 mt-1" />
+                      <p className="text-sm italic text-text-muted">"{persona.quote}"</p>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -186,21 +379,49 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
           </CardContent>
         </Card>
 
-        {/* Recommendations */}
+        {/* Enhanced Recommendations with Quotes */}
         {analysisData.recommendations && (
           <Card>
             <CardHeader>
-              <CardTitle>Öneriler</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5" />
+                Doğrudan Öneriler ve Kullanıcı Alıntıları
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-2">
-                {analysisData.recommendations.map((rec: string, index: number) => (
-                  <li key={index} className="flex gap-2 text-text-primary">
-                    <span className="text-brand-primary">•</span>
-                    <span>{rec}</span>
-                  </li>
+              <div className="space-y-4">
+                {analysisData.recommendations.map((rec: any, index: number) => (
+                  <div key={index} className="border rounded-lg p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant="outline" className="font-medium">
+                            {rec.category}
+                          </Badge>
+                          <Badge 
+                            className={`${getPriorityColor(rec.priority)} border`}
+                          >
+                            <AlertCircle className="w-3 h-3 mr-1" />
+                            {getPriorityLabel(rec.priority)}
+                          </Badge>
+                        </div>
+                        <p className="font-medium text-text-primary">{rec.suggestion}</p>
+                      </div>
+                    </div>
+
+                    {rec.userQuotes && rec.userQuotes.length > 0 && (
+                      <div className="space-y-2 pl-4 border-l-2 border-brand-primary/30">
+                        {rec.userQuotes.map((quote: string, qIndex: number) => (
+                          <div key={qIndex} className="flex gap-2 items-start">
+                            <Quote className="w-4 h-4 text-brand-primary flex-shrink-0 mt-1" />
+                            <p className="text-sm italic text-text-muted">"{quote}"</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ))}
-              </ul>
+              </div>
             </CardContent>
           </Card>
         )}
