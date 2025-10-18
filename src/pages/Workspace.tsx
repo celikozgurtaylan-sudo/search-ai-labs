@@ -15,6 +15,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 import { projectService } from "@/services/projectService";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ProjectData {
   id?: string;
@@ -28,6 +30,7 @@ const Workspace = () => {
   const location = useLocation();
   const isMobile = useIsMobile();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [projectData, setProjectData] = useState<ProjectData | null>(null);
   const [currentStep, setCurrentStep] = useState<'guide' | 'recruit' | 'starting' | 'run' | 'analyze'>('guide');
   const [showRecruitment, setShowRecruitment] = useState(false);
@@ -204,6 +207,35 @@ const Workspace = () => {
     return 'Kullanıcı Deneyimi Araştırma Çalışması';
   };
 
+  const fetchProjectSessions = async () => {
+    if (!projectData?.id) return;
+    
+    try {
+      const { data: sessions, error } = await supabase
+        .from('study_sessions')
+        .select('id')
+        .eq('project_id', projectData.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Failed to fetch sessions:', error);
+        toast({
+          title: "Hata",
+          description: "Oturum verileri alınamadı",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      const sessionIdArray = sessions?.map(s => s.id) || [];
+      console.log('Fetched session IDs:', sessionIdArray);
+      setSessionIds(sessionIdArray);
+      
+    } catch (error) {
+      console.error('Error fetching sessions:', error);
+    }
+  };
+
   const getResearchSteps = () => {
     const steps = [
       { id: 'planning', title: 'Araştırma Planlaması' },
@@ -232,12 +264,13 @@ const Workspace = () => {
     });
   };
 
-  const handleNextStep = () => {
+  const handleNextStep = async () => {
     if (currentStep === 'guide') {
       setShowRecruitment(true);
     } else if (currentStep === 'recruit') {
       setCurrentStep('starting');
     } else if (currentStep === 'starting') {
+      await fetchProjectSessions();
       setCurrentStep('analyze');
     }
   };
