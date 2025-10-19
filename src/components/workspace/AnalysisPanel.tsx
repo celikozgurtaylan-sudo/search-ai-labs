@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { RefreshCw, Download, TrendingUp, Users, MessageSquare, FileText, Target, AlertCircle, Quote } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { HorizontalBar } from "@/components/ui/horizontal-bar";
+import { RefreshCw, Download, TrendingUp, Users, MessageSquare, FileText, Target, AlertCircle, Quote, Pencil, BarChart3, Lightbulb, Loader2 } from "lucide-react";
 import { interviewService } from "@/services/interviewService";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 // Mock data for demo purposes
 const DEMO_ANALYSIS_DATA = {
@@ -96,6 +98,35 @@ const DEMO_ANALYSIS_DATA = {
     "Deneyimli yatırımcı, widget'ların daha fazla teknik analiz aracı içermesini bekliyor",
     "Yeni başlayan kullanıcı, widget'lardaki terimleri anlamakta zorlanıyor ve rehberlik istiyor",
     "Aktif trader, widget'lardan direkt işlem yapabilmeyi ve gerçek zamanlı bildirimleri önemsiyor"
+  ],
+  quantitativeData: [
+    {
+      question: "Mobil bankacılık uygulamasında hangi özellikleri en sık kullanıyorsunuz?",
+      respondents: 30,
+      results: [
+        { label: "Hesap bakiyesi görüntüleme", value: 85, color: "#10b981" },
+        { label: "Para transferi yapma", value: 72, color: "#10b981" },
+        { label: "Yatırım widget'larını kontrol etme", value: 58, color: "#14b8a6" },
+        { label: "Kredi kartı işlemleri", value: 45, color: "#14b8a6" },
+        { label: "Fatura ödeme", value: 38, color: "#14b8a6" },
+        { label: "Kampanyaları görüntüleme", value: 25, color: "#06b6d4" },
+        { label: "Müşteri hizmetleri", value: 18, color: "#06b6d4" },
+        { label: "QR kod ile ödeme", value: 15, color: "#06b6d4" }
+      ]
+    },
+    {
+      question: "Yatırım widget'larında hangi bilgileri görmek istersiniz?",
+      respondents: 30,
+      results: [
+        { label: "Anlık fiyat değişimleri", value: 78, color: "#10b981" },
+        { label: "Günlük kar/zarar durumu", value: 71, color: "#10b981" },
+        { label: "Portföy dağılımı", value: 62, color: "#14b8a6" },
+        { label: "Hızlı al-sat butonları", value: 54, color: "#14b8a6" },
+        { label: "Grafik ve teknik analiz", value: 48, color: "#14b8a6" },
+        { label: "Haberler ve duyurular", value: 33, color: "#06b6d4" },
+        { label: "Uzman tavsiyeleri", value: 29, color: "#06b6d4" }
+      ]
+    }
   ]
 };
 
@@ -105,10 +136,10 @@ interface AnalysisPanelProps {
 }
 
 const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
-  const { toast } = useToast();
   const [analysisData, setAnalysisData] = useState<any>(DEMO_ANALYSIS_DATA);
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingPPT, setIsGeneratingPPT] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<string>("all");
 
   useEffect(() => {
     if (sessionIds.length > 0) {
@@ -126,11 +157,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
       setAnalysisData(result);
     } catch (error) {
       console.error('Failed to load analysis:', error);
-      toast({
-        title: "Analiz Yüklenemedi",
-        description: "Analiz sonuçları yüklenirken bir hata oluştu",
-        variant: "destructive",
-      });
+      toast.error("Analiz sonuçları yüklenirken bir hata oluştu");
     } finally {
       setIsLoading(false);
     }
@@ -142,17 +169,10 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
       const sessionId = sessionIds[0];
       const result = await interviewService.analyzeInterview(sessionId, projectId);
       setAnalysisData(result);
-      toast({
-        title: "Analiz Yenilendi",
-        description: "Görüşme analizi başarıyla yenilendi",
-      });
+      toast.success("Görüşme analizi başarıyla yenilendi");
     } catch (error) {
       console.error('Failed to regenerate analysis:', error);
-      toast({
-        title: "Hata",
-        description: "Analiz yenilenirken bir hata oluştu",
-        variant: "destructive",
-      });
+      toast.error("Analiz yenilenirken bir hata oluştu");
     } finally {
       setIsLoading(false);
     }
@@ -160,19 +180,22 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
   const handleGeneratePPT = async () => {
     setIsGeneratingPPT(true);
-    toast({
-      title: "Sunum Hazırlanıyor",
-      description: "PowerPoint sunumu oluşturuluyor...",
-    });
+    toast.info('Sunum hazırlanıyor...');
 
     // Simulate PPT generation
     setTimeout(() => {
       setIsGeneratingPPT(false);
-      toast({
-        title: "Sunum Hazır!",
-        description: "Sunum başarıyla oluşturuldu ve indiriliyor...",
-      });
-    }, 2500);
+      toast.success('Sunum başarıyla oluşturuldu! İndiriliyor...');
+    }, 2000);
+  };
+
+  const handleEdit = () => {
+    toast.info('Düzenleme özelliği yakında...');
+  };
+
+  const handleFilterChange = (value: string) => {
+    setSelectedFilter(value);
+    console.log('Filter selected:', value);
   };
 
   const getPriorityColor = (priority: string) => {
@@ -233,213 +256,296 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
   }
 
   return (
-    <div className="h-full overflow-auto bg-gray-50 p-6">
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-          <div className="flex items-start justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-text-primary mb-2">
-                Görüşme Analizi
-              </h2>
-              <p className="text-text-muted">
-                AI destekli içgörüler ve bulgular
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button 
-                onClick={handleGeneratePPT} 
-                disabled={isGeneratingPPT}
-                className="bg-brand-primary hover:bg-brand-primary/90"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                {isGeneratingPPT ? "Hazırlanıyor..." : "Sunum Oluştur"}
-              </Button>
-              <Button onClick={regenerateAnalysis} variant="outline" size="sm">
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Yeniden Analiz Et
-              </Button>
-              <Button variant="outline" size="sm">
-                <Download className="w-4 h-4 mr-2" />
-                Raporu İndir
-              </Button>
-            </div>
-          </div>
+    <div className="h-full overflow-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-start gap-4">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">Analiz Raporu</h1>
+          <p className="text-muted-foreground">
+            Mobil bankacılık uygulaması yatırım widget'ları araştırması
+          </p>
         </div>
+        <div className="flex gap-2">
+          <Button
+            onClick={handleEdit}
+            variant="outline"
+            className="gap-2"
+          >
+            <Pencil className="h-4 w-4" />
+            Düzenle
+          </Button>
+          <Button
+            onClick={handleGeneratePPT}
+            disabled={isGeneratingPPT}
+            className="gap-2"
+          >
+            {isGeneratingPPT ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Hazırlanıyor...
+              </>
+            ) : (
+              <>
+                <FileText className="h-4 w-4" />
+                Sunum Oluştur
+              </>
+            )}
+          </Button>
+          <Button variant="outline" onClick={regenerateAnalysis}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+          <Button variant="outline">
+            <Download className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
-        {/* Key Insights */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5" />
-              Önemli Bulgular
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {analysisData.insights?.map((insight: string, index: number) => (
-                <div key={index} className="flex gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center text-sm font-semibold">
-                    {index + 1}
-                  </div>
-                  <p className="text-text-primary flex-1">{insight}</p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Tabs */}
+      <Tabs defaultValue="report" className="w-full">
+        <TabsList>
+          <TabsTrigger value="report" className="gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Rapor
+          </TabsTrigger>
+          <TabsTrigger value="chat" className="gap-2">
+            <MessageSquare className="h-4 w-4" />
+            Sohbet
+          </TabsTrigger>
+        </TabsList>
 
-        {/* Personas */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Kullanıcı Personaları
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {analysisData.personas?.map((persona: any, index: number) => (
-                <div key={index} className="border rounded-lg p-4 space-y-3 bg-gray-50">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-brand-primary text-white flex items-center justify-center text-lg font-bold">
-                      {persona.name.split(' ').map((n: string) => n[0]).join('')}
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-text-primary">{persona.name}</h4>
-                      <p className="text-sm text-text-muted">{persona.age} · {persona.occupation}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2 text-sm">
-                    <div>
-                      <span className="font-medium text-text-primary">Deneyim:</span>
-                      <p className="text-text-muted">{persona.experience}</p>
-                    </div>
-                    <div>
-                      <span className="font-medium text-text-primary">Hedefler:</span>
-                      <p className="text-text-muted">{persona.goals}</p>
-                    </div>
-                    <div>
-                      <span className="font-medium text-text-primary">Zorluklar:</span>
-                      <p className="text-text-muted">{persona.painPoints}</p>
-                    </div>
-                  </div>
+        <TabsContent value="report" className="space-y-6 mt-6">
 
-                  <div className="pt-3 border-t">
-                    <div className="flex gap-2 items-start">
-                      <Quote className="w-4 h-4 text-brand-primary flex-shrink-0 mt-1" />
-                      <p className="text-sm italic text-text-muted">"{persona.quote}"</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Themes */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="w-5 h-5" />
-              Tespit Edilen Temalar
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {analysisData.themes?.map((theme: string, index: number) => (
-                <Badge key={index} variant="secondary">
-                  {theme}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Participant Feedback */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Katılımcı Geri Bildirimleri
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {analysisData.participantSummaries?.map((summary: any, index: number) => (
-                <div key={index} className="border-l-4 border-brand-primary pl-4 py-2">
-                  <p className="text-sm font-medium text-text-primary mb-1">
-                    Katılımcı {index + 1}
-                  </p>
-                  <p className="text-text-muted text-sm">{summary}</p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Enhanced Recommendations with Quotes */}
-        {analysisData.recommendations && (
+          {/* Key Insights */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="w-5 h-5" />
-                Doğrudan Öneriler ve Kullanıcı Alıntıları
-              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Lightbulb className="h-5 w-5 text-primary" />
+                <CardTitle>Önemli Bulgular</CardTitle>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {analysisData.recommendations.map((rec: any, index: number) => (
-                  <div key={index} className="border rounded-lg p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Badge variant="outline" className="font-medium">
-                            {rec.category}
-                          </Badge>
-                          <Badge 
-                            className={`${getPriorityColor(rec.priority)} border`}
-                          >
-                            <AlertCircle className="w-3 h-3 mr-1" />
-                            {getPriorityLabel(rec.priority)}
-                          </Badge>
-                        </div>
-                        <p className="font-medium text-text-primary">{rec.suggestion}</p>
+              <ul className="space-y-3">
+                {analysisData.insights.map((insight: string, index: number) => (
+                  <li key={index} className="flex gap-3">
+                    <span className="text-primary mt-1">•</span>
+                    <span>{insight}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+
+          {/* Quantitative Data */}
+          {analysisData.quantitativeData?.map((dataSet: any, dataIndex: number) => (
+            <Card key={dataIndex}>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-primary" />
+                  <div>
+                    <CardTitle>{dataSet.question}</CardTitle>
+                    <CardDescription className="mt-1">
+                      {dataSet.respondents} katılımcı
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {dataSet.results.map((result: any, index: number) => (
+                  <HorizontalBar
+                    key={index}
+                    label={result.label}
+                    value={result.value}
+                    color={result.color}
+                  />
+                ))}
+                
+                {/* Filter */}
+                <div className="pt-4 mt-6 border-t">
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm font-medium">Filtre:</span>
+                    <Select value={selectedFilter} onValueChange={handleFilterChange}>
+                      <SelectTrigger className="w-[250px]">
+                        <SelectValue placeholder="Filtrelemek için bir özellik seçin" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tüm Katılımcılar</SelectItem>
+                        <SelectItem value="new">Yeni Kullanıcılar</SelectItem>
+                        <SelectItem value="experienced">Deneyimli Kullanıcılar</SelectItem>
+                        <SelectItem value="18-30">18-30 Yaş</SelectItem>
+                        <SelectItem value="31-45">31-45 Yaş</SelectItem>
+                        <SelectItem value="45+">45+ Yaş</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+
+          {/* Personas */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                <CardTitle>Kullanıcı Personaları</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {analysisData.personas?.map((persona: any, index: number) => (
+                  <div key={index} className="border rounded-lg p-4 space-y-3 bg-muted/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-lg font-bold">
+                        {persona.name.split(' ').map((n: string) => n[0]).join('')}
+                      </div>
+                      <div>
+                        <h4 className="font-semibold">{persona.name}</h4>
+                        <p className="text-sm text-muted-foreground">{persona.age} · {persona.occupation}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">Deneyim:</span>
+                        <p className="text-muted-foreground">{persona.experience}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium">Hedefler:</span>
+                        <p className="text-muted-foreground">{persona.goals}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium">Zorluklar:</span>
+                        <p className="text-muted-foreground">{persona.painPoints}</p>
                       </div>
                     </div>
 
-                    {rec.userQuotes && rec.userQuotes.length > 0 && (
-                      <div className="space-y-2 pl-4 border-l-2 border-brand-primary/30">
-                        {rec.userQuotes.map((quote: string, qIndex: number) => (
-                          <div key={qIndex} className="flex gap-2 items-start">
-                            <Quote className="w-4 h-4 text-brand-primary flex-shrink-0 mt-1" />
-                            <p className="text-sm italic text-text-muted">"{quote}"</p>
-                          </div>
-                        ))}
+                    <div className="pt-3 border-t">
+                      <div className="flex gap-2 items-start">
+                        <Quote className="w-4 h-4 text-primary flex-shrink-0 mt-1" />
+                        <p className="text-sm italic text-muted-foreground">"{persona.quote}"</p>
                       </div>
-                    )}
+                    </div>
                   </div>
                 ))}
               </div>
             </CardContent>
           </Card>
-        )}
 
-        {/* Raw Analysis Data (for debugging) */}
-        {process.env.NODE_ENV === 'development' && (
+          {/* Themes */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">Raw Analysis Data (Dev Only)</CardTitle>
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-primary" />
+                <CardTitle>Tespit Edilen Temalar</CardTitle>
+              </div>
             </CardHeader>
             <CardContent>
-              <pre className="text-xs bg-gray-100 p-4 rounded overflow-auto max-h-96">
-                {JSON.stringify(analysisData, null, 2)}
-              </pre>
+              <div className="flex flex-wrap gap-2">
+                {analysisData.themes?.map((theme: string, index: number) => (
+                  <Badge key={index} variant="secondary">
+                    {theme}
+                  </Badge>
+                ))}
+              </div>
             </CardContent>
           </Card>
-        )}
-      </div>
+
+          {/* Participant Feedback */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                <CardTitle>Katılımcı Geri Bildirimleri</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {analysisData.participantSummaries?.map((summary: any, index: number) => (
+                  <div key={index} className="border-l-4 border-primary pl-4 py-2">
+                    <p className="text-sm font-medium mb-1">
+                      Katılımcı {index + 1}
+                    </p>
+                    <p className="text-muted-foreground text-sm">{summary}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Enhanced Recommendations with Quotes */}
+          {analysisData.recommendations && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Target className="h-5 w-5 text-primary" />
+                  <CardTitle>Doğrudan Öneriler ve Kullanıcı Alıntıları</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {analysisData.recommendations.map((rec: any, index: number) => (
+                    <div key={index} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline" className="font-medium">
+                              {rec.category}
+                            </Badge>
+                            <Badge 
+                              className={`${getPriorityColor(rec.priority)} border`}
+                            >
+                              <AlertCircle className="w-3 h-3 mr-1" />
+                              {getPriorityLabel(rec.priority)}
+                            </Badge>
+                          </div>
+                          <p className="font-medium">{rec.suggestion}</p>
+                        </div>
+                      </div>
+
+                      {rec.userQuotes && rec.userQuotes.length > 0 && (
+                        <div className="space-y-2 pl-4 border-l-2 border-primary/30">
+                          {rec.userQuotes.map((quote: string, qIndex: number) => (
+                            <div key={qIndex} className="flex gap-2 items-start">
+                              <Quote className="w-4 h-4 text-primary flex-shrink-0 mt-1" />
+                              <p className="text-sm italic text-muted-foreground">"{quote}"</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Development Mode - Show raw data */}
+          {process.env.NODE_ENV === 'development' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Raw Analysis Data (Dev Only)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <pre className="text-xs overflow-auto bg-muted p-4 rounded">
+                  {JSON.stringify(analysisData, null, 2)}
+                </pre>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="chat" className="mt-6">
+          <Card>
+            <CardContent className="py-12">
+              <div className="text-center text-muted-foreground">
+                <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Analiz sohbet özelliği yakında...</p>
+                <p className="text-sm mt-2">Analizle ilgili sorular sorabileceğiniz bir AI asistanı eklenecek.</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
