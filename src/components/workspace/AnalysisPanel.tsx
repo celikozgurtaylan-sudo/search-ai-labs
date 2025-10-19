@@ -256,12 +256,12 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
   }
 
   return (
-    <div className="h-full overflow-auto p-6 space-y-6">
+    <div className="h-full overflow-auto p-4 space-y-4">
       {/* Header */}
-      <div className="flex justify-between items-start gap-4">
+      <div className="flex justify-between items-start gap-3">
         <div>
-          <h1 className="text-3xl font-bold mb-2">Analiz Raporu</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl font-bold mb-1">Analiz Raporu</h1>
+          <p className="text-sm text-muted-foreground">
             Mobil bankacılık uygulaması yatırım widget'ları araştırması
           </p>
         </div>
@@ -269,66 +269,68 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
           <Button
             onClick={handleEdit}
             variant="outline"
-            className="gap-2"
+            size="sm"
+            className="gap-1.5"
           >
-            <Pencil className="h-4 w-4" />
+            <Pencil className="h-3.5 w-3.5" />
             Düzenle
           </Button>
           <Button
             onClick={handleGeneratePPT}
             disabled={isGeneratingPPT}
-            className="gap-2"
+            size="sm"
+            className="gap-1.5"
           >
             {isGeneratingPPT ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Hazırlanıyor...
               </>
             ) : (
               <>
-                <FileText className="h-4 w-4" />
+                <FileText className="h-3.5 w-3.5" />
                 Sunum Oluştur
               </>
             )}
           </Button>
-          <Button variant="outline" onClick={regenerateAnalysis}>
-            <RefreshCw className="h-4 w-4" />
+          <Button variant="outline" size="sm" onClick={regenerateAnalysis}>
+            <RefreshCw className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="outline">
-            <Download className="h-4 w-4" />
+          <Button variant="outline" size="sm">
+            <Download className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
 
       {/* Tabs */}
       <Tabs defaultValue="report" className="w-full">
-        <TabsList>
-          <TabsTrigger value="report" className="gap-2">
-            <BarChart3 className="h-4 w-4" />
+        <TabsList className="h-9">
+          <TabsTrigger value="report" className="gap-1.5 text-sm">
+            <BarChart3 className="h-3.5 w-3.5" />
             Rapor
           </TabsTrigger>
-          <TabsTrigger value="chat" className="gap-2">
-            <MessageSquare className="h-4 w-4" />
+          <TabsTrigger value="chat" className="gap-1.5 text-sm">
+            <MessageSquare className="h-3.5 w-3.5" />
             Sohbet
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="report" className="space-y-6 mt-6">
+        <TabsContent value="report" className="space-y-4 mt-4">
 
           {/* Key Insights */}
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
-                <Lightbulb className="h-5 w-5 text-primary" />
-                <CardTitle>Önemli Bulgular</CardTitle>
+                <Lightbulb className="h-4 w-4 text-primary" />
+                <CardTitle className="text-lg">Önemli Bulgular</CardTitle>
               </div>
             </CardHeader>
-            <CardContent>
-              <ul className="space-y-3">
+            <CardContent className="pt-0">
+              <ul className="space-y-2">
                 {analysisData.insights.map((insight: string, index: number) => (
-                  <li key={index} className="flex gap-3">
-                    <span className="text-primary mt-1">•</span>
-                    <span>{insight}</span>
+                  <li key={index} className="flex gap-2">
+                    <span className="text-primary mt-0.5 text-sm">•</span>
+                    <span className="text-sm">{insight}</span>
                   </li>
                 ))}
               </ul>
@@ -338,18 +340,18 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
           {/* Quantitative Data */}
           {analysisData.quantitativeData?.map((dataSet: any, dataIndex: number) => (
             <Card key={dataIndex}>
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5 text-primary" />
+                  <BarChart3 className="h-4 w-4 text-primary" />
                   <div>
-                    <CardTitle>{dataSet.question}</CardTitle>
-                    <CardDescription className="mt-1">
+                    <CardTitle className="text-base">{dataSet.question}</CardTitle>
+                    <CardDescription className="mt-0.5 text-xs">
                       {dataSet.respondents} katılımcı
                     </CardDescription>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 pt-0">
                 {dataSet.results.map((result: any, index: number) => (
                   <HorizontalBar
                     key={index}
@@ -360,11 +362,11 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                 ))}
                 
                 {/* Filter */}
-                <div className="pt-4 mt-6 border-t">
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm font-medium">Filtre:</span>
+                <div className="pt-3 mt-3 border-t">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-medium">Filtre:</span>
                     <Select value={selectedFilter} onValueChange={handleFilterChange}>
-                      <SelectTrigger className="w-[250px]">
+                      <SelectTrigger className="h-8 w-[200px] text-xs">
                         <SelectValue placeholder="Filtrelemek için bir özellik seçin" />
                       </SelectTrigger>
                       <SelectContent>
@@ -384,27 +386,27 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Personas */}
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                <CardTitle>Kullanıcı Personaları</CardTitle>
+                <Users className="h-4 w-4 text-primary" />
+                <CardTitle className="text-lg">Kullanıcı Personaları</CardTitle>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <CardContent className="pt-0">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {analysisData.personas?.map((persona: any, index: number) => (
-                  <div key={index} className="border rounded-lg p-4 space-y-3 bg-muted/50">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-lg font-bold">
+                  <div key={index} className="border rounded-lg p-3 space-y-2 bg-muted/50">
+                    <div className="flex items-center gap-2">
+                      <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">
                         {persona.name.split(' ').map((n: string) => n[0]).join('')}
                       </div>
                       <div>
-                        <h4 className="font-semibold">{persona.name}</h4>
-                        <p className="text-sm text-muted-foreground">{persona.age} · {persona.occupation}</p>
+                        <h4 className="font-semibold text-sm">{persona.name}</h4>
+                        <p className="text-xs text-muted-foreground">{persona.age} · {persona.occupation}</p>
                       </div>
                     </div>
                     
-                    <div className="space-y-2 text-sm">
+                    <div className="space-y-1.5 text-xs">
                       <div>
                         <span className="font-medium">Deneyim:</span>
                         <p className="text-muted-foreground">{persona.experience}</p>
@@ -419,10 +421,10 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t">
-                      <div className="flex gap-2 items-start">
-                        <Quote className="w-4 h-4 text-primary flex-shrink-0 mt-1" />
-                        <p className="text-sm italic text-muted-foreground">"{persona.quote}"</p>
+                    <div className="pt-2 border-t">
+                      <div className="flex gap-1.5 items-start">
+                        <Quote className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" />
+                        <p className="text-xs italic text-muted-foreground">"{persona.quote}"</p>
                       </div>
                     </div>
                   </div>
@@ -433,16 +435,16 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Themes */}
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-primary" />
-                <CardTitle>Tespit Edilen Temalar</CardTitle>
+                <MessageSquare className="h-4 w-4 text-primary" />
+                <CardTitle className="text-lg">Tespit Edilen Temalar</CardTitle>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
+            <CardContent className="pt-0">
+              <div className="flex flex-wrap gap-1.5">
                 {analysisData.themes?.map((theme: string, index: number) => (
-                  <Badge key={index} variant="secondary">
+                  <Badge key={index} variant="secondary" className="text-xs">
                     {theme}
                   </Badge>
                 ))}
@@ -452,20 +454,20 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Participant Feedback */}
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                <CardTitle>Katılımcı Geri Bildirimleri</CardTitle>
+                <Users className="h-4 w-4 text-primary" />
+                <CardTitle className="text-lg">Katılımcı Geri Bildirimleri</CardTitle>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
+            <CardContent className="pt-0">
+              <div className="space-y-2.5">
                 {analysisData.participantSummaries?.map((summary: any, index: number) => (
-                  <div key={index} className="border-l-4 border-primary pl-4 py-2">
-                    <p className="text-sm font-medium mb-1">
+                  <div key={index} className="border-l-4 border-primary pl-3 py-1.5">
+                    <p className="text-xs font-medium mb-0.5">
                       Katılımcı {index + 1}
                     </p>
-                    <p className="text-muted-foreground text-sm">{summary}</p>
+                    <p className="text-muted-foreground text-xs">{summary}</p>
                   </div>
                 ))}
               </div>
@@ -475,39 +477,39 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
           {/* Enhanced Recommendations with Quotes */}
           {analysisData.recommendations && (
             <Card>
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
-                  <Target className="h-5 w-5 text-primary" />
-                  <CardTitle>Doğrudan Öneriler ve Kullanıcı Alıntıları</CardTitle>
+                  <Target className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Doğrudan Öneriler ve Kullanıcı Alıntıları</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
+              <CardContent className="pt-0">
+                <div className="space-y-3">
                   {analysisData.recommendations.map((rec: any, index: number) => (
-                    <div key={index} className="border rounded-lg p-4 space-y-3">
-                      <div className="flex items-start justify-between gap-3">
+                    <div key={index} className="border rounded-lg p-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge variant="outline" className="font-medium">
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <Badge variant="outline" className="text-xs font-medium">
                               {rec.category}
                             </Badge>
                             <Badge 
-                              className={`${getPriorityColor(rec.priority)} border`}
+                              className={`${getPriorityColor(rec.priority)} border text-xs`}
                             >
-                              <AlertCircle className="w-3 h-3 mr-1" />
+                              <AlertCircle className="w-3 h-3 mr-0.5" />
                               {getPriorityLabel(rec.priority)}
                             </Badge>
                           </div>
-                          <p className="font-medium">{rec.suggestion}</p>
+                          <p className="font-medium text-sm">{rec.suggestion}</p>
                         </div>
                       </div>
 
                       {rec.userQuotes && rec.userQuotes.length > 0 && (
-                        <div className="space-y-2 pl-4 border-l-2 border-primary/30">
+                        <div className="space-y-1.5 pl-3 border-l-2 border-primary/30">
                           {rec.userQuotes.map((quote: string, qIndex: number) => (
-                            <div key={qIndex} className="flex gap-2 items-start">
-                              <Quote className="w-4 h-4 text-primary flex-shrink-0 mt-1" />
-                              <p className="text-sm italic text-muted-foreground">"{quote}"</p>
+                            <div key={qIndex} className="flex gap-1.5 items-start">
+                              <Quote className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" />
+                              <p className="text-xs italic text-muted-foreground">"{quote}"</p>
                             </div>
                           ))}
                         </div>
