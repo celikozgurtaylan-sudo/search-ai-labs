@@ -210,9 +210,9 @@ const DEMO_ANALYSIS_DATA = {
     dropoutRate: 13
   },
   researchPanels: [
-    { panel: "Finans Kullanıcıları", members: 234, active: 156 },
-    { panel: "Genç Yetişkinler", members: 189, active: 142 },
-    { panel: "Teknoloji Early Adopters", members: 167, active: 128 }
+    { panel: "Finans Kullanıcıları", members: 42, active: 28 },
+    { panel: "Genç Yetişkinler", members: 38, active: 31 },
+    { panel: "Teknoloji Early Adopters", members: 35, active: 26 }
   ],
   panelDistribution: [
     { panels: "1 panel", users: 45, color: "#10b981" },
