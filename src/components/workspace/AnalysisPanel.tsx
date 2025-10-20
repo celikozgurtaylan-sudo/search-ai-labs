@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { HorizontalBar } from "@/components/ui/horizontal-bar";
-import { RefreshCw, Download, TrendingUp, Users, MessageSquare, FileText, Target, AlertCircle, Quote, Pencil, BarChart3, Lightbulb, Loader2 } from "lucide-react";
+import { RefreshCw, Download, TrendingUp, Users, MessageSquare, FileText, Target, AlertCircle, Quote, Pencil, BarChart3, Lightbulb, Loader2, AlertTriangle, Sparkles, Heart, Mic, Type, Clock, MapPin, Layers, Timer } from "lucide-react";
 import { interviewService } from "@/services/interviewService";
 import { toast } from "sonner";
 
@@ -127,7 +127,132 @@ const DEMO_ANALYSIS_DATA = {
         { label: "Uzman tavsiyeleri", value: 29, color: "#06b6d4" }
       ]
     }
-  ]
+  ],
+  outliers: [
+    {
+      participant: "Katılımcı #7",
+      finding: "Widget kullanımını tamamen reddetmiş, sadece klasik menü yapısını tercih ediyor",
+      impact: "Genel eğilimlerden %85 sapma"
+    },
+    {
+      participant: "Katılımcı #15",
+      finding: "Günde 50+ kez uygulama açma, ortalama 3 dakika kalma - anormal yüksek",
+      impact: "Ortalamadan 10x fazla kullanım"
+    },
+    {
+      participant: "Katılımcı #22",
+      finding: "Sadece karanlık modda widget'ları kullanabiliyor, aydınlık modda göz yorgunluğu yaşıyor",
+      impact: "Erişilebilirlik sorunu"
+    }
+  ],
+  newStudies: [
+    "Kripto para widget'larının kullanıcı davranışı üzerine etkisi",
+    "Yaşlı kullanıcılar için widget erişilebilirlik araştırması",
+    "Karanlık mod kullanımının widget görünürlüğüne etkisi",
+    "Sesli komut ile widget kontrolü kullanılabilirlik testi",
+    "Widget bildirimlerinin kullanıcı dikkatine etkisi"
+  ],
+  motivation: {
+    overall: 78,
+    reasons: [
+      { reason: "Finansal hedeflerime ulaşmak", value: 85, color: "#10b981" },
+      { reason: "Para tasarrufu yapmak", value: 72, color: "#10b981" },
+      { reason: "Yatırım bilgisi edinmek", value: 68, color: "#14b8a6" },
+      { reason: "Teknolojiye uyum sağlamak", value: 45, color: "#14b8a6" },
+      { reason: "Arkadaş tavsiyesi", value: 32, color: "#06b6d4" }
+    ]
+  },
+  voiceVsText: {
+    voiceUsers: 35,
+    textUsers: 65,
+    voiceAvgTime: "12 saniye",
+    textAvgTime: "45 saniye",
+    voiceSatisfaction: 82,
+    textSatisfaction: 71
+  },
+  surveyTime: {
+    average: "8 dakika 34 saniye",
+    shortest: "4 dakika 12 saniye",
+    longest: "18 dakika 45 saniye",
+    median: "7 dakika 50 saniye"
+  },
+  locationData: [
+    { city: "İstanbul", count: 12, percentage: 40, color: "#10b981" },
+    { city: "Ankara", count: 6, percentage: 20, color: "#10b981" },
+    { city: "İzmir", count: 5, percentage: 17, color: "#14b8a6" },
+    { city: "Bursa", count: 3, percentage: 10, color: "#14b8a6" },
+    { city: "Diğer", count: 4, percentage: 13, color: "#06b6d4" }
+  ],
+  multitasking: {
+    doesMultitask: 68,
+    commonActivities: [
+      { activity: "TV izlerken", percentage: 45, color: "#10b981" },
+      { activity: "Toplu taşımada", percentage: 38, color: "#10b981" },
+      { activity: "İş molasında", percentage: 32, color: "#14b8a6" },
+      { activity: "Yemek sırasında", percentage: 18, color: "#14b8a6" }
+    ]
+  },
+  duration: {
+    averageSession: "3 dakika 22 saniye",
+    shortSessions: 45,
+    mediumSessions: 35,
+    longSessions: 20
+  },
+  averageStudyTime: {
+    overall: "8 dakika 34 saniye",
+    firstTime: "12 dakika 15 saniye",
+    returning: "6 dakika 48 saniye"
+  },
+  participationData: {
+    firstTimeParticipants: 55,
+    returningParticipants: 45,
+    completionRate: 87,
+    dropoutRate: 13
+  },
+  researchPanels: [
+    { panel: "Finans Kullanıcıları", members: 234, active: 156 },
+    { panel: "Genç Yetişkinler", members: 189, active: 142 },
+    { panel: "Teknoloji Early Adopters", members: 167, active: 128 }
+  ],
+  panelDistribution: [
+    { panels: "1 panel", users: 45, color: "#10b981" },
+    { panels: "2 panel", users: 32, color: "#14b8a6" },
+    { panels: "3+ panel", users: 23, color: "#06b6d4" }
+  ],
+  professionData: [
+    { profession: "Özel Sektör Çalışanı", count: 12, percentage: 40, color: "#10b981" },
+    { profession: "Kamu Çalışanı", count: 6, percentage: 20, color: "#10b981" },
+    { profession: "Serbest Meslek", count: 5, percentage: 17, color: "#14b8a6" },
+    { profession: "Öğrenci", count: 4, percentage: 13, color: "#14b8a6" },
+    { profession: "Emekli", count: 3, percentage: 10, color: "#06b6d4" }
+  ],
+  ageData: [
+    { range: "18-25", count: 8, percentage: 27, color: "#10b981" },
+    { range: "26-35", count: 11, percentage: 37, color: "#10b981" },
+    { range: "36-45", count: 7, percentage: 23, color: "#14b8a6" },
+    { range: "46+", count: 4, percentage: 13, color: "#06b6d4" }
+  ],
+  charts: {
+    motivationByAge: [
+      { age: "18-25", motivation: 85, color: "#10b981" },
+      { age: "26-35", motivation: 78, color: "#14b8a6" },
+      { age: "36-45", motivation: 72, color: "#14b8a6" },
+      { age: "46+", motivation: 65, color: "#06b6d4" }
+    ],
+    studyTimeByProfession: [
+      { profession: "Özel Sektör", time: 7.5, color: "#10b981" },
+      { profession: "Kamu", time: 9.2, color: "#14b8a6" },
+      { profession: "Serbest", time: 6.8, color: "#14b8a6" },
+      { profession: "Öğrenci", time: 11.5, color: "#06b6d4" },
+      { profession: "Emekli", time: 12.3, color: "#06b6d4" }
+    ],
+    studyTimeByAge: [
+      { age: "18-25", time: 10.2, color: "#10b981" },
+      { age: "26-35", time: 7.8, color: "#14b8a6" },
+      { age: "36-45", time: 8.5, color: "#14b8a6" },
+      { age: "46+", time: 11.8, color: "#06b6d4" }
+    ]
+  }
 };
 
 interface AnalysisPanelProps {
@@ -452,35 +577,13 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
             </CardContent>
           </Card>
 
-          {/* Participant Feedback */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-primary" />
-                <CardTitle className="text-lg">Katılımcı Geri Bildirimleri</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="space-y-2.5">
-                {analysisData.participantSummaries?.map((summary: any, index: number) => (
-                  <div key={index} className="border-l-4 border-primary pl-3 py-1.5">
-                    <p className="text-xs font-medium mb-0.5">
-                      Katılımcı {index + 1}
-                    </p>
-                    <p className="text-muted-foreground text-xs">{summary}</p>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Enhanced Recommendations with Quotes */}
           {analysisData.recommendations && (
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Target className="h-4 w-4 text-primary" />
-                  <CardTitle className="text-lg">Doğrudan Öneriler ve Kullanıcı Alıntıları</CardTitle>
+                  <CardTitle className="text-lg">Doğrudan Öneriler</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
@@ -520,6 +623,496 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
               </CardContent>
             </Card>
           )}
+
+          {/* Outliers */}
+          {analysisData.outliers && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Aykırı Değerler</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="space-y-2.5">
+                  {analysisData.outliers.map((outlier: any, index: number) => (
+                    <div key={index} className="border rounded-lg p-3 space-y-1.5 bg-amber-50/50 border-amber-200">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">{outlier.participant}</Badge>
+                        <Badge variant="secondary" className="text-xs">{outlier.impact}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{outlier.finding}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* New Studies */}
+          {analysisData.newStudies && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Yeni Çalışmalar</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <ul className="space-y-2">
+                  {analysisData.newStudies.map((study: string, index: number) => (
+                    <li key={index} className="flex gap-2">
+                      <span className="text-primary mt-0.5 text-sm">•</span>
+                      <span className="text-sm">{study}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Motivation */}
+          {analysisData.motivation && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Heart className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Motivasyon</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                <div className="text-center py-3 bg-primary/5 rounded-lg">
+                  <div className="text-3xl font-bold text-primary">{analysisData.motivation.overall}%</div>
+                  <p className="text-xs text-muted-foreground mt-1">Genel Motivasyon Skoru</p>
+                </div>
+                <div className="space-y-3">
+                  {analysisData.motivation.reasons.map((reason: any, index: number) => (
+                    <HorizontalBar
+                      key={index}
+                      label={reason.reason}
+                      value={reason.value}
+                      color={reason.color}
+                    />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Voice vs Text Input */}
+          {analysisData.voiceVsText && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Mic className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Sesli vs Metin Girişi</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <Mic className="h-5 w-5 mx-auto mb-1 text-blue-600" />
+                    <div className="text-2xl font-bold text-blue-600">{analysisData.voiceVsText.voiceUsers}%</div>
+                    <p className="text-xs text-muted-foreground">Sesli Kullanıcılar</p>
+                  </div>
+                  <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
+                    <Type className="h-5 w-5 mx-auto mb-1 text-green-600" />
+                    <div className="text-2xl font-bold text-green-600">{analysisData.voiceVsText.textUsers}%</div>
+                    <p className="text-xs text-muted-foreground">Metin Kullanıcıları</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Ort. Süre:</span>
+                      <span className="font-medium">{analysisData.voiceVsText.voiceAvgTime}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Memnuniyet:</span>
+                      <span className="font-medium">{analysisData.voiceVsText.voiceSatisfaction}%</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Ort. Süre:</span>
+                      <span className="font-medium">{analysisData.voiceVsText.textAvgTime}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Memnuniyet:</span>
+                      <span className="font-medium">{analysisData.voiceVsText.textSatisfaction}%</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Survey Time */}
+          {analysisData.surveyTime && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Anket Süresi</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Ortalama:</span>
+                      <span className="font-medium">{analysisData.surveyTime.average}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Medyan:</span>
+                      <span className="font-medium">{analysisData.surveyTime.median}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">En Kısa:</span>
+                      <span className="font-medium">{analysisData.surveyTime.shortest}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">En Uzun:</span>
+                      <span className="font-medium">{analysisData.surveyTime.longest}</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Location */}
+          {analysisData.locationData && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Konum</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                {analysisData.locationData.map((location: any, index: number) => (
+                  <HorizontalBar
+                    key={index}
+                    label={location.city}
+                    value={location.percentage}
+                    color={location.color}
+                  />
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Multitasking */}
+          {analysisData.multitasking && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Çoklu Görev</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                <div className="text-center py-3 bg-primary/5 rounded-lg">
+                  <div className="text-3xl font-bold text-primary">{analysisData.multitasking.doesMultitask}%</div>
+                  <p className="text-xs text-muted-foreground mt-1">Çoklu Görev Yapan Kullanıcılar</p>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-xs font-medium">Yaygın Aktiviteler:</p>
+                  {analysisData.multitasking.commonActivities.map((activity: any, index: number) => (
+                    <HorizontalBar
+                      key={index}
+                      label={activity.activity}
+                      value={activity.percentage}
+                      color={activity.color}
+                    />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Duration */}
+          {analysisData.duration && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Timer className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Süre</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                <div className="text-center py-3 bg-primary/5 rounded-lg">
+                  <div className="text-2xl font-bold text-primary">{analysisData.duration.averageSession}</div>
+                  <p className="text-xs text-muted-foreground mt-1">Ortalama Oturum Süresi</p>
+                </div>
+                <div className="space-y-3">
+                  <HorizontalBar label="Kısa Oturumlar (< 2 dk)" value={analysisData.duration.shortSessions} color="#10b981" />
+                  <HorizontalBar label="Orta Oturumlar (2-5 dk)" value={analysisData.duration.mediumSessions} color="#14b8a6" />
+                  <HorizontalBar label="Uzun Oturumlar (> 5 dk)" value={analysisData.duration.longSessions} color="#06b6d4" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Average Study Time */}
+          {analysisData.averageStudyTime && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Ortalama Çalışma Süresi</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="space-y-3">
+                  <div className="text-center py-3 bg-primary/5 rounded-lg">
+                    <div className="text-2xl font-bold text-primary">{analysisData.averageStudyTime.overall}</div>
+                    <p className="text-xs text-muted-foreground mt-1">Genel Ortalama</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="text-center p-3 bg-blue-50 rounded-lg">
+                      <div className="text-lg font-bold text-blue-600">{analysisData.averageStudyTime.firstTime}</div>
+                      <p className="text-muted-foreground mt-1">İlk Katılımcılar</p>
+                    </div>
+                    <div className="text-center p-3 bg-green-50 rounded-lg">
+                      <div className="text-lg font-bold text-green-600">{analysisData.averageStudyTime.returning}</div>
+                      <p className="text-muted-foreground mt-1">Dönen Katılımcılar</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Participation in Studies */}
+          {analysisData.participationData && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Çalışmalara Katılım</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="text-center p-3 bg-blue-50 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600">{analysisData.participationData.firstTimeParticipants}%</div>
+                    <p className="text-xs text-muted-foreground mt-1">İlk Kez</p>
+                  </div>
+                  <div className="text-center p-3 bg-green-50 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600">{analysisData.participationData.returningParticipants}%</div>
+                    <p className="text-xs text-muted-foreground mt-1">Geri Dönen</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <HorizontalBar label="Tamamlama Oranı" value={analysisData.participationData.completionRate} color="#10b981" />
+                  <HorizontalBar label="Bırakma Oranı" value={analysisData.participationData.dropoutRate} color="#ef4444" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* User Research Panels */}
+          {analysisData.researchPanels && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Kullanıcı Araştırma Panelleri</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="space-y-2">
+                  {analysisData.researchPanels.map((panel: any, index: number) => (
+                    <div key={index} className="border rounded-lg p-3 flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-medium">{panel.panel}</p>
+                        <p className="text-xs text-muted-foreground">{panel.members} üye</p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-primary">{panel.active}</div>
+                        <p className="text-xs text-muted-foreground">aktif</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Number of Panels */}
+          {analysisData.panelDistribution && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Panel Sayısı</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                {analysisData.panelDistribution.map((dist: any, index: number) => (
+                  <div key={index} className="flex justify-between items-center">
+                    <span className="text-sm">{dist.panels}</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-32">
+                        <HorizontalBar label="" value={dist.users} maxValue={50} color={dist.color} />
+                      </div>
+                      <span className="text-sm font-medium w-8 text-right">{dist.users}</span>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Profession */}
+          {analysisData.professionData && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Meslek</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                {analysisData.professionData.map((profession: any, index: number) => (
+                  <HorizontalBar
+                    key={index}
+                    label={profession.profession}
+                    value={profession.percentage}
+                    color={profession.color}
+                  />
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Age */}
+          {analysisData.ageData && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Yaş</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                {analysisData.ageData.map((age: any, index: number) => (
+                  <HorizontalBar
+                    key={index}
+                    label={age.range}
+                    value={age.percentage}
+                    color={age.color}
+                  />
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Charts Section Header */}
+          <div className="pt-4 pb-2">
+            <div className="flex items-center gap-3">
+              <div className="h-px bg-border flex-1" />
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-primary" />
+                <h2 className="text-xl font-bold">Grafikler</h2>
+              </div>
+              <div className="h-px bg-border flex-1" />
+            </div>
+          </div>
+
+          {/* Motivation by Age Chart */}
+          {analysisData.charts?.motivationByAge && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Heart className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Yaşa Göre Motivasyon</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                {analysisData.charts.motivationByAge.map((item: any, index: number) => (
+                  <HorizontalBar
+                    key={index}
+                    label={item.age}
+                    value={item.motivation}
+                    color={item.color}
+                  />
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Average Study Time by Profession Chart */}
+          {analysisData.charts?.studyTimeByProfession && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Mesleğe Göre Ortalama Çalışma Süresi</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                {analysisData.charts.studyTimeByProfession.map((item: any, index: number) => (
+                  <div key={index} className="flex justify-between items-center">
+                    <span className="text-sm flex-1">{item.profession}</span>
+                    <div className="flex items-center gap-2 flex-1">
+                      <HorizontalBar label="" value={item.time * 8} maxValue={100} color={item.color} />
+                      <span className="text-sm font-medium w-12 text-right">{item.time} dk</span>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Average Study Time by Age Chart */}
+          {analysisData.charts?.studyTimeByAge && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-lg">Yaşa Göre Ortalama Çalışma Süresi</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                {analysisData.charts.studyTimeByAge.map((item: any, index: number) => (
+                  <div key={index} className="flex justify-between items-center">
+                    <span className="text-sm flex-1">{item.age}</span>
+                    <div className="flex items-center gap-2 flex-1">
+                      <HorizontalBar label="" value={item.time * 8} maxValue={100} color={item.color} />
+                      <span className="text-sm font-medium w-12 text-right">{item.time} dk</span>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Participant Feedback */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" />
+                <CardTitle className="text-lg">Katılımcı Geri Bildirimleri</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="space-y-2.5">
+                {analysisData.participantSummaries?.map((summary: any, index: number) => (
+                  <div key={index} className="border-l-4 border-primary pl-3 py-1.5">
+                    <p className="text-xs font-medium mb-0.5">
+                      Katılımcı {index + 1}
+                    </p>
+                    <p className="text-muted-foreground text-xs">{summary}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Development Mode - Show raw data */}
           {process.env.NODE_ENV === 'development' && (
