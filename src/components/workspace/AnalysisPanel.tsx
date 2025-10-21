@@ -8,6 +8,7 @@ import { HorizontalBar } from "@/components/ui/horizontal-bar";
 import { RefreshCw, Download, TrendingUp, Users, MessageSquare, FileText, Target, AlertCircle, Quote, Pencil, BarChart3, Lightbulb, Loader2, AlertTriangle, Sparkles, Heart, Mic, Type, Clock, MapPin, Layers, Timer } from "lucide-react";
 import { interviewService } from "@/services/interviewService";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 // Mock data for demo purposes
 const DEMO_ANALYSIS_DATA = {
@@ -255,6 +256,34 @@ const DEMO_ANALYSIS_DATA = {
   }
 };
 
+// Navigation sections for sidebar
+const navigationSections = [
+  { id: "key-insights", label: "Önemli Bulgular" },
+  { id: "quantitative-data", label: "Kantitatif Veri" },
+  { id: "personas", label: "Kullanıcı Personaları" },
+  { id: "themes", label: "Tespit Edilen Temalar" },
+  { id: "recommendations", label: "Doğrudan Öneriler" },
+  { id: "outliers", label: "Aykırı Değerler" },
+  { id: "new-studies", label: "Yeni Çalışmalar" },
+  { id: "motivation", label: "Motivasyon" },
+  { id: "voice-vs-text", label: "Sesli vs Metin Girişi" },
+  { id: "survey-time", label: "Anket Süresi" },
+  { id: "location", label: "Konum" },
+  { id: "multitasking", label: "Çoklu Görev" },
+  { id: "duration", label: "Süre" },
+  { id: "average-study-time", label: "Ortalama Çalışma Süresi" },
+  { id: "participation", label: "Çalışmalara Katılım" },
+  { id: "research-panels", label: "Kullanıcı Araştırma Panelleri" },
+  { id: "panel-distribution", label: "Panel Sayısı" },
+  { id: "profession", label: "Meslek" },
+  { id: "age", label: "Yaş" },
+  { id: "charts-header", label: "Grafikler" },
+  { id: "motivation-by-age", label: "Yaşa Göre Motivasyon" },
+  { id: "study-time-by-profession", label: "Mesleğe Göre Çalışma Süresi" },
+  { id: "study-time-by-age", label: "Yaşa Göre Çalışma Süresi" },
+  { id: "participant-feedback", label: "Katılımcı Geri Bildirimleri" }
+];
+
 interface AnalysisPanelProps {
   projectId: string;
   sessionIds: string[];
@@ -265,12 +294,37 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingPPT, setIsGeneratingPPT] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<string>("all");
+  const [activeSection, setActiveSection] = useState<string>("key-insights");
 
   useEffect(() => {
     if (sessionIds.length > 0) {
       loadAnalysis();
     }
   }, [sessionIds]);
+
+  // Track active section with IntersectionObserver
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio > 0.3) {
+            setActiveSection(entry.target.id);
+          }
+        });
+      },
+      { 
+        threshold: [0, 0.3, 0.5, 1],
+        rootMargin: '-100px 0px -60% 0px' 
+      }
+    );
+
+    navigationSections.forEach(section => {
+      const element = document.getElementById(section.id);
+      if (element) observer.observe(element);
+    });
+
+    return () => observer.disconnect();
+  }, [analysisData]);
 
   const loadAnalysis = async () => {
     setIsLoading(true);
@@ -321,6 +375,16 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
   const handleFilterChange = (value: string) => {
     setSelectedFilter(value);
     console.log('Filter selected:', value);
+  };
+
+  const handleNavigate = (sectionId: string) => {
+    const element = document.getElementById(sectionId);
+    if (element) {
+      element.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'start'
+      });
+    }
   };
 
   const getPriorityColor = (priority: string) => {
@@ -381,9 +445,11 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
   }
 
   return (
-    <div className="h-full overflow-auto p-4 space-y-4">
-      {/* Header */}
-      <div className="flex justify-between items-start gap-3">
+    <div className="flex h-full w-full">
+      {/* Main Content */}
+      <div className="flex-1 overflow-auto p-4 space-y-4">
+        {/* Header */}
+        <div className="flex justify-between items-start gap-3">
         <div>
           <h1 className="text-2xl font-bold mb-1">Analiz Raporu</h1>
           <p className="text-sm text-muted-foreground">
@@ -443,7 +509,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
         <TabsContent value="report" className="space-y-4 mt-4">
 
           {/* Key Insights */}
-          <Card>
+          <Card id="key-insights">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
                 <Lightbulb className="h-4 w-4 text-primary" />
@@ -464,7 +530,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Quantitative Data */}
           {analysisData.quantitativeData?.map((dataSet: any, dataIndex: number) => (
-            <Card key={dataIndex}>
+            <Card key={dataIndex} id={dataIndex === 0 ? "quantitative-data" : undefined}>
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-primary" />
@@ -510,7 +576,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
           ))}
 
           {/* Personas */}
-          <Card>
+          <Card id="personas">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-primary" />
@@ -559,7 +625,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
           </Card>
 
           {/* Themes */}
-          <Card>
+          <Card id="themes">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
                 <MessageSquare className="h-4 w-4 text-primary" />
@@ -579,7 +645,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Enhanced Recommendations with Quotes */}
           {analysisData.recommendations && (
-            <Card>
+            <Card id="recommendations">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Target className="h-4 w-4 text-primary" />
@@ -626,7 +692,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Outliers */}
           {analysisData.outliers && (
-            <Card>
+            <Card id="outliers">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-primary" />
@@ -651,7 +717,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* New Studies */}
           {analysisData.newStudies && (
-            <Card>
+            <Card id="new-studies">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-primary" />
@@ -673,7 +739,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Motivation */}
           {analysisData.motivation && (
-            <Card>
+            <Card id="motivation">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Heart className="h-4 w-4 text-primary" />
@@ -701,7 +767,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Voice vs Text Input */}
           {analysisData.voiceVsText && (
-            <Card>
+            <Card id="voice-vs-text">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Mic className="h-4 w-4 text-primary" />
@@ -749,7 +815,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Survey Time */}
           {analysisData.surveyTime && (
-            <Card>
+            <Card id="survey-time">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-primary" />
@@ -785,7 +851,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Location */}
           {analysisData.locationData && (
-            <Card>
+            <Card id="location">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-primary" />
@@ -807,7 +873,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Multitasking */}
           {analysisData.multitasking && (
-            <Card>
+            <Card id="multitasking">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Layers className="h-4 w-4 text-primary" />
@@ -836,7 +902,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Duration */}
           {analysisData.duration && (
-            <Card>
+            <Card id="duration">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Timer className="h-4 w-4 text-primary" />
@@ -859,7 +925,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Average Study Time */}
           {analysisData.averageStudyTime && (
-            <Card>
+            <Card id="average-study-time">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-primary" />
@@ -889,7 +955,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Participation in Studies */}
           {analysisData.participationData && (
-            <Card>
+            <Card id="participation">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-primary" />
@@ -917,7 +983,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* User Research Panels */}
           {analysisData.researchPanels && (
-            <Card>
+            <Card id="research-panels">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-primary" />
@@ -945,7 +1011,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Number of Panels */}
           {analysisData.panelDistribution && (
-            <Card>
+            <Card id="panel-distribution">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-primary" />
@@ -970,7 +1036,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Profession */}
           {analysisData.professionData && (
-            <Card>
+            <Card id="profession">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-primary" />
@@ -992,7 +1058,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Age */}
           {analysisData.ageData && (
-            <Card>
+            <Card id="age">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-primary" />
@@ -1013,7 +1079,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
           )}
 
           {/* Charts Section Header */}
-          <div className="pt-4 pb-2">
+          <div id="charts-header" className="pt-4 pb-2">
             <div className="flex items-center gap-3">
               <div className="h-px bg-border flex-1" />
               <div className="flex items-center gap-2">
@@ -1026,7 +1092,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Motivation by Age Chart */}
           {analysisData.charts?.motivationByAge && (
-            <Card>
+            <Card id="motivation-by-age">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Heart className="h-4 w-4 text-primary" />
@@ -1048,7 +1114,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Average Study Time by Profession Chart */}
           {analysisData.charts?.studyTimeByProfession && (
-            <Card>
+            <Card id="study-time-by-profession">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-primary" />
@@ -1071,7 +1137,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
           {/* Average Study Time by Age Chart */}
           {analysisData.charts?.studyTimeByAge && (
-            <Card>
+            <Card id="study-time-by-age">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-primary" />
@@ -1093,7 +1159,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
           )}
 
           {/* Participant Feedback */}
-          <Card>
+          <Card id="participant-feedback">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-primary" />
@@ -1141,6 +1207,25 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
           </Card>
         </TabsContent>
       </Tabs>
+      </div>
+
+      {/* Right Navigation Sidebar */}
+      <nav className="w-48 border-l bg-background overflow-auto p-3 space-y-0.5 hidden lg:block">
+        {navigationSections.map((section) => (
+          <button
+            key={section.id}
+            onClick={() => handleNavigate(section.id)}
+            className={cn(
+              "w-full text-left py-1.5 px-2 rounded text-xs leading-tight transition-colors",
+              activeSection === section.id
+                ? "bg-primary/10 text-primary font-medium border-l-2 border-primary -ml-0.5 pl-1.5"
+                : "text-muted-foreground hover:bg-muted/50"
+            )}
+          >
+            {section.label}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 };
