@@ -9,7 +9,6 @@ import { RefreshCw, Download, TrendingUp, Users, MessageSquare, FileText, Target
 import { interviewService } from "@/services/interviewService";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import ChatPanel from "@/components/workspace/ChatPanel";
 
 // Mock data for demo purposes
 const DEMO_ANALYSIS_DATA = {
@@ -288,12 +287,9 @@ const navigationSections = [
 interface AnalysisPanelProps {
   projectId: string;
   sessionIds: string[];
-  projectData?: any;
-  onResearchDetected?: (isResearch: boolean) => void;
-  onResearchPlanGenerated?: (plan: any) => void;
 }
 
-const AnalysisPanel = ({ projectId, sessionIds, projectData, onResearchDetected, onResearchPlanGenerated }: AnalysisPanelProps) => {
+const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
   const [analysisData, setAnalysisData] = useState<any>(DEMO_ANALYSIS_DATA);
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingPPT, setIsGeneratingPPT] = useState(false);
@@ -1199,12 +1195,16 @@ const AnalysisPanel = ({ projectId, sessionIds, projectData, onResearchDetected,
           )}
         </TabsContent>
 
-        <TabsContent value="chat" className="mt-0 h-[calc(100vh-170px)]">
-          <ChatPanel 
-            projectData={projectData}
-            onResearchDetected={onResearchDetected}
-            onResearchPlanGenerated={onResearchPlanGenerated}
-          />
+        <TabsContent value="chat" className="mt-6">
+          <Card>
+            <CardContent className="py-12">
+              <div className="text-center text-muted-foreground">
+                <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Analiz sohbet özelliği yakında...</p>
+                <p className="text-sm mt-2">Analizle ilgili sorular sorabileceğiniz bir AI asistanı eklenecek.</p>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
       </div>
