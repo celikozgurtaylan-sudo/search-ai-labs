@@ -4,9 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { Search, ArrowLeft, Video, Users, Play, BarChart3, Square, ChevronLeft, ChevronRight } from "lucide-react";
-import ChatPanel from "@/components/workspace/ChatPanel";
+
+import { Search, ArrowLeft, Video, Users, Play, BarChart3, Square } from "lucide-react";
 import StudyPanel from "@/components/workspace/StudyPanel";
 import InvitationPanel from "@/components/workspace/InvitationPanel";
 import AnalysisPanel from "@/components/workspace/AnalysisPanel";
@@ -36,7 +35,7 @@ const Workspace = () => {
   const [showRecruitment, setShowRecruitment] = useState(false);
   const [discussionGuide, setDiscussionGuide] = useState<any>(null);
   const [participants, setParticipants] = useState<any[]>([]);
-  const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+  
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [isResearchRelated, setIsResearchRelated] = useState(false);
   const [isButtonReady, setIsButtonReady] = useState(false);
@@ -133,14 +132,6 @@ const Workspace = () => {
     }
   }, [discussionGuide, isButtonReady]);
 
-  // Auto-collapse chat panel when reaching starting stage
-  useEffect(() => {
-    if (currentStep === 'starting') {
-      setTimeout(() => {
-        setIsChatCollapsed(true);
-      }, 200);
-    }
-  }, [currentStep]);
 
   const generateDiscussionGuide = (description: string) => {
     // AI tarafından oluşturulan tartışma kılavuzunu simüle et
@@ -357,75 +348,37 @@ const Workspace = () => {
       </header>
 
       {/* Main Workspace */}
-      <ResizablePanelGroup 
-        direction={isMobile ? "vertical" : "horizontal"}
-        className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden"
-      >
-        {/* Left Panel - Chat */}
-        <ResizablePanel 
-          defaultSize={isChatCollapsed ? 3 : 25} 
-          minSize={isChatCollapsed ? 3 : 20} 
-          maxSize={isChatCollapsed ? 3 : 75}
-          className="min-h-0 min-w-0 overflow-hidden transition-all duration-300"
-        >
-          {isChatCollapsed ? (
-            <div className="h-full bg-white border-r border-border-light flex flex-col items-center justify-start pt-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsChatCollapsed(false)}
-                className="w-10 h-10 p-0 hover:bg-surface"
-                aria-label="Expand chat"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
+      <div className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden">
+        {currentStep === 'analyze' ? (
+          <AnalysisPanel 
+            projectId={projectData.id || ''}
+            sessionIds={sessionIds}
+            projectData={projectData}
+            onResearchDetected={setIsResearchRelated}
+            onResearchPlanGenerated={(plan) => {
+              setDiscussionGuide(plan);
+            }}
+          />
+        ) : isResearchRelated ? (
+          <StudyPanel 
+            discussionGuide={discussionGuide}
+            participants={participants}
+            currentStep={currentStep}
+            onGuideUpdate={setDiscussionGuide}
+            chatMessages={chatMessages}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center bg-white">
+            <div className="text-center text-text-muted max-w-md px-6">
+              <h3 className="text-lg font-medium text-text-primary mb-2">Araştırma Planı Hazırlığı</h3>
+              <p className="text-sm leading-relaxed">
+                Araştırma planınızı hazırlamak için sohbet alanında araştırma konunuzu detaylarıyla paylaşın. 
+                Anlamlı bir araştırma konusu belirlendikten sonra bu alan aktif hale gelecektir.
+              </p>
             </div>
-          ) : (
-            <ChatPanel 
-              projectData={projectData}
-              onResearchDetected={setIsResearchRelated}
-              onResearchPlanGenerated={(plan) => {
-                setDiscussionGuide(plan);
-              }}
-            />
-          )}
-        </ResizablePanel>
-
-        {!isChatCollapsed && <ResizableHandle withHandle />}
-
-        {/* Right Panel - Study */}
-        <ResizablePanel 
-          defaultSize={isChatCollapsed ? 97 : 75} 
-          minSize={isChatCollapsed ? 97 : 25} 
-          maxSize={isChatCollapsed ? 97 : 80}
-          className="min-h-0 min-w-0 overflow-hidden transition-all duration-300"
-        >
-          {currentStep === 'analyze' ? (
-            <AnalysisPanel 
-              projectId={projectData.id || ''}
-              sessionIds={sessionIds}
-            />
-          ) : isResearchRelated ? (
-            <StudyPanel 
-              discussionGuide={discussionGuide}
-              participants={participants}
-              currentStep={currentStep}
-              onGuideUpdate={setDiscussionGuide}
-              chatMessages={chatMessages}
-            />
-          ) : (
-            <div className="h-full flex items-center justify-center bg-white border-l border-border-light">
-              <div className="text-center text-text-muted max-w-md px-6">
-                <h3 className="text-lg font-medium text-text-primary mb-2">Araştırma Planı Hazırlığı</h3>
-                <p className="text-sm leading-relaxed">
-                  Araştırma planınızı hazırlamak için sohbet alanında araştırma konunuzu detaylarıyla paylaşın. 
-                  Anlamlı bir araştırma konusu belirlendikten sonra bu alan aktif hale gelecektir.
-                </p>
-              </div>
-            </div>
-          )}
-        </ResizablePanel>
-      </ResizablePanelGroup>
+          </div>
+        )}
+      </div>
 
       {/* Invitation Panel */}
       <InvitationPanel 
