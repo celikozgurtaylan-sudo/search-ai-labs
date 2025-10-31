@@ -49,8 +49,9 @@ const Index = () => {
   const [projectDescription, setProjectDescription] = useState("");
   const [userProjects, setUserProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
-  const [displayedPlaceholder, setDisplayedPlaceholder] = useState("");
-  const [currentHintIndex, setCurrentHintIndex] = useState(0);
+  const [currentPlaceholder, setCurrentPlaceholder] = useState(placeholderHints[0]);
+  const [nextPlaceholder, setNextPlaceholder] = useState(placeholderHints[1]);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
 
@@ -61,45 +62,22 @@ const Index = () => {
   }, [user]);
 
   useEffect(() => {
-    let charIndex = 0;
-    let isDeleting = false;
-    let timeoutId: NodeJS.Timeout;
-
-    const typeWriter = () => {
-      const currentHint = placeholderHints[currentHintIndex];
+    const interval = setInterval(() => {
+      setIsTransitioning(true);
       
-      if (!isDeleting) {
-        // Typing
-        if (charIndex < currentHint.length) {
-          setDisplayedPlaceholder(currentHint.substring(0, charIndex + 1));
-          charIndex++;
-          timeoutId = setTimeout(typeWriter, 30);
-        } else {
-          // Pause at end
-          timeoutId = setTimeout(() => {
-            isDeleting = true;
-            typeWriter();
-          }, 2000);
-        }
-      } else {
-        // Deleting
-        if (charIndex > 0) {
-          setDisplayedPlaceholder(currentHint.substring(0, charIndex - 1));
-          charIndex--;
-          timeoutId = setTimeout(typeWriter, 20);
-        } else {
-          // Move to next hint
-          isDeleting = false;
-          setCurrentHintIndex((prev) => (prev + 1) % placeholderHints.length);
-          timeoutId = setTimeout(typeWriter, 500);
-        }
-      }
-    };
+      setTimeout(() => {
+        const currentIndex = placeholderHints.indexOf(currentPlaceholder);
+        const nextIndex = (currentIndex + 1) % placeholderHints.length;
+        const afterNextIndex = (nextIndex + 1) % placeholderHints.length;
+        
+        setCurrentPlaceholder(placeholderHints[nextIndex]);
+        setNextPlaceholder(placeholderHints[afterNextIndex]);
+        setIsTransitioning(false);
+      }, 500);
+    }, 4000);
 
-    typeWriter();
-
-    return () => clearTimeout(timeoutId);
-  }, [currentHintIndex]);
+    return () => clearInterval(interval);
+  }, [currentPlaceholder]);
 
   const loadUserProjects = async () => {
     try {
@@ -236,18 +214,49 @@ const Index = () => {
 
         {/* Project Input */}
         <div className="bg-card border border-border rounded-xl p-8 mb-8 shadow-sm">
-          <Textarea 
-            value={projectDescription} 
-            onChange={e => setProjectDescription(e.target.value)} 
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && projectDescription.trim()) {
-                e.preventDefault();
-                handleStartProject();
+          <div className="relative overflow-hidden min-h-[120px]">
+            <Textarea 
+              value={projectDescription} 
+              onChange={e => setProjectDescription(e.target.value)} 
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && projectDescription.trim()) {
+                  e.preventDefault();
+                  handleStartProject();
+                }
+              }}
+              placeholder={currentPlaceholder}
+              className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary relative z-10 bg-transparent"
+            />
+            
+            <style dangerouslySetInnerHTML={{__html: `
+              @keyframes scrollDown {
+                0% {
+                  transform: translateY(0);
+                  opacity: 1;
+                }
+                100% {
+                  transform: translateY(20px);
+                  opacity: 0;
+                }
               }
-            }}
-            placeholder={displayedPlaceholder} 
-            className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary"
-          />
+              
+              @keyframes scrollUp {
+                0% {
+                  transform: translateY(-20px);
+                  opacity: 0;
+                }
+                100% {
+                  transform: translateY(0);
+                  opacity: 1;
+                }
+              }
+              
+              textarea::placeholder {
+                animation: ${isTransitioning ? 'scrollDown' : 'scrollUp'} 0.5s ease-in-out;
+                display: block;
+              }
+            `}} />
+          </div>
           
           <div className="flex items-center justify-end mt-6">
             <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6">
