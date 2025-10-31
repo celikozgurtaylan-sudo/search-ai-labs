@@ -50,6 +50,7 @@ const Index = () => {
   const [userProjects, setUserProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPlaceholder, setCurrentPlaceholder] = useState(placeholderHints[0]);
+  const [isAnimating, setIsAnimating] = useState(false);
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
 
@@ -61,11 +62,15 @@ const Index = () => {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentPlaceholder(prev => {
-        const currentIndex = placeholderHints.indexOf(prev);
-        const nextIndex = (currentIndex + 1) % placeholderHints.length;
-        return placeholderHints[nextIndex];
-      });
+      setIsAnimating(true);
+      setTimeout(() => {
+        setCurrentPlaceholder(prev => {
+          const currentIndex = placeholderHints.indexOf(prev);
+          const nextIndex = (currentIndex + 1) % placeholderHints.length;
+          return placeholderHints[nextIndex];
+        });
+        setIsAnimating(false);
+      }, 300);
     }, 4000);
 
     return () => clearInterval(interval);
@@ -206,18 +211,49 @@ const Index = () => {
 
         {/* Project Input */}
         <div className="bg-card border border-border rounded-xl p-8 mb-8 shadow-sm">
-          <Textarea 
-            value={projectDescription} 
-            onChange={e => setProjectDescription(e.target.value)} 
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && projectDescription.trim()) {
-                e.preventDefault();
-                handleStartProject();
-              }
-            }}
+          <div className="relative">
+            <Textarea 
+              value={projectDescription} 
+              onChange={e => setProjectDescription(e.target.value)} 
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && projectDescription.trim()) {
+                  e.preventDefault();
+                  handleStartProject();
+                }
+              }}
             placeholder={currentPlaceholder} 
-            className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary transition-all duration-500" 
-          />
+              className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary"
+            />
+          </div>
+          
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes slideOutUp {
+              from {
+                opacity: 1;
+                transform: translateY(0);
+              }
+              to {
+                opacity: 0;
+                transform: translateY(-10px);
+              }
+            }
+            
+            @keyframes slideInUp {
+              from {
+                opacity: 0;
+                transform: translateY(10px);
+              }
+              to {
+                opacity: 1;
+                transform: translateY(0);
+              }
+            }
+            
+            textarea::placeholder {
+              animation: ${isAnimating ? 'slideOutUp' : 'slideInUp'} 0.3s ease-out forwards;
+              transition: all 0.3s ease-out;
+            }
+          `}} />
           
           <div className="flex items-center justify-end mt-6">
             <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6">
