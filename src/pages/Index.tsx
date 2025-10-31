@@ -214,7 +214,41 @@ const Index = () => {
 
         {/* Project Input */}
         <div className="bg-card border border-border rounded-xl p-8 mb-8 shadow-sm">
-          <div className="relative overflow-hidden min-h-[120px]">
+          <div className="relative">
+            {/* Custom Animated Placeholder Overlay */}
+            {!projectDescription && (
+              <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                <div className="absolute left-3 top-2 right-3">
+                  <div className="relative h-[120px] overflow-hidden">
+                    <div 
+                      className={`text-lg text-muted-foreground transition-all duration-600 ease-in-out ${
+                        isTransitioning ? 'animate-scroll-down-out' : ''
+                      }`}
+                      style={{ 
+                        position: 'absolute',
+                        width: '100%',
+                        top: 0
+                      }}
+                    >
+                      {currentPlaceholder}
+                    </div>
+                    <div 
+                      className={`text-lg text-muted-foreground transition-all duration-600 ease-in-out ${
+                        isTransitioning ? 'animate-scroll-up-in' : 'opacity-0'
+                      }`}
+                      style={{ 
+                        position: 'absolute',
+                        width: '100%',
+                        top: isTransitioning ? 0 : '100%'
+                      }}
+                    >
+                      {nextPlaceholder}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <Textarea 
               value={projectDescription} 
               onChange={e => setProjectDescription(e.target.value)} 
@@ -224,25 +258,25 @@ const Index = () => {
                   handleStartProject();
                 }
               }}
-              placeholder={currentPlaceholder}
+              placeholder=""
               className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary relative z-10 bg-transparent"
             />
             
             <style dangerouslySetInnerHTML={{__html: `
-              @keyframes scrollDown {
+              @keyframes scrollDownOut {
                 0% {
                   transform: translateY(0);
                   opacity: 1;
                 }
                 100% {
-                  transform: translateY(20px);
+                  transform: translateY(40px);
                   opacity: 0;
                 }
               }
               
-              @keyframes scrollUp {
+              @keyframes scrollUpIn {
                 0% {
-                  transform: translateY(-20px);
+                  transform: translateY(40px);
                   opacity: 0;
                 }
                 100% {
@@ -251,9 +285,12 @@ const Index = () => {
                 }
               }
               
-              textarea::placeholder {
-                animation: ${isTransitioning ? 'scrollDown' : 'scrollUp'} 0.5s ease-in-out;
-                display: block;
+              .animate-scroll-down-out {
+                animation: scrollDownOut 0.6s ease-in-out forwards;
+              }
+              
+              .animate-scroll-up-in {
+                animation: scrollUpIn 0.6s ease-in-out forwards;
               }
             `}} />
           </div>
