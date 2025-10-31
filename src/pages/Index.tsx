@@ -36,10 +36,20 @@ const templates = [{
   color: "bg-orange-50 text-orange-600"
 }];
 
+const placeholderHints = [
+  "Reklam kampanyamın hedef kitle üzerindeki etkisini nasıl ölçebilirim?",
+  "Kullanıcılarım web sitemde en çok hangi bölümlere zaman harcıyor?",
+  "Müşteri memnuniyetini artırmak için neler yapabilirim?",
+  "Yeni ürünümüz için hangi özelliklere öncelik vermeliyim?",
+  "Rakiplerimize göre güçlü ve zayıf yönlerimiz neler?",
+  "Kullanıcılar ürünümüzü satın almadan önce hangi tereddütleri yaşıyor?"
+];
+
 const Index = () => {
   const [projectDescription, setProjectDescription] = useState("");
   const [userProjects, setUserProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
+  const [currentPlaceholder, setCurrentPlaceholder] = useState(placeholderHints[0]);
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
 
@@ -48,6 +58,18 @@ const Index = () => {
       loadUserProjects();
     }
   }, [user]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentPlaceholder(prev => {
+        const currentIndex = placeholderHints.indexOf(prev);
+        const nextIndex = (currentIndex + 1) % placeholderHints.length;
+        return placeholderHints[nextIndex];
+      });
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const loadUserProjects = async () => {
     try {
@@ -193,8 +215,8 @@ const Index = () => {
                 handleStartProject();
               }
             }}
-            placeholder="Merhaba! Size nasıl yardımcı olabilirim? Sormak istediğiniz her şeyi yazabilirsiniz..." 
-            className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary" 
+            placeholder={currentPlaceholder} 
+            className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary transition-all duration-500" 
           />
           
           <div className="flex items-center justify-end mt-6">
