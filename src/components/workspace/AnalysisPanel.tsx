@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { HorizontalBar } from "@/components/ui/horizontal-bar";
 import { RefreshCw, Download, TrendingUp, Users, MessageSquare, FileText, Target, AlertCircle, Quote, Pencil, BarChart3, Lightbulb, Loader2, AlertTriangle, Sparkles, Heart, Mic, Type, Clock, MapPin, Layers, Timer } from "lucide-react";
 import { interviewService } from "@/services/interviewService";
+import { generateResearchPresentation } from "@/services/presentationService";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -359,13 +360,15 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
   const handleGeneratePPT = async () => {
     setIsGeneratingPPT(true);
-    toast.info('Sunum hazırlanıyor...');
-
-    // Simulate PPT generation
-    setTimeout(() => {
+    try {
+      await generateResearchPresentation(analysisData, "Araştırma Projesi");
+      toast.success("Sunum başarıyla oluşturuldu ve indirildi!");
+    } catch (error) {
+      console.error("Presentation generation error:", error);
+      toast.error("Sunum oluşturulurken bir hata oluştu");
+    } finally {
       setIsGeneratingPPT(false);
-      toast.success('Sunum başarıyla oluşturuldu! İndiriliyor...');
-    }, 2000);
+    }
   };
 
   const handleEdit = () => {
