@@ -25,6 +25,7 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
   const [conversationHistory, setConversationHistory] = useState<any[]>([]);
 
   const endRef = useRef<HTMLDivElement | null>(null);
+  const isWritingResearchPlanRef = useRef(false);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -75,24 +76,62 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
 
       setConversationHistory(data.conversationHistory || []);
 
-      console.log('LLM Response:', {
-        hasResearchPlan: !!data.researchPlan,
-        isResearchRelated: data.isResearchRelated,
-        reply: data.reply?.substring(0, 100)
-      });
-
       // Handle research plan generation - MUST check this first to prevent showing chat response
       if (data.researchPlan && onResearchPlanGenerated) {
-        // Remove loading message immediately without adding chat response
-        setMessages(prev => prev.filter(msg => !msg.id.includes('loading')));
-        
+        // Keep the loading message visible while questions are being typed
+        // Update it to show a different message
+        setMessages(prev => prev.map(msg =>
+          msg.id.includes('loading')
+            ? { ...msg, content: 'Araştırma sorularınızı hazırlıyorum...' }
+            : msg
+        ));
+
         // Trigger research panel with structured questions
-        // Do NOT add data.reply to messages - it should only appear in the middle panel
         onResearchPlanGenerated(data.researchPlan);
         if (onResearchDetected) {
           onResearchDetected(true);
         }
-        // Early return to prevent any further processing
+
+        // Calculate animation duration based on questions
+        const calculateAnimationDuration = () => {
+          if (!data.researchPlan?.sections) return 2000;
+
+          let totalDuration = 2000; // Base delay from StudyPanel
+
+          data.researchPlan.sections.forEach((section: any, sectionIndex: number) => {
+            // Each question has 800ms delay + typewriter time
+            totalDuration += section.questions.length * 800;
+            // Add 400ms buffer between sections
+            if (sectionIndex < data.researchPlan.sections.length - 1) {
+              totalDuration += 400;
+            }
+          });
+
+          return totalDuration;
+        };
+
+        const animationDuration = calculateAnimationDuration();
+
+        // Mark that we're writing research plan - prevents finally block from turning off loading
+        isWritingResearchPlanRef.current = true;
+
+        // After animations complete, replace loading with success message
+        setTimeout(() => {
+          setMessages(prev => {
+            const filtered = prev.filter(msg => !msg.id.includes('loading'));
+            const successMessage: ChatMessage = {
+              id: `ai-success-${Date.now()}`,
+              type: 'ai',
+              content: 'Elbette sorularınızı hazırladım, dilerseniz üstlerine tıklayarak manuel olarak değiştirebilirsiniz ya da beraber konuşarak da ilerletebiliriz.',
+              timestamp: new Date()
+            };
+            return [...filtered, successMessage];
+          });
+          isWritingResearchPlanRef.current = false;
+          setIsLoading(false);
+        }, animationDuration);
+
+        // Early return - loading state stays on, controlled by setTimeout above
         return;
       }
       
@@ -128,7 +167,11 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
         return [...filtered, errorMessage];
       });
     } finally {
-      setIsLoading(false);
+      // Only turn off loading if we're not in the middle of writing research plan
+      // (research plan loading is controlled by its own setTimeout)
+      if (!isWritingResearchPlanRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 

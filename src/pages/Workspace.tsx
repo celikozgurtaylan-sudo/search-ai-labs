@@ -88,10 +88,9 @@ const Workspace = () => {
     }
   };
 
-  // Generate discussion guide when research conversation starts
+  // Generate discussion guide when research conversation starts (fallback)
   useEffect(() => {
     if (isResearchRelated && !discussionGuide && projectData) {
-      console.log('FALLBACK: Generating default discussion guide (this should NOT happen if backend returns a plan)');
       setTimeout(() => {
         generateDiscussionGuide(projectData.description);
       }, 1000);
@@ -386,7 +385,6 @@ const Workspace = () => {
               projectData={projectData}
               onResearchDetected={setIsResearchRelated}
               onResearchPlanGenerated={(plan) => {
-                console.log('Received research plan from backend:', plan);
                 setDiscussionGuide(plan);
               }}
             />
