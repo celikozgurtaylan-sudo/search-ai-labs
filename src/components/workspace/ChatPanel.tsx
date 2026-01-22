@@ -74,34 +74,43 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
       }
 
       setConversationHistory(data.conversationHistory || []);
-      
-      // Handle research plan generation
+
+      console.log('LLM Response:', {
+        hasResearchPlan: !!data.researchPlan,
+        isResearchRelated: data.isResearchRelated,
+        reply: data.reply?.substring(0, 100)
+      });
+
+      // Handle research plan generation - MUST check this first to prevent showing chat response
       if (data.researchPlan && onResearchPlanGenerated) {
-        // Remove loading message without adding chat response
+        // Remove loading message immediately without adding chat response
         setMessages(prev => prev.filter(msg => !msg.id.includes('loading')));
         
         // Trigger research panel with structured questions
+        // Do NOT add data.reply to messages - it should only appear in the middle panel
         onResearchPlanGenerated(data.researchPlan);
         if (onResearchDetected) {
           onResearchDetected(true);
         }
-      } else {
-        // Only add AI chat response if no research plan was generated
-        setMessages(prev => {
-          const filtered = prev.filter(msg => !msg.id.includes('loading'));
-          const assistantMessage: ChatMessage = {
-            id: (Date.now() + 1).toString(),
-            type: 'ai',
-            content: data.reply,
-            timestamp: new Date()
-          };
-          return [...filtered, assistantMessage];
-        });
-        
-        // Check if conversation became research-related (for future plan generation)
-        if (data.isResearchRelated && onResearchDetected) {
-          onResearchDetected(true);
-        }
+        // Early return to prevent any further processing
+        return;
+      }
+      
+      // Only add AI chat response if no research plan was generated
+      setMessages(prev => {
+        const filtered = prev.filter(msg => !msg.id.includes('loading'));
+        const assistantMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'ai',
+          content: data.reply,
+          timestamp: new Date()
+        };
+        return [...filtered, assistantMessage];
+      });
+      
+      // Check if conversation became research-related (for future plan generation)
+      if (data.isResearchRelated && onResearchDetected) {
+        onResearchDetected(true);
       }
       
     } catch (error) {
