@@ -280,11 +280,20 @@ Sadece 1-2 spesifik soru sor, genel tavsiye verme. Türkçe yanıt ver.`;
     // Parse JSON response if it's a research plan
     if (shouldGenerateResearchPlan) {
       try {
-        const parsed = JSON.parse(reply);
+        // Strip markdown code block wrapper if present (```json ... ```)
+        let jsonString = reply;
+        if (jsonString.includes('```json')) {
+          jsonString = jsonString.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+        } else if (jsonString.includes('```')) {
+          jsonString = jsonString.replace(/```\s*/g, '');
+        }
+        jsonString = jsonString.trim();
+
+        const parsed = JSON.parse(jsonString);
         reply = parsed.chatResponse;
         researchPlan = parsed.researchPlan;
       } catch (e) {
-        console.log('Failed to parse JSON, using original response');
+        console.log('Failed to parse JSON, using original response:', e);
       }
     }
     
