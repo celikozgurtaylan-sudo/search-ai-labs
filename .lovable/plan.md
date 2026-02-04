@@ -1,45 +1,52 @@
 
 
-# Update FRONTEND_URL Secret to Use Working Domain
+# Update FRONTEND_URL to beta.searcho.online
 
 ## Problem
-The `FRONTEND_URL` secret is currently set to `https://testsession.searcho.online`, which doesn't have DNS configured. This causes invitation email links to point to an unreachable domain.
+The invitation email links should use `beta.searcho.online` as the domain, not `searcho.lovable.app`.
 
 ## Solution
-Update the `FRONTEND_URL` secret to use the published Lovable domain: `https://searcho.lovable.app`
+Update the `FRONTEND_URL` secret and harden the edge function code to prevent whitespace issues.
 
 ---
 
 ## Implementation
 
 ### Step 1: Update the Secret
-Update the Supabase secret `FRONTEND_URL` from:
-- **Current**: `https://testsession.searcho.online` (broken)
-- **New**: `https://searcho.lovable.app` (working)
+Update the `FRONTEND_URL` secret to:
+- **Value**: `https://beta.searcho.online` (no trailing whitespace)
 
-### Step 2: Redeploy Edge Function
-After updating the secret, redeploy the `send-invitation-email` edge function to pick up the new value.
+### Step 2: Fix Whitespace Issue in Edge Function
+The logs showed trailing spaces were causing malformed URLs. Add `.trim()` to prevent this:
 
-### Step 3: Verify
-Send a new test invitation email to confirm the links now point to the correct domain.
+**File**: `supabase/functions/send-invitation-email/index.ts`
+**Line 33**: Change from:
+```typescript
+const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://beta.searcho.online';
+```
+To:
+```typescript
+const frontendUrl = (Deno.env.get('FRONTEND_URL') || 'https://beta.searcho.online').trim();
+```
+
+### Step 3: Redeploy Edge Function
+Redeploy `send-invitation-email` to apply both changes.
+
+### Step 4: Resend Invitation
+Send a new invitation to verify the link works correctly.
 
 ---
 
-## Result
-After this change, invitation emails will generate links like:
-`https://searcho.lovable.app/join/research/user-study-ubwv16ge`
-
-Instead of the broken:
-`https://testsession.searcho.online/join/research/user-study-ubwv16ge`
+## Expected Result
+After this fix, invitation emails will contain working links:
+`https://beta.searcho.online/join/research/user-study-xxxxx`
 
 ---
 
-## Technical Details
+## Files to Modify
 
-### Affected Component
-- **Edge Function**: `supabase/functions/send-invitation-email/index.ts`
-- **Line 33**: `const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://beta.searcho.online';`
-
-### Note
-The existing participant invitation for `taylancelikk@hotmail.com` already has the broken link in their email. You'll need to resend the invitation for them to receive a working link.
+| File | Change |
+|------|--------|
+| **Secret: FRONTEND_URL** | Set to `https://beta.searcho.online` |
+| `supabase/functions/send-invitation-email/index.ts` | Add `.trim()` on line 33 |
 
