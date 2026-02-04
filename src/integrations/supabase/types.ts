@@ -338,6 +338,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_session_for_participant: {
+        Args: { session_token_input: string; token_input: string }
+        Returns: Json
+      }
       get_project_for_session: {
         Args: { session_token_input: string }
         Returns: {
