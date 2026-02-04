@@ -137,12 +137,15 @@ export const participantService = {
       throw new Error(`Failed to update participant status: ${error.message}`);
     }
 
-    if (!data || !data.success) {
-      console.error('RPC function returned error:', data?.message || 'Unknown error');
-      throw new Error(data?.message || 'Failed to update participant status');
+    // Type guard for the RPC response
+    const result = data as { success?: boolean; message?: string; participant_data?: unknown } | null;
+
+    if (!result || !result.success) {
+      console.error('RPC function returned error:', result?.message || 'Unknown error');
+      throw new Error(result?.message || 'Failed to update participant status');
     }
 
-    return data.participant_data as any as StudyParticipant;
+    return result.participant_data as StudyParticipant;
   },
 
   // Session management
