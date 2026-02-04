@@ -83,8 +83,11 @@ export type Database = {
       }
       interview_responses: {
         Row: {
+          audio_duration_ms: number | null
+          confidence_score: number | null
           created_at: string
           id: string
+          is_complete: boolean | null
           metadata: Json | null
           participant_id: string | null
           question_id: string | null
@@ -97,8 +100,11 @@ export type Database = {
           video_url: string | null
         }
         Insert: {
+          audio_duration_ms?: number | null
+          confidence_score?: number | null
           created_at?: string
           id?: string
+          is_complete?: boolean | null
           metadata?: Json | null
           participant_id?: string | null
           question_id?: string | null
@@ -111,8 +117,11 @@ export type Database = {
           video_url?: string | null
         }
         Update: {
+          audio_duration_ms?: number | null
+          confidence_score?: number | null
           created_at?: string
           id?: string
+          is_complete?: boolean | null
           metadata?: Json | null
           participant_id?: string | null
           question_id?: string | null
