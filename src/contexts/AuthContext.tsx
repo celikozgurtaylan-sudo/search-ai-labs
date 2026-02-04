@@ -38,6 +38,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [session, setSession] = React.useState<Session | null>(null);
   const [loading, setLoading] = React.useState(true);
 
+  const normalizeAuthError = (err: unknown) => {
+    // supabase-js usually returns `{ error }`, but network/CORS issues can throw.
+    if (err instanceof Error) {
+      if (err.message?.toLowerCase().includes('failed to fetch')) {
+        return {
+          message:
+            'Network error (Failed to fetch). This is typically CORS/HTTPS or a blocked request from the current domain. Double-check Supabase Auth URL configuration and that the site is served over https.',
+          originalMessage: err.message,
+        };
+      }
+
+      return { message: err.message };
+    }
+
+    return { message: 'Unknown authentication error' };
+  };
+
   React.useEffect(() => {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -59,27 +76,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { error };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      return { error };
+    } catch (err) {
+      return { error: normalizeAuthError(err) };
+    }
   };
 
   const signUp = async (email: string, password: string, displayName?: string) => {
     const redirectUrl = `${window.location.origin}/`;
-    
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-        data: {
-          display_name: displayName
-        }
-      }
-    });
-    return { error };
+
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            display_name: displayName,
+          },
+        },
+      });
+      return { error };
+    } catch (err) {
+      return { error: normalizeAuthError(err) };
+    }
   };
 
   const signOut = async () => {
