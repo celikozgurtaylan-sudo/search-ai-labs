@@ -30,7 +30,7 @@ const createEmailTemplate = (
   projectDescription?: string
 ) => {
   // Get frontend URL with fallback
-  const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://beta.searcho.online';
+  const frontendUrl = (Deno.env.get('FRONTEND_URL') || 'https://beta.searcho.online').trim();
   console.log('Frontend URL:', frontendUrl);
   
   const invitationLink = `${frontendUrl}/join/research/${invitationToken}`;
