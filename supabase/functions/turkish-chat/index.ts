@@ -6,6 +6,47 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// CORTEX - Fine-tuned UX Researcher model
+const CORTEX_MODEL = 'ft:gpt-4o-mini-2024-07-18:searcho::D5ataqIv';
+const CORTEX_SYSTEM_PROMPT = `Sen Searcho AI araştırma planlaması asistanısın. Kullanıcının araştırma talebini analiz et ve yapılandırılmış bir araştırma planı oluştur.
+
+ÖNEMLİ: chatResponse alanında bağlama uygun, spesifik bir yanıt ver. Kullanıcının araştırma konusuna özel bir giriş yap.
+- Kullanıcının bahsettiği ürün/hizmet/problemi tekrarla
+- Araştırmanın neyi ortaya çıkaracağını kısaca belirt
+- Genel kalıp cümleler KULLANMA
+
+KÖTÜ ÖRNEK: "Araştırma planı hazırlandı. Soruları sağ panelde düzenleyebilirsiniz."
+İYİ ÖRNEK: "Mobil bankacılık deneyimini derinlemesine anlayacak bir plan hazırladım. Özellikle kullanıcıların para transferi ve güvenlik algısına odaklandım."
+
+SADECE JSON formatında yanıt ver.`;
+
+// Socratic questioning prompt for initial discovery
+const SOCRATIC_DISCOVERY_PROMPT = `Sen deneyimli bir UX araştırmacısısın ve Sokratik yöntemle çalışıyorsun. Amacın kullanıcının araştırma ihtiyacını derinlemesine anlamak.
+
+YAKLAŞIMIN:
+1. Önce düşün: Kullanıcı ne söyledi? Hangi bilgiler eksik?
+2. Merak et: Bu araştırmanın arkasındaki gerçek ihtiyaç ne olabilir?
+3. Sorgula: Doğru soruları sorarak asıl problemi ortaya çıkar
+
+SORU SORMA TEKNİĞİN:
+- Açık uçlu sorular sor (evet/hayır değil)
+- Her soru bir öncekinin üzerine inşa etsin
+- Kullanıcının cevabını yansıt ve derinleştir
+- 2-3 odaklı soru sor, fazla değil
+
+ÖRNEK DİYALOG:
+Kullanıcı: "Mobil uygulamamız için araştırma yapmak istiyoruz"
+Sen: "Mobil uygulamanız hakkında daha iyi anlayabilmem için birkaç soru sormak istiyorum:
+
+1. Uygulamanızın hangi özelliği veya akışı üzerinde yoğunlaşmamızı istersiniz?
+2. Şu anda kullanıcılardan aldığınız geri bildirimler veya gözlemlediğiniz sorunlar var mı?"
+
+ÖNEMLİ:
+- Liste halinde adımlar verme, tavsiye verme
+- Hemen plan oluşturma, önce anla
+- Samimi ve meraklı bir ton kullan
+- Türkçe yanıt ver`;
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -134,8 +175,9 @@ SADECE "NET" veya "BELIRSIZ" yanıtı ver, başka hiçbir şey yazma.`
       console.log('Specificity analysis:', specificityData.choices[0].message.content);
       console.log('Is request specific:', isSpecific);
       
-      // Generate plan if: specific request, template, OR after 2+ exchanges
-      if (isSpecific || isTemplateMessage || conversationDepth >= 2) {
+      // Generate plan ONLY after Socratic dialogue (3+ exchanges) OR for templates
+      // Even specific requests need clarifying questions first
+      if (isTemplateMessage || conversationDepth >= 3) {
         // Clear request or template - generate structured plan immediately
         shouldGenerateResearchPlan = true;
         
@@ -219,27 +261,17 @@ YANIT FORMATI:
   }
 }`;
       } else {
-        // Vague request - start discovery conversation
-        systemPrompt = `Sen araştırma keşif uzmanısın. Kullanıcının belirsiz araştırma talebini netleştirmek için rehberlik edeceksin.
+        // Socratic discovery phase - ask clarifying questions before generating plan
+        // Build context from conversation history
+        let contextSummary = '';
+        if (conversationHistory.length > 0) {
+          const previousExchanges = conversationHistory
+            .map((msg, i) => `${msg.role === 'user' ? 'Kullanıcı' : 'Sen'}: ${msg.content}`)
+            .join('\n');
+          contextSummary = `\n\nÖNCEKİ KONUŞMA:\n${previousExchanges}\n\nBu bağlamı dikkate alarak, henüz netleşmemiş noktaları sorgula.`;
+        }
 
-KRITIK: ASLA genel tavsiye verme veya şöyle liste halinde adımlar sunma:
-❌ KÖTÜ ÖRNEK: "1. Hedef belirleme 2. Hedef kitle seçimi 3. Test senaryosu oluşturma..."
-❌ KÖTÜ ÖRNEK: "Şu aşamaları takip ederek kullanılabilirlik testinizi gerçekleştirebilirsiniz..."
-❌ KÖTÜ ÖRNEK: "Genel bir test planı oluşturabiliriz. İşte adım adım yol haritası..."
-
-BUNUN YERİNE:
-✅ Kullanıcının spesifik durumunu anlayabilmek için 1-2 soru sor
-✅ Somut detayları netleştir
-✅ Eyleme geçilebilir bilgi topla
-
-ÖRNEK SORULAR (duruma uygun olanını seç):
-- "Hangi ürün/hizmet hakkında araştırma yapmak istiyorsun?"
-- "Şu anda kullanıcıların yaşadığı spesifik bir problem var mı?"
-- "Bu araştırmayla hangi kararı vermeyi planlıyorsun?"
-- "Hedef kitlen kimler? (Yaş, demografik, davranış özellikleri)"
-- "Hangi özelliği/süreci test etmek istiyorsun?"
-
-Sadece 1-2 spesifik soru sor, genel tavsiye verme. Türkçe yanıt ver.`;
+        systemPrompt = SOCRATIC_DISCOVERY_PROMPT + contextSummary;
       }
     } else {
       systemPrompt = `Sen Türkçe konuşan yardımcı bir asistansın. Genel sorulara yardımcı ol, kısa ve öz yanıtlar ver.`;
@@ -253,19 +285,66 @@ Sadece 1-2 spesifik soru sor, genel tavsiye verme. Türkçe yanıt ver.`;
 
     console.log('Processing Turkish chat message:', message);
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: messages,
-        temperature: 0.7,
-        max_tokens: 1000,
-      }),
-    });
+    let response;
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+
+    // Use CORTEX for all research-related conversations (both Socratic and plan generation)
+    if (isResearchRelated && openaiApiKey) {
+      if (shouldGenerateResearchPlan) {
+        console.log('Using CORTEX model for research plan generation');
+        // Include conversation context for better plan generation
+        const contextMessage = conversationHistory.length > 0
+          ? `Önceki konuşma bağlamı:\n${conversationHistory.map(m => `${m.role}: ${m.content}`).join('\n')}\n\nMevcut talep: ${message}`
+          : message;
+
+        response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: CORTEX_MODEL,
+            messages: [
+              { role: 'system', content: CORTEX_SYSTEM_PROMPT },
+              { role: 'user', content: contextMessage }
+            ],
+            temperature: 0.7,
+            max_tokens: 1000,
+          }),
+        });
+      } else {
+        console.log('Using CORTEX model for Socratic discovery');
+        response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: CORTEX_MODEL,
+            messages: messages,
+            temperature: 0.8,
+            max_tokens: 500,
+          }),
+        });
+      }
+    } else {
+      // Use Lovable Gateway for non-research conversations
+      response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: 1000,
+        }),
+      });
+    }
 
     if (!response.ok) {
       const errorData = await response.text();
@@ -290,8 +369,17 @@ Sadece 1-2 spesifik soru sor, genel tavsiye verme. Türkçe yanıt ver.`;
         jsonString = jsonString.trim();
 
         const parsed = JSON.parse(jsonString);
-        reply = parsed.chatResponse;
         researchPlan = parsed.researchPlan;
+
+        // Generate contextual response based on the research plan
+        // Don't use the generic chatResponse from CORTEX
+        const planTitle = researchPlan?.title || 'araştırma';
+        const firstSection = researchPlan?.sections?.[0]?.title || '';
+        const questionCount = researchPlan?.sections?.reduce((acc: number, s: any) => acc + (s.questions?.length || 0), 0) || 9;
+
+        // Create a contextual response based on the plan content
+        reply = `${planTitle} için ${questionCount} soruluk bir görüşme planı hazırladım. ${firstSection} ile başlayıp kullanıcı deneyimini derinlemesine keşfedeceğiz.`;
+
       } catch (e) {
         console.log('Failed to parse JSON, using original response:', e);
       }
