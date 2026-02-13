@@ -6,404 +6,360 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// CORTEX - Fine-tuned UX Researcher model
-const CORTEX_MODEL = 'ft:gpt-4o-mini-2024-07-18:searcho::D5ataqIv';
-const CORTEX_SYSTEM_PROMPT = `Sen Searcho AI araştırma planlaması asistanısın. Kullanıcının araştırma talebini analiz et ve yapılandırılmış bir araştırma planı oluştur.
+// ============================================================
+// MODEL CONFIGURATION
+// One model to rule them all — o4-mini handles everything:
+// intent detection, Socratic questioning, and plan generation.
+// ============================================================
+const MODEL = Deno.env.get('ORCHESTRATOR_MODEL') || 'o4-mini-2025-04-16';
 
-ÖNEMLİ: chatResponse alanında bağlama uygun, spesifik bir yanıt ver. Kullanıcının araştırma konusuna özel bir giriş yap.
-- Kullanıcının bahsettiği ürün/hizmet/problemi tekrarla
-- Araştırmanın neyi ortaya çıkaracağını kısaca belirt
-- Genel kalıp cümleler KULLANMA
+// ============================================================
+// RESPONSE FORMAT — enforces structured JSON output
+// ============================================================
+const RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "searcho_response",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          description: "PLAN when generating a research plan, CHAT when responding conversationally"
+        },
+        chatResponse: {
+          type: "string",
+          description: "The conversational response to show the user"
+        },
+        researchPlan: {
+          type: ["object", "null"],
+          description: "The structured research plan, or null if action is CHAT",
+          properties: {
+            title: { type: "string" },
+            sections: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  title: { type: "string" },
+                  questions: {
+                    type: "array",
+                    items: { type: "string" }
+                  }
+                },
+                required: ["id", "title", "questions"],
+                additionalProperties: false
+              }
+            }
+          },
+          required: ["title", "sections"],
+          additionalProperties: false
+        }
+      },
+      required: ["action", "chatResponse", "researchPlan"],
+      additionalProperties: false
+    }
+  }
+};
 
-KÖTÜ ÖRNEK: "Araştırma planı hazırlandı. Soruları sağ panelde düzenleyebilirsiniz."
-İYİ ÖRNEK: "Mobil bankacılık deneyimini derinlemesine anlayacak bir plan hazırladım. Özellikle kullanıcıların para transferi ve güvenlik algısına odaklandım."
+// ============================================================
+// SYSTEM PROMPT — the brain of Searcho
+// Contains: role, decision framework, domain knowledge,
+// few-shot examples, and output rules.
+// ============================================================
+const SYSTEM_PROMPT = `Sen Searcho AI platformunun merkezi arastirma asistanisin. Gorevlerin:
+1. Kullanici ile dogal bir sekilde konusmak
+2. Arastirma ihtiyaclarini anlamak
+3. Yapilandirilmis arastirma planlari olusturmak
 
-SADECE JSON formatında yanıt ver.`;
+# KARAR CERCEVEN
 
-// Socratic questioning prompt for initial discovery
-const SOCRATIC_DISCOVERY_PROMPT = `Sen deneyimli bir UX araştırmacısısın ve Sokratik yöntemle çalışıyorsun. Amacın kullanıcının araştırma ihtiyacını derinlemesine anlamak.
+Her mesajda su karari ver:
 
-YAKLAŞIMIN:
-1. Önce düşün: Kullanıcı ne söyledi? Hangi bilgiler eksik?
-2. Merak et: Bu araştırmanın arkasındaki gerçek ihtiyaç ne olabilir?
-3. Sorgula: Doğru soruları sorarak asıl problemi ortaya çıkar
+**action: "PLAN"** — Arastirma plani olustur:
+- Kullanicinin arastirma talebi NET ve SPESIFIK oldugunda
+- Belirli bir urun, hizmet veya ozellik adi belirtilmisse
+- Hedef kitle veya arastirma amaci acikca tanimlanmissa
+- Onceki konusmalarda yeterli baglam toplandiysa
+- Hazir sablon mesajlar geldiginde (NPS, reklam testi, acilis sayfasi)
 
-SORU SORMA TEKNİĞİN:
-- Açık uçlu sorular sor (evet/hayır değil)
-- Her soru bir öncekinin üzerine inşa etsin
-- Kullanıcının cevabını yansıt ve derinleştir
-- 2-3 odaklı soru sor, fazla değil
+**action: "CHAT"** — Dogrudan yanit ver:
+- Arastirma talebi belirsiz veya genel oldugunda → Sokratik sorular sor
+- Daha fazla baglam gerektiginde → 2-3 acik uclu soru sor
+- Genel sohbet oldugunda → Kisa ve yardimci yanit ver
+- researchPlan alani null olmali
 
-ÖRNEK DİYALOG:
-Kullanıcı: "Mobil uygulamamız için araştırma yapmak istiyoruz"
-Sen: "Mobil uygulamanız hakkında daha iyi anlayabilmem için birkaç soru sormak istiyorum:
+# SOKRATIK SORU SORMA TEKNIGI
+- Acik uclu sorular sor (evet/hayir degil)
+- Her soru bir oncekinin uzerine insa etsin
+- 2-3 odakli soru sor, fazla degil
+- Samimi ve merakli bir ton kullan
 
-1. Uygulamanızın hangi özelliği veya akışı üzerinde yoğunlaşmamızı istersiniz?
-2. Şu anda kullanıcılardan aldığınız geri bildirimler veya gözlemlediğiniz sorunlar var mı?"
+# ARASTIRMA PLANI KURALLARI
+- chatResponse: Baglama uygun, spesifik bir yanit. Kullanicinin konusuna ozel giris yap.
+- researchPlan.title: Arastirma basligini olustur
+- researchPlan.sections: En az 3 bolum, her bolumde 2-4 soru
+- Sorular acik uclu, kesfedici ve konuya ozel olmali
+- Section id'leri anlamli ingilizce kisaltmalar olmali (ornek: "onboarding_experience", "preferences", "improvements")
 
-ÖNEMLİ:
-- Liste halinde adımlar verme, tavsiye verme
-- Hemen plan oluşturma, önce anla
-- Samimi ve meraklı bir ton kullan
-- Türkçe yanıt ver`;
+# ORNEK 1: Spesifik Talep → PLAN
+Kullanici: "KMH kredili mevduat hesabi kullanim deneyimini arastirmak istiyoruz"
+Yanit:
+{
+  "action": "PLAN",
+  "chatResponse": "Kredili mevduat hesabi kullanim deneyimi icin kapsamli bir gorusme plani hazirladim. KMH farkindaligi, kullanim aliskanlikları ve geri odeme surecine odaklandim.",
+  "researchPlan": {
+    "title": "Kredili Mevduat Hesabi (KMH) Kullanim Deneyimi Arastirmasi",
+    "sections": [
+      {
+        "id": "kmh_usage",
+        "title": "KMH Kullanim Deneyimi",
+        "questions": [
+          "Kredili mevduat hesabinizi ne siklikla kullaniyorsunuz?",
+          "KMH limitinizi nasil ve hangi durumda kullaniyorsunuz?",
+          "KMH'nin calisma mantigini net olarak anliyor musunuz?"
+        ]
+      },
+      {
+        "id": "awareness",
+        "title": "Farkindalik ve Bilgi Duzeyi",
+        "questions": [
+          "KMH faiz oranlari ve masraflar konusunda yeterince bilgilendirildiginizi dusunuyor musunuz?",
+          "KMH limitinizin ne kadar oldugunu biliyor musunuz?",
+          "KMH kullanimi sonrasi geri odeme surecini anliyor musunuz?"
+        ]
+      },
+      {
+        "id": "improvements",
+        "title": "Sorunlar ve Iyilestirmeler",
+        "questions": [
+          "KMH kullaniminda yasadiginiz sorunlar nelerdir?",
+          "KMH uyari ve bildirimleri yeterli mi?",
+          "KMH yerine farkli bir acil nakit cozumu tercih eder miydiniz?"
+        ]
+      }
+    ]
+  }
+}
 
+# ORNEK 2: Belirsiz Talep → CHAT (Sokratik Sorular)
+Kullanici: "arastirma yapmak istiyoruz"
+Yanit:
+{
+  "action": "CHAT",
+  "chatResponse": "Arastirmaniz icin size yardimci olmak isterim! Daha iyi anlayabilmem icin birkaц soru sormak istiyorum:\\n\\n1. Hangi urun veya hizmet uzerinde arastirma yapmak istiyorsunuz?\\n2. Su anda kullanicilarinizdan aldiginiz geri bildirimler veya gozlemlediginiz sorunlar var mi?",
+  "researchPlan": null
+}
+
+# ORNEK 3: Mobil Bankacilik Arastirmasi → PLAN
+Kullanici: "Gunluk faiz hesabi urunumuzun musteri deneyimini arastirmak istiyoruz"
+Yanit:
+{
+  "action": "PLAN",
+  "chatResponse": "Gunluk faiz hesabi deneyimi icin detayli bir arastirma plani hazirladim. Urun anlama duzeyi, kullanim motivasyonu ve getiri memnuniyetine odaklandim.",
+  "researchPlan": {
+    "title": "Gunluk Faiz Hesabi Musteri Deneyimi Arastirmasi",
+    "sections": [
+      {
+        "id": "product_understanding",
+        "title": "Urun Anlama ve Farkindalik",
+        "questions": [
+          "Gunluk faiz hesabinin nasil calistigini net olarak anliyor musunuz?",
+          "Gunluk faiz hesabi ile vadeli mevduat arasindaki temel farklari biliyor musunuz?",
+          "Paranizi baglamadan gunluk faiz kazanma konseptini ilk nasil ogrendiniz?"
+        ]
+      },
+      {
+        "id": "usage_motivation",
+        "title": "Kullanim Motivasyonu",
+        "questions": [
+          "Gunluk faiz hesabini neden tercih ettiniz?",
+          "Paranizi istediginiz zaman cekebilme esnekligi sizin icin ne kadar onemli?",
+          "Gunluk faiz hesabini vadeli hesap yerine mi kullaniyorsunuz, yoksa ikisini birlikte mi?"
+        ]
+      },
+      {
+        "id": "satisfaction",
+        "title": "Deneyim ve Memnuniyet",
+        "questions": [
+          "Gunluk faiz hesabi getiri oranlari beklentilerinizi karsiliyor mu?",
+          "Faiz hesaplama ve yansitma sureci sizin icin seffaf mi?",
+          "Hesaptan para cektiginizde faiz kaybi yasiyor musunuz?"
+        ]
+      }
+    ]
+  }
+}
+
+# ORNEK 4: E-Ticaret Arastirmasi → PLAN
+Kullanici: "Sepet terk orani cok yuksek, nedenlerini arastirmak istiyorum"
+Yanit:
+{
+  "action": "PLAN",
+  "chatResponse": "Sepet terk orani analizi icin kullanici gorusmesi plani hazirladim. Satin alma surecindeki engelleri, fiyat algisini ve kullanilabilirlik sorunlarini kesfedecegiz.",
+  "researchPlan": {
+    "title": "Sepet Terk Orani Analizi Arastirmasi",
+    "sections": [
+      {
+        "id": "shopping_behavior",
+        "title": "Alisveris Davranisi",
+        "questions": [
+          "Online alisveris yaparken genellikle nasil bir surec izliyorsunuz?",
+          "Sepete urun ekleyip satin almadan ciktiginiz zamanlar oluyor mu?",
+          "Satin alma kararinizi etkileyen en onemli faktorler nelerdir?"
+        ]
+      },
+      {
+        "id": "barriers",
+        "title": "Satin Alma Engelleri",
+        "questions": [
+          "Sepetinizdeki urunleri satin almaktan vazgectiginizde genellikle nedeni nedir?",
+          "Odeme sayfasinda sizi rahatsiz eden veya durduran bir sey oldu mu?",
+          "Kargo ucreti veya teslimat suresi satin alma kararinizi etkiliyor mu?"
+        ]
+      },
+      {
+        "id": "improvements",
+        "title": "Iyilestirme Onerileri",
+        "questions": [
+          "Satin alma surecinde nelerin degismesini istersiniz?",
+          "Sepet hatirlatma bildirimleri sizi geri donmeye tesvik ediyor mu?",
+          "Rakip sitelerde begendiginiz satin alma ozellikleri var mi?"
+        ]
+      }
+    ]
+  }
+}
+
+# ORNEK 5: Genel Sohbet → CHAT
+Kullanici: "Merhaba, nasilsin?"
+Yanit:
+{
+  "action": "CHAT",
+  "chatResponse": "Merhaba! Ben Searcho AI asistaniyim, iyiyim tesekkurler. Size nasil yardimci olabilirim? Arastirma planlamasi, kullanici gorusmeleri veya UX arastirmasi konularinda destek verebilirim.",
+  "researchPlan": null
+}
+
+# ONEMLI KURALLAR
+- SADECE Turkce yanit ver
+- chatResponse alaninda ASLA genel kalip cumleler kullanma
+- Her zaman kullanicinin konusuna ozel, baglama uygun yanit ver
+- Arastirma sorulari acik uclu olmali (evet/hayir degil)
+- Section id'leri snake_case Ingilizce olmali`;
+
+// ============================================================
+// MAIN REQUEST HANDLER
+// ============================================================
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-    if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY is not set');
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!openaiApiKey) {
+      throw new Error('OPENAI_API_KEY is not set');
     }
 
     const { message, conversationHistory = [] } = await req.json();
-    
-    // Track conversation depth (each full exchange = 2 messages)
-    const conversationDepth = Math.floor(conversationHistory.length / 2);
-    console.log('Conversation depth:', conversationDepth);
+    console.log(`[Searcho] Message: "${message.substring(0, 80)}..."`);
+    console.log(`[Searcho] Conversation depth: ${Math.floor(conversationHistory.length / 2)}`);
 
-    // Check if this is a template-based message
-    const isNPSTemplate = message.includes('NPS tabanlı araştırma metodolojisi') || message.includes('müşteri memnuniyeti ve sadakat düzeyini ölçmeye');
-    const isAdTestingTemplate = message.includes('Reklam kampanyası performansını') || message.includes('hedef kitle tepkilerini değerlendirmek');
-    const isLandingPageTemplate = message.includes('Web sitesi açılış sayfasının') || message.includes('dönüşüm optimizasyonu');
-    const isFoundationalTemplate = message.includes('Kullanıcı ihtiyaçları ve pazar dinamiklerini') || message.includes('temel araştırma metodolojisi');
-    
-    const isTemplateMessage = isNPSTemplate || isAdTestingTemplate || isLandingPageTemplate || isFoundationalTemplate;
+    // Build messages — system prompt as first user message (reasoning models)
+    // then conversation history, then current message
+    const messages: any[] = [
+      { role: 'user', content: SYSTEM_PROMPT },
+      { role: 'assistant', content: 'Anlasıldı. Searcho AI asistanı olarak hazırım. Kullanıcının mesajını bekliyor ve karar çerçeveme göre yanıt vereceğim.' }
+    ];
 
-    // First, analyze if the message is research-related
-    const analysisResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // Add conversation history
+    for (const msg of conversationHistory) {
+      messages.push({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      });
+    }
+
+    // Add current message
+    messages.push({ role: 'user', content: message });
+
+    console.log(`[Searcho] Calling ${MODEL} with ${messages.length} messages`);
+
+    // Single API call — o4-mini handles everything
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
+        'Authorization': `Bearer ${openaiApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { 
-            role: 'system', 
-            content: `Sen bir araştırma konusu analiz edicisisin. Kullanıcının mesajını analiz et ve SADECE şu durumlardan birinde "ARAŞTIRMA_İLGİLİ" yanıtı ver:
-
-ARAŞTIRMA İLGİLİ DURUMLAR:
-- "araştırma", "research", "analiz", "test", "plan" kelimelerini içeriyorsa
-- Kullanıcı araştırması, ürün testi, UX araştırması, kullanılabilirlik testi hakkında konuşuyorsa
-- "nasıl araştırabilirim", "plan yapabilir misin", "araştırma planı" gibi ifadeler varsa
-- Müşteri geri bildirimi, anket, görüşme, pazar araştırması hakkında konuşuyorsa
-- Veri toplama, kullanıcı davranışı, persona oluşturma konularında soruyorsa
-- Bir ürün/hizmet/konsept hakkında araştırma yapmak istiyorsa
-
-ÖRNEKLER:
-- "Mobil uygulama için kullanıcı araştırması nasıl yapabilirim?" → ARAŞTIRMA_İLGİLİ
-- "Ürün testinde hangi soruları sormalıyım?" → ARAŞTIRMA_İLGİLİ
-- "Müşteri memnuniyeti için anket hazırlayabilir misin?" → ARAŞTIRMA_İLGİLİ
-- "Nasılsın?" → GENEL_SOHBET
-- "Bugün hava nasıl?" → GENEL_SOHBET
-
-Sadece "ARAŞTIRMA_İLGİLİ" veya "GENEL_SOHBET" yanıtı ver, başka hiçbir şey yazma.`
-          },
-          { role: 'user', content: message }
-        ],
-        temperature: 0.1,
-        max_tokens: 15
+        model: MODEL,
+        messages: messages,
+        response_format: RESPONSE_FORMAT,
+        // reasoning_effort is managed by the model
       }),
     });
 
-    const analysisData = await analysisResponse.json();
-    console.log('Analysis response:', analysisData.choices[0].message.content);
-    
-    // Primary AI detection
-    let isResearchRelated = analysisData.choices[0].message.content.includes('ARAŞTIRMA_İLGİLİ');
-    
-    // Fallback keyword detection for Turkish research terms
-    if (!isResearchRelated) {
-      const researchKeywords = ['araştırma', 'research', 'analiz', 'test', 'plan', 'anket', 'görüşme', 'kullanıcı', 'müşteri', 'veri', 'davranış', 'persona', 'ürün test', 'ux', 'ui'];
-      const messageText = message.toLowerCase();
-      isResearchRelated = researchKeywords.some(keyword => messageText.includes(keyword));
-      
-      if (isResearchRelated) {
-        console.log('Research detected via fallback keywords');
-      }
-    }
-    
-    console.log('Final research detection result:', isResearchRelated);
-
-    let systemPrompt, shouldGenerateResearchPlan = false;
-    
-    if (isResearchRelated) {
-      // Second analysis: Check if research request is clear or vague
-      const specificityResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${lovableApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
-          messages: [
-            { 
-              role: 'system', 
-            content: `Sen araştırma taleplerinin netliğini analiz ediyorsun. Kullanıcının araştırma mesajını analiz et:
-
-NET TALEPLER (hemen plan oluşturulabilir):
-- Belirli bir ürün/hizmet adı var: "Mobil uygulamamın kullanılabilirlik testi"
-- Araştırma türü belirli: "checkout sürecinin kullanıcı testi", "müşteri memnuniyet anketi"
-- Hedef kitle belirtilmiş: "e-ticaret müşterileri için araştırma"
-- Spesifik özellik/süreç: "ödeme sayfasının testi", "kayıt formunun analizi"
-- Somut bir problem var: "kullanıcılar sepeti terk ediyor", "form doldurma oranı düşük"
-
-BELIRSIZ TALEPLER (keşif konuşması gerekli):
-- Genel ifadeler: "araştırma yapmam lazım", "bir şeyler test etmek istiyorum"
-- Ürün/hizmet belirsiz: "uygulamamla ilgili", "websitem için"
-- Hedef belirsiz: "kullanıcılar için", "müşteriler için" (hangi kullanıcılar?)
-- Amaç belirsiz: "analiz yapmak istiyorum", "veri toplamak istiyorum"
-- Problem tanımlanmamış: sadece "test etmek" ifadeleri
-
-SADECE "NET" veya "BELIRSIZ" yanıtı ver, başka hiçbir şey yazma.`
-            },
-            { role: 'user', content: message }
-          ],
-          temperature: 0.1,
-          max_tokens: 10
-        }),
-      });
-
-      const specificityData = await specificityResponse.json();
-      const isSpecific = specificityData.choices[0].message.content.includes('NET');
-      console.log('Specificity analysis:', specificityData.choices[0].message.content);
-      console.log('Is request specific:', isSpecific);
-      
-      // Generate plan ONLY after Socratic dialogue (3+ exchanges) OR for templates
-      // Even specific requests need clarifying questions first
-      if (isTemplateMessage || conversationDepth >= 3) {
-        // Clear request or template - generate structured plan immediately
-        shouldGenerateResearchPlan = true;
-        
-        let templateSpecificPrompt = '';
-        if (isNPSTemplate) {
-          templateSpecificPrompt = `Sen bir NPS (Net Promoter Score) araştırma uzmanısın. Müşteri memnuniyeti ve sadakat ölçümü için kapsamlı bir görüşme planı oluştur.
-
-ÖNEMLI: Bu NPS araştırması için KATILIMCILARA SORULACAK sorular oluştur:
-- NPS skorunu etkileyen faktörleri keşfet
-- Müşteri sadakat düzeyini anlayacak sorular
-- Memnuniyet ve memnuniyetsizlik nedenlerini ortaya çıkaracak sorular
-- Referans verme eğilimini anlamaya yönelik sorular
-
-PLANIN ÖZELLİKLERİ:
-- NPS metodolojisine uygun soru yapısı
-- Müşteri deneyimini derinlemesine analiz
-- Sadakat faktörlerini keşfeden sorular
-- Somut geri bildirim toplayacak yaklaşım`;
-        } else if (isAdTestingTemplate) {
-          templateSpecificPrompt = `Sen bir reklam testi uzmanısın. Reklam kampanyası performansını ve hedef kitle tepkilerini değerlendirmek için görüşme planı hazırla.
-
-REKLAM TESTİ İÇİN KATILIMCILARA SORULACAK SORULAR:
-- Reklam içeriğine ilk tepkileri
-- Marka algısına etkisi
-- Satın alma niyeti değişimi
-- Duygusal tepki analizi`;
-        } else if (isLandingPageTemplate) {
-          templateSpecificPrompt = `Sen bir web sitesi kullanılabilirlik uzmanısın. Açılış sayfasının optimizasyonu için kullanıcı test planı oluştur.
-
-AÇILIŞ SAYFASI TESTİ İÇİN KATILIMCILARA SORULACAK SORULAR:
-- İlk izlenim ve anlaşılırlık
-- Navigasyon ve kullanım kolaylığı
-- Dönüşüm engellerini tespit
-- Görsel tasarım ve içerik değerlendirmesi`;
-        } else if (isFoundationalTemplate) {
-          templateSpecificPrompt = `Sen bir temel kullanıcı araştırması uzmanısın. Kullanıcı ihtiyaçları ve pazar fırsatlarını keşfetmek için kapsamlı araştırma planı oluştur.
-
-TEMEL ARAŞTIRMA İÇİN KATILIMCILARA SORULACAK SORULAR:
-- Kullanıcı davranış kalıpları
-- İhtiyaç ve motivasyon faktörleri
-- Mevcut çözümlerin eksiklikleri
-- Gelecekteki beklenti ve trendler`;
-        }
-        
-        // Add conversation context if we've had clarifying exchanges
-        let conversationContext = '';
-        if (conversationDepth >= 2) {
-          const userMessages = conversationHistory
-            .filter(msg => msg.role === 'user')
-            .map(msg => msg.content)
-            .join(' | ');
-          
-          conversationContext = `\n\nKULLANICI KONUŞMA BAĞLAMI (önceki yanıtlar): ${userMessages}
-Bu bilgileri kullanarak kullanıcının ihtiyaçlarına uygun, spesifik ve hedef odaklı sorular oluştur.`;
-        }
-        
-        systemPrompt = `${templateSpecificPrompt}${conversationContext}
-
-YANIT FORMATI:
-{
-  "chatResponse": "Araştırma planı hazırlandı. Soruları sağ panelde düzenleyebilirsin.",
-  "researchPlan": {
-    "title": "[Araştırma türüne uygun başlık]",
-    "sections": [
-      {
-        "id": "background",
-        "title": "Deneyim ve Geçmiş", 
-        "questions": ["[Konuya uygun 3 soru]"]
-      },
-      {
-        "id": "methodology",
-        "title": "Davranış ve Tercihler",
-        "questions": ["[Konuya uygun 3 soru]"]
-      },
-      {
-        "id": "analysis", 
-        "title": "Değerlendirme ve Öneriler",
-        "questions": ["[Konuya uygun 3 soru]"]
-      }
-    ]
-  }
-}`;
-      } else {
-        // Socratic discovery phase - ask clarifying questions before generating plan
-        // Build context from conversation history
-        let contextSummary = '';
-        if (conversationHistory.length > 0) {
-          const previousExchanges = conversationHistory
-            .map((msg, i) => `${msg.role === 'user' ? 'Kullanıcı' : 'Sen'}: ${msg.content}`)
-            .join('\n');
-          contextSummary = `\n\nÖNCEKİ KONUŞMA:\n${previousExchanges}\n\nBu bağlamı dikkate alarak, henüz netleşmemiş noktaları sorgula.`;
-        }
-
-        systemPrompt = SOCRATIC_DISCOVERY_PROMPT + contextSummary;
-      }
-    } else {
-      systemPrompt = `Sen Türkçe konuşan yardımcı bir asistansın. Genel sorulara yardımcı ol, kısa ve öz yanıtlar ver.`;
-    }
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...conversationHistory,
-      { role: 'user', content: message }
-    ];
-
-    console.log('Processing Turkish chat message:', message);
-
-    let response;
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-
-    // Use CORTEX for all research-related conversations (both Socratic and plan generation)
-    if (isResearchRelated && openaiApiKey) {
-      if (shouldGenerateResearchPlan) {
-        console.log('Using CORTEX model for research plan generation');
-        // Include conversation context for better plan generation
-        const contextMessage = conversationHistory.length > 0
-          ? `Önceki konuşma bağlamı:\n${conversationHistory.map(m => `${m.role}: ${m.content}`).join('\n')}\n\nMevcut talep: ${message}`
-          : message;
-
-        response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openaiApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: CORTEX_MODEL,
-            messages: [
-              { role: 'system', content: CORTEX_SYSTEM_PROMPT },
-              { role: 'user', content: contextMessage }
-            ],
-            temperature: 0.7,
-            max_tokens: 1000,
-          }),
-        });
-      } else {
-        console.log('Using CORTEX model for Socratic discovery');
-        response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openaiApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: CORTEX_MODEL,
-            messages: messages,
-            temperature: 0.8,
-            max_tokens: 500,
-          }),
-        });
-      }
-    } else {
-      // Use Lovable Gateway for non-research conversations
-      response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${lovableApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
-          messages: messages,
-          temperature: 0.7,
-          max_tokens: 1000,
-        }),
-      });
-    }
-
     if (!response.ok) {
-      const errorData = await response.text();
-      console.error('OpenAI API error:', errorData);
-      throw new Error(`OpenAI API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error('[Searcho] API error:', errorText);
+      throw new Error(`API error: ${response.status}`);
     }
 
     const data = await response.json();
-    let reply = data.choices[0].message.content;
-    let researchPlan = null;
-    
-    // Parse JSON response if it's a research plan
-    if (shouldGenerateResearchPlan) {
-      try {
-        // Strip markdown code block wrapper if present (```json ... ```)
-        let jsonString = reply;
-        if (jsonString.includes('```json')) {
-          jsonString = jsonString.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-        } else if (jsonString.includes('```')) {
-          jsonString = jsonString.replace(/```\s*/g, '');
-        }
-        jsonString = jsonString.trim();
+    const content = data.choices[0].message.content;
 
-        const parsed = JSON.parse(jsonString);
-        researchPlan = parsed.researchPlan;
+    console.log(`[Searcho] Raw response: ${content.substring(0, 200)}...`);
 
-        // Generate contextual response based on the research plan
-        // Don't use the generic chatResponse from CORTEX
-        const planTitle = researchPlan?.title || 'araştırma';
-        const firstSection = researchPlan?.sections?.[0]?.title || '';
-        const questionCount = researchPlan?.sections?.reduce((acc: number, s: any) => acc + (s.questions?.length || 0), 0) || 9;
-
-        // Create a contextual response based on the plan content
-        reply = `${planTitle} için ${questionCount} soruluk bir görüşme planı hazırladım. ${firstSection} ile başlayıp kullanıcı deneyimini derinlemesine keşfedeceğiz.`;
-
-      } catch (e) {
-        console.log('Failed to parse JSON, using original response:', e);
-      }
+    // Parse the structured response
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch (e) {
+      console.error('[Searcho] JSON parse failed:', e);
+      return new Response(JSON.stringify({
+        reply: 'Üzgünüm, yanıtı işlerken bir sorun yaşadım. Tekrar deneyebilir misiniz?',
+        isResearchRelated: false,
+        researchPlan: null,
+        conversationHistory: [
+          ...conversationHistory,
+          { role: 'user', content: message }
+        ]
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
-    
-    console.log('Generated Turkish response:', reply);
 
-    // Only show research panel when we have a structured plan ready
-    const showResearchPanel = isResearchRelated && shouldGenerateResearchPlan;
+    const isResearchPlan = parsed.action === 'PLAN' && parsed.researchPlan !== null;
 
-    return new Response(JSON.stringify({ 
-      reply,
-      isResearchRelated: showResearchPanel,
-      researchPlan,
-      conversationHistory: [...conversationHistory, 
+    console.log(`[Searcho] Action: ${parsed.action}, Plan: ${isResearchPlan}`);
+    if (isResearchPlan) {
+      console.log(`[Searcho] Plan title: "${parsed.researchPlan.title}"`);
+      const qCount = parsed.researchPlan.sections?.reduce(
+        (acc: number, s: any) => acc + (s.questions?.length || 0), 0
+      ) || 0;
+      console.log(`[Searcho] Total questions: ${qCount}`);
+    }
+
+    // Return in the format ChatPanel.tsx expects
+    return new Response(JSON.stringify({
+      reply: parsed.chatResponse,
+      isResearchRelated: isResearchPlan,
+      researchPlan: isResearchPlan ? parsed.researchPlan : null,
+      conversationHistory: [
+        ...conversationHistory,
         { role: 'user', content: message },
-        { role: 'assistant', content: reply }
+        { role: 'assistant', content: parsed.chatResponse }
       ]
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
+
   } catch (error) {
-    console.error('Error in turkish-chat function:', error);
-    return new Response(JSON.stringify({ 
+    console.error('[Searcho] Error:', error);
+    return new Response(JSON.stringify({
       error: error instanceof Error ? error.message : 'Internal server error',
       reply: 'Üzgünüm, şu anda bir hata oluştu. Lütfen tekrar deneyin.'
     }), {
