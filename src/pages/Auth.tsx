@@ -8,12 +8,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 const Auth = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [canResendConfirmation, setCanResendConfirmation] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const navigate = useNavigate();
   const {
     signIn,
@@ -31,17 +34,52 @@ const Auth = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setCanResendConfirmation(false);
     const {
       error
     } = await signIn(email, password);
     if (error) {
-      setError(error.message);
-      toast.error('Sign in failed: ' + error.message);
+      const message = error?.message || 'Sign in failed';
+
+      if (message.toLowerCase().includes('email not confirmed')) {
+        setError('Email not confirmed. Please check your inbox for the confirmation email, then try signing in again.');
+        setCanResendConfirmation(true);
+      } else if (message.toLowerCase().includes('invalid login credentials')) {
+        setError('Invalid email or password.');
+      } else {
+        setError(message);
+      }
+
+      toast.error('Sign in failed: ' + message);
     } else {
       toast.success('Successfully signed in!');
       navigate('/');
     }
     setLoading(false);
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!email) {
+      toast.error('Please enter your email first.');
+      return;
+    }
+
+    setResendLoading(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: { emailRedirectTo: `${window.location.origin}/` }
+      });
+
+      if (error) {
+        toast.error('Resend failed: ' + error.message);
+      } else {
+        toast.success('Confirmation email resent. Please check your inbox.');
+      }
+    } finally {
+      setResendLoading(false);
+    }
   };
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +132,14 @@ const Auth = () => {
               
               <TabsContent value="signin" className="space-y-4">
                 {error && <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
+                    <AlertDescription>
+                      <div className="space-y-3">
+                        <p>{error}</p>
+                        {canResendConfirmation && <Button type="button" variant="outline" className="w-full" onClick={handleResendConfirmation} disabled={resendLoading}>
+                            {resendLoading ? 'Resending...' : 'Resend confirmation email'}
+                          </Button>}
+                      </div>
+                    </AlertDescription>
                   </Alert>}
                 
                 <form onSubmit={handleSignIn} className="space-y-4">
