@@ -58,8 +58,11 @@ const StudySession = () => {
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const [cameraGateCompleted, setCameraGateCompleted] = useState(false);
   const [cameraRequestPending, setCameraRequestPending] = useState(false);
+  const [cameraPreviewReady, setCameraPreviewReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraGateVideoRef = useRef<HTMLVideoElement>(null);
+  const previewFailureTimerRef = useRef<number | null>(null);
+  const hasShownCameraFailureRef = useRef(false);
 
   useEffect(() => {
     // Skip initialization in design mode
@@ -80,6 +83,9 @@ const StudySession = () => {
     void checkCameraPermissions();
 
     return () => {
+      if (previewFailureTimerRef.current) {
+        window.clearTimeout(previewFailureTimerRef.current);
+      }
       cameraStream?.getTracks().forEach(track => track.stop());
     };
   }, [sessionToken]);
@@ -97,9 +103,90 @@ const StudySession = () => {
   }, [cameraStream]);
 
   useEffect(() => {
+    if (!cameraStream) {
+      setCameraPreviewReady(false);
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      const previewElement = cameraGateCompleted ? videoRef.current : cameraGateVideoRef.current;
+      const hasLiveFrame = Boolean(
+        previewElement &&
+        previewElement.srcObject &&
+        previewElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        previewElement.videoWidth > 0 &&
+        previewElement.videoHeight > 0 &&
+        !previewElement.paused &&
+        !previewElement.ended
+      );
+
+      if (hasLiveFrame) {
+        if (previewFailureTimerRef.current) {
+          window.clearTimeout(previewFailureTimerRef.current);
+          previewFailureTimerRef.current = null;
+        }
+        hasShownCameraFailureRef.current = false;
+        setCameraPreviewReady(true);
+        return;
+      }
+
+      setCameraPreviewReady(false);
+
+      if (!cameraGateCompleted || previewFailureTimerRef.current) return;
+
+      previewFailureTimerRef.current = window.setTimeout(() => {
+        setCameraGateCompleted(false);
+        if (!hasShownCameraFailureRef.current) {
+          toast.error("Kamera goruntusu kesildi. Devam etmeden once yeniden baglanin.");
+          hasShownCameraFailureRef.current = true;
+        }
+        previewFailureTimerRef.current = null;
+      }, 1500);
+    }, 400);
+
+    return () => {
+      window.clearInterval(interval);
+      if (previewFailureTimerRef.current) {
+        window.clearTimeout(previewFailureTimerRef.current);
+        previewFailureTimerRef.current = null;
+      }
+    };
+  }, [cameraStream, cameraGateCompleted]);
+
+  useEffect(() => {
     if (cameraGateCompleted || cameraEnabled || cameraRequestPending) return;
     void requestCameraAccess();
   }, [cameraGateCompleted, cameraEnabled, cameraRequestPending]);
+
+  useEffect(() => {
+    if (!cameraStream) return;
+
+    const videoTrack = cameraStream.getVideoTracks()[0];
+    if (!videoTrack) return;
+
+    const handleTrackInterrupted = () => {
+      setCameraPreviewReady(false);
+      setCameraGateCompleted(false);
+      if (!hasShownCameraFailureRef.current) {
+        toast.error("Kamera baglantisi kesildi. Oturum devam etmeden once kamerayi yeniden acin.");
+        hasShownCameraFailureRef.current = true;
+      }
+    };
+
+    const handleTrackResumed = () => {
+      hasShownCameraFailureRef.current = false;
+    };
+
+    videoTrack.addEventListener('ended', handleTrackInterrupted);
+    videoTrack.addEventListener('mute', handleTrackInterrupted);
+    videoTrack.addEventListener('unmute', handleTrackResumed);
+
+    return () => {
+      videoTrack.removeEventListener('ended', handleTrackInterrupted);
+      videoTrack.removeEventListener('mute', handleTrackInterrupted);
+      videoTrack.removeEventListener('unmute', handleTrackResumed);
+    };
+  }, [cameraStream]);
 
   const initializeSession = async () => {
     try {
@@ -186,11 +273,14 @@ const StudySession = () => {
       setCameraStream(stream);
       setCameraEnabled(true);
       setHasCameraPermission(true);
+      setCameraPreviewReady(false);
+      hasShownCameraFailureRef.current = false;
       return true;
     } catch (error) {
       console.error('Error accessing camera:', error);
       setHasCameraPermission(false);
       setCameraEnabled(false);
+      setCameraPreviewReady(false);
       toast.error("Devam etmek için kamera izni vermelisiniz");
       return false;
     } finally {
@@ -261,7 +351,7 @@ const StudySession = () => {
       <FloatingVideo
         videoRef={videoRef}
         participantName={participantName || undefined}
-        isVisible={cameraGateCompleted && cameraEnabled}
+        isVisible={cameraGateCompleted && cameraEnabled && cameraPreviewReady}
       />
 
       {/* Main Content */}
@@ -362,10 +452,10 @@ const StudySession = () => {
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <Button
                     onClick={() => setCameraGateCompleted(true)}
-                    disabled={!cameraEnabled}
+                    disabled={!cameraEnabled || !cameraPreviewReady}
                     size="lg"
                     className={`min-w-[180px] ${
-                      cameraEnabled
+                      cameraEnabled && cameraPreviewReady
                         ? "bg-brand-primary text-white hover:bg-brand-primary-hover"
                         : "bg-muted text-muted-foreground hover:bg-muted"
                     }`}
@@ -383,6 +473,12 @@ const StudySession = () => {
                 {cameraRequestPending && (
                   <p className="text-sm text-text-secondary">
                     Kamera izni isteniyor...
+                  </p>
+                )}
+
+                {cameraEnabled && !cameraPreviewReady && !cameraRequestPending && (
+                  <p className="text-sm text-text-secondary">
+                    Kamera baglandi. Canli goruntu hazir olunca devam edebilirsiniz.
                   </p>
                 )}
               </div>
@@ -403,6 +499,10 @@ const StudySession = () => {
                     autoPlay
                     muted
                     playsInline
+                    onLoadedData={() => setCameraPreviewReady(true)}
+                    onPlaying={() => setCameraPreviewReady(true)}
+                    onEmptied={() => setCameraPreviewReady(false)}
+                    onStalled={() => setCameraPreviewReady(false)}
                     className="aspect-[4/3] h-full w-full object-cover"
                   />
                 ) : (

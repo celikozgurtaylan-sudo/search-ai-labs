@@ -8,6 +8,9 @@ import { AudioTranscriber } from '@/utils/AudioTranscriber';
 import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
 import { AvatarSpeaker } from './AvatarSpeaker';
+
+const RESPONSE_TIME_LIMIT_SECONDS = 120;
+
 interface SearchoAIProps {
   isActive: boolean;
   projectContext?: {
@@ -54,6 +57,9 @@ const SearchoAI = ({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isReviewingTranscript, setIsReviewingTranscript] = useState(false);
   const [editableTranscript, setEditableTranscript] = useState('');
+  const [responseTimeRemaining, setResponseTimeRemaining] = useState(RESPONSE_TIME_LIMIT_SECONDS);
+  const [responseTimerExpired, setResponseTimerExpired] = useState(false);
+  const [responseTimerActive, setResponseTimerActive] = useState(false);
 
   // Preamble state
   const [isPreamblePhase, setIsPreamblePhase] = useState(true);
@@ -193,6 +199,8 @@ const SearchoAI = ({
       console.log('🎯 Getting next question...');
       const data = await interviewService.getNextQuestion(projectContext.sessionId);
       setCurrentQuestion(data.nextQuestion);
+      setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
+      setResponseTimerExpired(false);
       setInterviewProgress(data.progress);
       setIsWaitingForAnswer(false);
       if (data.progress.isComplete) {
@@ -277,6 +285,39 @@ const SearchoAI = ({
     return () => clearInterval(timer);
   }, [isActive, sessionStartTime]);
 
+  useEffect(() => {
+    if (!currentQuestion?.id) return;
+    setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
+    setResponseTimerExpired(false);
+    setResponseTimerActive(false);
+  }, [currentQuestion?.id]);
+
+  useEffect(() => {
+    if (!currentQuestion || !responseTimerActive || isReviewingTranscript) return;
+    if (responseTimeRemaining <= 0) return;
+
+    const timer = window.setInterval(() => {
+      setResponseTimeRemaining((previous) => Math.max(0, previous - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [currentQuestion, responseTimerActive, isReviewingTranscript, responseTimeRemaining]);
+
+  useEffect(() => {
+    if (!currentQuestion || responseTimeRemaining > 0 || responseTimerExpired || !responseTimerActive) return;
+
+    setResponseTimerExpired(true);
+    setResponseTimerActive(false);
+    toast({
+      title: "Sure doldu",
+      description: "Yanitinizi simdi gozden gecirebilirsiniz.",
+    });
+
+    if (audioTranscriberRef.current) {
+      audioTranscriberRef.current.stop();
+    }
+  }, [currentQuestion, responseTimeRemaining, responseTimerExpired, isWaitingForAnswer, toast]);
+
   // Start listening for user response
   const startListening = async () => {
     if (audioTranscriberRef.current) {
@@ -286,6 +327,8 @@ const SearchoAI = ({
     setUserTranscript('');
     setIsTranscribing(true);
     setIsListening(true);
+    setResponseTimerExpired(false);
+    setResponseTimerActive(false);
 
     // Start video recording if we have a stream
     if (audioStreamRef.current) {
@@ -294,6 +337,9 @@ const SearchoAI = ({
     const transcriber = new AudioTranscriber();
     transcriber.onTranscriptionUpdate = (text: string) => {
       setUserTranscript(text);
+    };
+    transcriber.onSpeechDetected = () => {
+      setResponseTimerActive(true);
     };
     transcriber.onComplete = async (finalText: string) => {
       console.log('Transcription complete:', finalText);
@@ -304,12 +350,14 @@ const SearchoAI = ({
       setIsWaitingForAnswer(false);
       setNeedsRetryRecording(false);
       setIsReviewingTranscript(true);
+      setResponseTimerActive(false);
       // Don't auto-save - wait for user confirmation
     };
     transcriber.onError = (error: string) => {
       console.error('Transcription error:', error);
       setIsTranscribing(false);
       setIsListening(false);
+      setResponseTimerActive(false);
 
       if (error === 'NO_SPEECH_DETECTED') {
         if (isRecordingVideo) {
@@ -320,6 +368,7 @@ const SearchoAI = ({
         setIsReviewingTranscript(false);
         setIsWaitingForAnswer(true);
         setNeedsRetryRecording(true);
+        setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
         toast({
           title: "Ses algilanmadi",
           description: "Lutfen yanitinizi net bir sekilde sesli olarak verin.",
@@ -343,6 +392,7 @@ const SearchoAI = ({
   const toggleMicrophone = () => {
     if (isListening) {
       setIsListening(false);
+       setResponseTimerActive(false);
       if (audioTranscriberRef.current) {
         audioTranscriberRef.current.stop();
         audioTranscriberRef.current = null;
@@ -404,6 +454,9 @@ const SearchoAI = ({
     setEditableTranscript('');
     setIsWaitingForAnswer(true);
     setNeedsRetryRecording(false);
+    setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
+    setResponseTimerExpired(false);
+    setResponseTimerActive(false);
 
     // Automatically start listening just like the initial flow
     await startListening();
@@ -442,6 +495,19 @@ const SearchoAI = ({
     const seconds = duration % 60;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
+
+  const getResponseTimerLabel = () => {
+    const minutes = Math.floor(responseTimeRemaining / 60);
+    const seconds = responseTimeRemaining % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const responseTimerTone = responseTimeRemaining <= 10
+    ? 'text-red-600'
+    : responseTimeRemaining <= 30
+      ? 'text-amber-600'
+      : 'text-foreground';
+
   if (!isActive) return null;
 
   // Show Turkish preamble if in preamble phase
@@ -514,6 +580,22 @@ const SearchoAI = ({
                         <h3 className="text-xl font-semibold text-foreground leading-relaxed">
                           {currentQuestion.question_text}
                         </h3>
+                      </div>
+
+                      <div className="mt-5 rounded-2xl border border-border/70 bg-muted/30 px-4 py-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                              Yanit suresi
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              2 dk içerisinde cevaplayabilirsiniz.
+                            </p>
+                          </div>
+                          <div className={`text-2xl font-semibold tabular-nums ${responseTimerTone}`}>
+                            {getResponseTimerLabel()}
+                          </div>
+                        </div>
                       </div>
                       
                       {/* Live Recording Section - Always Visible */}

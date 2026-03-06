@@ -187,7 +187,7 @@ export const AvatarSpeaker = ({
     <div className={`relative w-full max-w-2xl overflow-hidden rounded-[32px] border px-6 py-8 shadow-[0_24px_60px_rgba(15,23,42,0.10)] transition-all duration-500 ${
       isPreparing
         ? 'border-slate-200/90 bg-[linear-gradient(180deg,_#f6f6f6_0%,_#ededed_100%)]'
-        : 'border-border/70 bg-[radial-gradient(circle_at_top,_rgba(160,210,255,0.35),_transparent_42%),linear-gradient(180deg,_#ffffff_0%,_#f6f9ff_100%)]'
+        : 'border-border/70 bg-[radial-gradient(circle_at_top,_hsl(var(--brand-primary)/0.20),_transparent_42%),linear-gradient(180deg,_#ffffff_0%,_hsl(var(--brand-primary-light)/0.35)_100%)]'
     }`}>
       <div className={`absolute inset-0 transition-opacity duration-500 ${
         isPreparing
@@ -201,26 +201,26 @@ export const AvatarSpeaker = ({
             isPreparing
               ? 'bg-slate-300/35 opacity-70 scale-90'
               : isSpeaking
-                ? 'bg-sky-200/45 scale-110 opacity-100'
-                : 'bg-sky-200/35 scale-95 opacity-55'
+                ? 'bg-[hsl(var(--brand-primary)/0.26)] scale-110 opacity-100'
+                : 'bg-[hsl(var(--brand-primary)/0.20)] scale-95 opacity-55'
           }`} />
           <div className={`absolute h-28 w-28 rounded-full blur-xl transition-all duration-500 ${
             isPreparing
               ? 'bg-slate-200/55 opacity-80 scale-90'
               : isSpeaking
-                ? 'bg-cyan-100/60 scale-105 opacity-100'
-                : 'bg-cyan-100/45 scale-90 opacity-65'
+                ? 'bg-[hsl(var(--brand-primary-light)/0.95)] scale-105 opacity-100'
+                : 'bg-[hsl(var(--brand-primary-light)/0.75)] scale-90 opacity-65'
           }`} />
           <div className={`relative h-24 w-24 rounded-full transition-all duration-500 ${
             isPreparing
               ? 'bg-[radial-gradient(circle_at_30%_30%,_#f4f4f5_0%,_#d4d4d8_45%,_#a1a1aa_100%)] shadow-[inset_0_6px_18px_rgba(255,255,255,0.35),0_10px_24px_rgba(115,115,115,0.16)] scale-95'
-              : 'bg-[radial-gradient(circle_at_30%_30%,_#eefcff_0%,_#abd8ff_38%,_#2a87ff_100%)] shadow-[inset_0_6px_18px_rgba(255,255,255,0.55),0_16px_40px_rgba(42,135,255,0.28)]'
+              : 'bg-[radial-gradient(circle_at_30%_30%,_hsl(var(--brand-primary-light))_0%,_hsl(var(--brand-primary)/0.48)_38%,_hsl(var(--brand-primary))_100%)] shadow-[inset_0_6px_18px_rgba(255,255,255,0.55),0_16px_40px_hsl(var(--brand-primary)/0.32)]'
           } ${isSpeaking ? 'animate-pulse scale-105' : 'scale-100'}`} />
         </div>
 
         <div className="space-y-3">
           {statusLabel ? (
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700/70">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-primary/70">
               {statusLabel}
             </p>
           ) : null}

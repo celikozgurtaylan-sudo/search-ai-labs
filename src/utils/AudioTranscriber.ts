@@ -35,6 +35,7 @@ export class AudioTranscriber {
   private stopReason: 'manual' | 'speech-ended' | 'no-speech' = 'manual';
 
   onTranscriptionUpdate: (text: string) => void = () => {};
+  onSpeechDetected: () => void = () => {};
   onComplete: (text: string) => void = () => {};
   onError: (error: string) => void = () => {};
 
@@ -117,6 +118,7 @@ export class AudioTranscriber {
 
       if (!this.speechDetected && this.speechFrameCount >= MIN_SPEECH_FRAMES) {
         this.speechDetected = true;
+        this.onSpeechDetected();
       }
 
       // If volume is below threshold after speech has started, start silence timer.
