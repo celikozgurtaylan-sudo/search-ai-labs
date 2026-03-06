@@ -17,6 +17,11 @@ interface SearchoAIProps {
     sessionId?: string;
     projectId?: string;
     participantId?: string;
+    designScreens?: Array<{
+      name?: string;
+      url: string;
+      source?: string;
+    }>;
   };
   onSessionEnd?: () => void;
 }

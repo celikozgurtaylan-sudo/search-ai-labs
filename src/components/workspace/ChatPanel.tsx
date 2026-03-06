@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useState, useEffect, useRef, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Bot, User, Send } from "lucide-react";
 import { supabase } from '@/integrations/supabase/client';
 import userAvatar from "@/assets/user-avatar.jpg";
@@ -16,6 +15,23 @@ interface ChatPanelProps {
   projectData?: any;
   onResearchDetected?: (isResearch: boolean) => void;
   onResearchPlanGenerated?: (plan: any) => void;
+}
+
+interface ResearchContextPayload {
+  usabilityTesting?: {
+    mode?: string;
+    objective?: string;
+    primaryTask?: string;
+    targetUsers?: string;
+    successSignals?: string;
+    riskAreas?: string;
+    guidancePrompt?: string;
+  };
+  designScreens?: Array<{
+    name?: string;
+    source?: string;
+    url?: string;
+  }>;
 }
 
 const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }: ChatPanelProps) => {
@@ -38,7 +54,30 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
     }
   }, [projectData]);
 
+  const buildUsabilityContextBlock = () => {
+    const usability = projectData?.analysis?.usabilityTesting;
+    if (!usability) return "";
+
+    const screens = Array.isArray(projectData?.analysis?.designScreens)
+      ? projectData.analysis.designScreens
+          .map((screen: any, index: number) => `${index + 1}. ${screen.name || "Screen"} (${screen.source || "unknown"})`)
+          .join("\n")
+      : "Screen bilgisi yok";
+
+    return `\n\n[USABILITY_TESTING_CONTEXT]
+Bu proje ekran tabanli kullanilabilirlik testidir.
+Arastirma amaci: ${usability.objective || "Belirtilmedi"}
+Ana kullanici gorevi: ${usability.primaryTask || "Belirtilmedi"}
+Hedef kullanicilar: ${usability.targetUsers || "Belirtilmedi"}
+Basari kriterleri: ${usability.successSignals || "Belirtilmedi"}
+Riskli alanlar: ${usability.riskAreas || "Belirtilmedi"}
+Ekran listesi:
+${screens}
+Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik odaginda olustur.`;
+  };
+
   const handleInitialMessage = async (initialMessage: string) => {
+    const contextualInitialMessage = `${initialMessage}${buildUsabilityContextBlock()}`;
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
@@ -47,11 +86,18 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
     };
     
     setMessages([userMessage]);
-    await sendToLLM(initialMessage);
+    await sendToLLM(contextualInitialMessage);
   };
 
   const sendToLLM = async (messageText: string) => {
     setIsLoading(true);
+
+    const researchContext: ResearchContextPayload | null = projectData?.analysis?.usabilityTesting
+      ? {
+          usabilityTesting: projectData.analysis.usabilityTesting,
+          designScreens: projectData.analysis.designScreens || []
+        }
+      : null;
     
     // Add loading message
     const loadingMessage: ChatMessage = {
@@ -66,7 +112,8 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
       const { data, error } = await supabase.functions.invoke('turkish-chat', {
         body: { 
           message: messageText,
-          conversationHistory: conversationHistory
+          conversationHistory: conversationHistory,
+          researchContext
         }
       });
 
@@ -193,7 +240,20 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
     await sendToLLM(currentInput);
   };
 
-  const handleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const resizeTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+  }, []);
+
+  useEffect(() => {
+    resizeTextarea();
+  }, [inputMessage, resizeTextarea]);
+
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -285,19 +345,22 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
       {/* Chat Input */}
       <div className="flex-shrink-0 bg-white border-t border-border-light pb-[env(safe-area-inset-bottom)]">
         <div className="p-4">
-          <div className="flex space-x-3">
-            <Input
+          <div className="flex items-end space-x-3">
+            <textarea
+              ref={textareaRef}
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Sormak istediğiniz her şeyi yazabilirsiniz..."
-              className="flex-1"
+              className="flex-1 resize-none overflow-y-auto scrollbar-hide rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={isLoading}
+              rows={1}
+              style={{ minHeight: '40px', maxHeight: '160px', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             />
-            <Button 
+            <Button
               onClick={handleSendMessage}
               disabled={!inputMessage.trim() || isLoading}
-              className="px-4 h-10 md:h-9"
+              className="px-4 h-10 flex-shrink-0"
             >
               <Send className="w-4 h-4" />
             </Button>

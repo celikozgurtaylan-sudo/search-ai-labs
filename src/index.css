@@ -5,6 +5,10 @@
 @tailwind components;
 @tailwind utilities;
 
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Search AI Design System - Clean, minimal, Notion-meets-Figma aesthetic */
 
 @layer base {
@@ -210,4 +214,226 @@
 
 .animation-delay-150 {
   animation-delay: 150ms;
+}
+
+/* Landing page motion system */
+@keyframes scrollDownOut {
+  0% {
+    transform: rotateX(0deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotateX(92deg) scale(0.98);
+    opacity: 0;
+  }
+}
+
+@keyframes scrollUpIn {
+  0% {
+    transform: rotateX(-92deg) scale(0.98);
+    opacity: 0;
+  }
+  100% {
+    transform: rotateX(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes landingFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes landingOrbFloat {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(16px, -10px, 0) scale(1.08);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes landingGridShift {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(20px);
+  }
+}
+
+.animate-scroll-down-out {
+  transform-origin: center center;
+  animation: scrollDownOut 0.72s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-scroll-up-in {
+  transform-origin: center center;
+  animation: scrollUpIn 0.72s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.landing-placeholder-stack {
+  perspective: 900px;
+  transform-style: preserve-3d;
+}
+
+.landing-placeholder-stack > div {
+  backface-visibility: hidden;
+}
+
+.landing-page {
+  position: relative;
+  isolation: isolate;
+}
+
+.landing-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.landing-orb {
+  position: absolute;
+  filter: blur(48px);
+  opacity: 0.38;
+  border-radius: 9999px;
+  animation: landingOrbFloat 16s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.landing-orb--one {
+  width: min(34vw, 420px);
+  height: min(34vw, 420px);
+  top: -8rem;
+  left: -8rem;
+  background: radial-gradient(circle at 30% 30%, hsl(var(--brand-primary-light)) 0%, hsl(var(--interactive-light)) 55%, transparent 80%);
+}
+
+.landing-orb--two {
+  width: min(32vw, 390px);
+  height: min(32vw, 390px);
+  top: 20%;
+  right: -9rem;
+  background: radial-gradient(circle at 70% 30%, hsl(185 85% 90%) 0%, hsl(var(--brand-primary-light)) 58%, transparent 78%);
+  animation-delay: 2.4s;
+}
+
+.landing-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.1;
+  background-image: linear-gradient(to right, hsl(var(--border-light)) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--border-light)) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(circle at top, black 12%, transparent 74%);
+  animation: landingGridShift 18s linear infinite alternate;
+}
+
+.landing-fade-in {
+  opacity: 0;
+  animation: landingFadeUp 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.landing-fade-in--1 {
+  animation-delay: 90ms;
+}
+
+.landing-fade-in--2 {
+  animation-delay: 220ms;
+}
+
+.landing-fade-in--3 {
+  animation-delay: 340ms;
+}
+
+.landing-fade-in--4 {
+  animation-delay: 460ms;
+}
+
+.landing-fade-in--5 {
+  animation-delay: 580ms;
+}
+
+.landing-fade-in--6 {
+  animation-delay: 700ms;
+}
+
+.landing-input-card {
+  transition: box-shadow 480ms cubic-bezier(0.22, 1, 0.36, 1), transform 480ms cubic-bezier(0.22, 1, 0.36, 1), border-color 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing-input-card:hover {
+  border-color: hsl(var(--brand-primary) / 0.25);
+  box-shadow: 0 18px 36px hsl(var(--shadow-medium));
+  transform: translateY(-3px);
+}
+
+.landing-textarea {
+  transition: background-color 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing-textarea:focus {
+  background-color: hsl(var(--surface));
+}
+
+.landing-cta-button {
+  transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing-cta-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px hsl(var(--brand-primary) / 0.2);
+}
+
+.landing-template-card {
+  opacity: 0;
+  transform: translateY(12px);
+  animation: landingFadeUp 880ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.landing-template-card:hover {
+  transform: translateY(-5px);
+}
+
+.landing-template-icon {
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing-template-card:hover .landing-template-icon {
+  transform: translateY(-1px) scale(1.05);
+  box-shadow: 0 8px 16px hsl(var(--shadow-medium));
+}
+
+@media (max-width: 768px) {
+  .landing-orb--one {
+    left: -10rem;
+    top: -9rem;
+  }
+
+  .landing-orb--two {
+    right: -11rem;
+    top: 28%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-orb,
+  .landing-grid,
+  .landing-fade-in,
+  .landing-template-card,
+  .animate-scroll-down-out,
+  .animate-scroll-up-in {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
 }
