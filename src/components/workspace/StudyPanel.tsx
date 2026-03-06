@@ -521,6 +521,9 @@ const StudyPanel = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
           <div className="group">
             {showTitleTypewriter ? <TypewriterText text={discussionGuide.title} speed={30} className="text-lg font-semibold text-text-primary" enableControls={true} onComplete={() => setShowTitleTypewriter(false)} /> : <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>}
+            <p className="mt-2 text-sm font-medium text-text-secondary">
+              Kullanıcılara sorulacak sorular
+            </p>
           </div>
           
           
