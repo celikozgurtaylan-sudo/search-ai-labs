@@ -1,188 +1,245 @@
 import { useEffect, useRef, useState } from 'react';
-import StreamingAvatar, { 
-  StreamingEvents, 
-  TaskType 
-} from '@heygen/streaming-avatar';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
+import { textToSpeech } from '@/services/textToSpeechService';
 
 interface AvatarSpeakerProps {
   questionText: string;
+  isUserResponding?: boolean;
   onSpeakingStart: () => void;
   onSpeakingComplete: () => void;
 }
 
-export const AvatarSpeaker = ({ 
-  questionText, 
-  onSpeakingStart, 
-  onSpeakingComplete 
-}: AvatarSpeakerProps) => {
-  const [avatar, setAvatar] = useState<StreamingAvatar | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [isInitializing, setIsInitializing] = useState(true);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { toast } = useToast();
+type OrbState = 'preparing' | 'speaking' | 'listening';
 
-  // Get session token from edge function
-  const getSessionToken = async () => {
-    console.log('Fetching HeyGen session token...');
-    const { data, error } = await supabase.functions.invoke('heygen-session');
-    
-    if (error) {
-      console.error('Error fetching session token:', error);
-      throw error;
+export const AvatarSpeaker = ({
+  questionText,
+  isUserResponding = false,
+  onSpeakingStart,
+  onSpeakingComplete,
+}: AvatarSpeakerProps) => {
+  const [orbState, setOrbState] = useState<OrbState>('preparing');
+  const [showListeningHint, setShowListeningHint] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const playbackTokenRef = useRef(0);
+  const onSpeakingStartRef = useRef(onSpeakingStart);
+  const onSpeakingCompleteRef = useRef(onSpeakingComplete);
+  const listeningHintTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    onSpeakingStartRef.current = onSpeakingStart;
+  }, [onSpeakingStart]);
+
+  useEffect(() => {
+    onSpeakingCompleteRef.current = onSpeakingComplete;
+  }, [onSpeakingComplete]);
+
+  const stopPlayback = () => {
+    if (listeningHintTimerRef.current) {
+      window.clearTimeout(listeningHintTimerRef.current);
+      listeningHintTimerRef.current = null;
     }
-    
-    console.log('API key received');
-    return data.api_key;
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      audioRef.current = null;
+    }
+
+    if (utteranceRef.current && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      utteranceRef.current = null;
+    }
   };
 
-  // Initialize avatar session
+  const completeSpeaking = (token: number) => {
+    if (playbackTokenRef.current !== token) return;
+    setOrbState('listening');
+    setShowListeningHint(false);
+    onSpeakingCompleteRef.current();
+  };
+
+  const speakWithBrowserFallback = (text: string, token: number) => {
+    if (!('speechSynthesis' in window)) {
+      completeSpeaking(token);
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'tr-TR';
+    utterance.rate = 0.98;
+    utterance.pitch = 1;
+    utterance.onstart = () => {
+      if (playbackTokenRef.current !== token) return;
+      setOrbState('speaking');
+      onSpeakingStartRef.current();
+    };
+    utterance.onend = () => {
+      utteranceRef.current = null;
+      completeSpeaking(token);
+    };
+    utterance.onerror = () => {
+      utteranceRef.current = null;
+      completeSpeaking(token);
+    };
+
+    utteranceRef.current = utterance;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  };
+
   useEffect(() => {
-    const initAvatar = async () => {
+    if (!questionText) return;
+
+    const token = playbackTokenRef.current + 1;
+    playbackTokenRef.current = token;
+    setOrbState('preparing');
+    setShowListeningHint(false);
+    stopPlayback();
+
+    let objectUrl: string | null = null;
+    let cancelled = false;
+
+    const speak = async () => {
       try {
-        console.log('Initializing HeyGen avatar...');
-        const token = await getSessionToken();
-        
-        const avatarInstance = new StreamingAvatar({
-          token,
-        });
+        const audioBuffer = await textToSpeech(questionText);
+        if (cancelled || playbackTokenRef.current !== token) return;
 
-        // Listen to events
-        avatarInstance.on(StreamingEvents.STREAM_READY, (event) => {
-          console.log('Avatar stream ready');
-          setStream(event.detail);
-          setIsInitializing(false);
-        });
+        const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+        objectUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(objectUrl);
+        audioRef.current = audio;
 
-        avatarInstance.on(StreamingEvents.STREAM_DISCONNECTED, () => {
-          console.log('Avatar disconnected');
-        });
+        audio.onplay = () => {
+          if (playbackTokenRef.current !== token) return;
+          setOrbState('speaking');
+          onSpeakingStartRef.current();
+        };
+        audio.onended = () => {
+          if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+          }
+          audioRef.current = null;
+          completeSpeaking(token);
+        };
+        audio.onerror = () => {
+          if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+          }
+          audioRef.current = null;
+          speakWithBrowserFallback(questionText, token);
+        };
 
-        avatarInstance.on(StreamingEvents.AVATAR_START_TALKING, () => {
-          console.log('Avatar started talking');
-          onSpeakingStart();
-        });
-
-        avatarInstance.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-          console.log('Avatar stopped talking');
-          onSpeakingComplete();
-        });
-
-        await avatarInstance.createStartAvatar({
-          quality: 'high' as any,
-          avatarName: 'default',
-          knowledgeBase: '',
-          disableIdleTimeout: true
-        });
-
-        console.log('Avatar created successfully');
-        setAvatar(avatarInstance);
+        await audio.play();
       } catch (error) {
-        console.error('Error initializing avatar:', error);
-        setIsInitializing(false);
-        toast({
-          title: 'Avatar Hatası',
-          description: 'Avatar başlatılamadı',
-          variant: 'destructive',
-        });
+        console.error('Turkish TTS playback failed, using browser fallback as plan C:', error);
+        if (!cancelled && playbackTokenRef.current === token) {
+          speakWithBrowserFallback(questionText, token);
+        }
       }
     };
 
-    initAvatar();
+    void speak();
 
     return () => {
-      console.log('Cleaning up avatar...');
-      avatar?.stopAvatar();
-    };
-  }, []);
-
-  // Apply chroma key effect to remove green background
-  const applyChromaKey = () => {
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
-    
-    if (!canvas || !video || video.readyState < 2) return;
-    
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return;
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    console.log('Canvas dimensions:', canvas.width, 'x', canvas.height);
-    
-    const processFrame = () => {
-      if (!video.paused && !video.ended) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-        
-        // Remove green pixels (chroma key)
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-          
-          // Detect green background (adjust threshold as needed)
-          if (g > 90 && r < 90 && b < 90) {
-            data[i + 3] = 0; // Make transparent
-          }
-        }
-        
-        ctx.putImageData(imageData, 0, 0);
-        requestAnimationFrame(processFrame);
+      cancelled = true;
+      stopPlayback();
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
       }
     };
-    
-    processFrame();
-  };
+  }, [questionText]);
 
-  // Display video stream and start chroma key effect
   useEffect(() => {
-    if (stream && videoRef.current) {
-      console.log('Setting video stream');
-      videoRef.current.srcObject = stream;
-      
-      // Wait for video to be ready, then start chroma key
-      videoRef.current.onloadedmetadata = () => {
-        console.log('Video metadata loaded, starting chroma key effect');
-        applyChromaKey();
-      };
+    if (listeningHintTimerRef.current) {
+      window.clearTimeout(listeningHintTimerRef.current);
+      listeningHintTimerRef.current = null;
     }
-  }, [stream]);
 
-  // Speak question when it changes
-  useEffect(() => {
-    if (avatar && questionText && !isInitializing) {
-      console.log('Speaking question:', questionText);
-      avatar.speak({
-        text: questionText,
-        task_type: TaskType.REPEAT,
-      });
+    if (orbState !== 'listening' || isUserResponding) {
+      setShowListeningHint(false);
+      return;
     }
-  }, [questionText, avatar, isInitializing]);
+
+    listeningHintTimerRef.current = window.setTimeout(() => {
+      setShowListeningHint(true);
+      listeningHintTimerRef.current = null;
+    }, 2000);
+
+    return () => {
+      if (listeningHintTimerRef.current) {
+        window.clearTimeout(listeningHintTimerRef.current);
+        listeningHintTimerRef.current = null;
+      }
+    };
+  }, [orbState, isUserResponding]);
+
+  const isSpeaking = orbState === 'speaking';
+  const isPreparing = orbState === 'preparing';
+  const statusLabel = orbState === 'speaking'
+    ? 'Searcho konusuyor'
+    : orbState === 'listening'
+      ? 'Searcho dinliyor'
+      : '';
 
   return (
-    <div className="relative w-full max-w-2xl aspect-video bg-white rounded-lg overflow-hidden border">
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        className="hidden"
-      />
-      <canvas
-        ref={canvasRef}
-        className="w-full h-full object-contain"
-      />
-      {isInitializing && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white/90">
-          <div className="flex flex-col items-center gap-2">
-            <div className="animate-pulse text-foreground">Avatar yükleniyor...</div>
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+    <div className={`relative w-full max-w-2xl overflow-hidden rounded-[32px] border px-6 py-8 shadow-[0_24px_60px_rgba(15,23,42,0.10)] transition-all duration-500 ${
+      isPreparing
+        ? 'border-slate-200/90 bg-[linear-gradient(180deg,_#f6f6f6_0%,_#ededed_100%)]'
+        : 'border-border/70 bg-[radial-gradient(circle_at_top,_rgba(160,210,255,0.35),_transparent_42%),linear-gradient(180deg,_#ffffff_0%,_#f6f9ff_100%)]'
+    }`}>
+      <div className={`absolute inset-0 transition-opacity duration-500 ${
+        isPreparing
+          ? 'bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.25),transparent)] opacity-40'
+          : 'bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.5),transparent)] opacity-70'
+      }`} />
+
+      <div className="relative flex flex-col items-center gap-6 text-center">
+        <div className="relative flex h-40 w-40 items-center justify-center">
+          <div className={`absolute h-36 w-36 rounded-full blur-2xl transition-all duration-500 ${
+            isPreparing
+              ? 'bg-slate-300/35 opacity-70 scale-90'
+              : isSpeaking
+                ? 'bg-sky-200/45 scale-110 opacity-100'
+                : 'bg-sky-200/35 scale-95 opacity-55'
+          }`} />
+          <div className={`absolute h-28 w-28 rounded-full blur-xl transition-all duration-500 ${
+            isPreparing
+              ? 'bg-slate-200/55 opacity-80 scale-90'
+              : isSpeaking
+                ? 'bg-cyan-100/60 scale-105 opacity-100'
+                : 'bg-cyan-100/45 scale-90 opacity-65'
+          }`} />
+          <div className={`relative h-24 w-24 rounded-full transition-all duration-500 ${
+            isPreparing
+              ? 'bg-[radial-gradient(circle_at_30%_30%,_#f4f4f5_0%,_#d4d4d8_45%,_#a1a1aa_100%)] shadow-[inset_0_6px_18px_rgba(255,255,255,0.35),0_10px_24px_rgba(115,115,115,0.16)] scale-95'
+              : 'bg-[radial-gradient(circle_at_30%_30%,_#eefcff_0%,_#abd8ff_38%,_#2a87ff_100%)] shadow-[inset_0_6px_18px_rgba(255,255,255,0.55),0_16px_40px_rgba(42,135,255,0.28)]'
+          } ${isSpeaking ? 'animate-pulse scale-105' : 'scale-100'}`} />
+        </div>
+
+        <div className="space-y-3">
+          {statusLabel ? (
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700/70">
+              {statusLabel}
+            </p>
+          ) : null}
+          <h3 className={`mx-auto max-w-xl text-xl font-semibold leading-relaxed md:text-2xl ${
+            isPreparing ? 'text-slate-500' : 'text-foreground'
+          }`}>
+            {questionText}
+          </h3>
+          <div className="min-h-6">
+            <p
+              className={`text-sm text-muted-foreground transition-all duration-700 ease-out ${
+                showListeningHint ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-2 opacity-0'
+              }`}
+            >
+              Soruyu duyduysaniz yanit vermeye baslayabilirsiniz.
+            </p>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

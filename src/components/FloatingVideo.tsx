@@ -1,79 +1,82 @@
-import { useRef, useState, useEffect } from 'react';
-import { Camera, CameraOff, Maximize2, Minimize2, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { useEffect, useRef, useState } from 'react';
 
 interface FloatingVideoProps {
   videoRef: React.RefObject<HTMLVideoElement>;
-  isEnabled: boolean;
-  onToggle: () => void;
   participantName?: string;
+  isVisible?: boolean;
 }
 
 export const FloatingVideo = ({ 
   videoRef, 
-  isEnabled, 
-  onToggle,
-  participantName = 'Participant'
+  participantName = 'Participant',
+  isVisible = true,
 }: FloatingVideoProps) => {
-  const [position, setPosition] = useState({ x: 20, y: 20 });
-  const [isDragging, setIsDragging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isHidden, setIsHidden] = useState(false);
-  const [showControls, setShowControls] = useState(false);
-  const dragRef = useRef<{ startX: number; startY: number } | null>(null);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [hasUserMoved, setHasUserMoved] = useState(false);
+  const pointerOffsetRef = useRef({ x: 0, y: 0 });
+  const cardRef = useRef<HTMLDivElement | null>(null);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    dragRef.current = {
-      startX: e.clientX - position.x,
-      startY: e.clientY - position.y,
-    };
-  };
+  const videoSize = isExpanded ? { width: 320, height: 240 } : { width: 180, height: 128 };
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging && dragRef.current) {
-        setPosition({
-          x: e.clientX - dragRef.current.startX,
-          y: e.clientY - dragRef.current.startY,
-        });
-      }
+    if (typeof window === 'undefined') return;
+    if (hasUserMoved) return;
+
+    setPosition({
+      x: window.innerWidth - videoSize.width - 24,
+      y: window.innerHeight - videoSize.height - 24,
+    });
+  }, [videoSize.width, videoSize.height, hasUserMoved]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!isDragging) return;
+
+      const nextX = event.clientX - pointerOffsetRef.current.x;
+      const nextY = event.clientY - pointerOffsetRef.current.y;
+      const maxX = window.innerWidth - videoSize.width - 12;
+      const maxY = window.innerHeight - videoSize.height - 12;
+
+      setPosition({
+        x: Math.min(Math.max(12, nextX), maxX),
+        y: Math.min(Math.max(12, nextY), maxY),
+      });
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       setIsDragging(false);
-      dragRef.current = null;
     };
 
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    }
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [isDragging]);
+  }, [isDragging, videoSize.height, videoSize.width]);
 
-  if (isHidden) {
-    return (
-      <Button
-        onClick={() => setIsHidden(false)}
-        className="fixed bottom-24 right-6 z-50"
-        size="icon"
-        variant="outline"
-      >
-        <Camera className="h-4 w-4" />
-      </Button>
-    );
-  }
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
 
-  const videoSize = isExpanded ? { width: 480, height: 360 } : { width: 240, height: 180 };
+    const rect = cardRef.current.getBoundingClientRect();
+    pointerOffsetRef.current = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+
+    setHasUserMoved(true);
+    setIsDragging(true);
+  };
 
   return (
     <div
-      className="fixed z-50 rounded-lg overflow-hidden shadow-2xl bg-background border-2 border-border transition-all duration-200"
+      ref={cardRef}
+      className={`fixed z-50 overflow-hidden rounded-3xl border border-border/70 bg-background/95 shadow-2xl backdrop-blur transition-[width,height,transform,opacity,left,top] duration-500 ${
+        isVisible ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-8 opacity-0'
+      }`}
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
@@ -81,16 +84,21 @@ export const FloatingVideo = ({
         height: `${videoSize.height}px`,
         cursor: isDragging ? 'grabbing' : 'grab',
       }}
-      onMouseEnter={() => setShowControls(true)}
-      onMouseLeave={() => setShowControls(false)}
     >
       <div
-        className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-black/50 to-transparent z-10"
-        onMouseDown={handleMouseDown}
+        className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-3 py-2"
+        onPointerDown={handlePointerDown}
       >
-        <div className="flex items-center justify-between px-2 h-full">
-          <span className="text-white text-xs font-medium">{participantName}</span>
+        <div className="rounded-full bg-black/45 px-2 py-1 text-[11px] font-medium text-white backdrop-blur">
+          {participantName}
         </div>
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="rounded-full bg-black/45 px-3 py-1 text-[11px] font-medium text-white backdrop-blur transition-colors hover:bg-black/60"
+        >
+          {isExpanded ? 'Kucult' : 'Buyut'}
+        </button>
       </div>
 
       <video
@@ -98,47 +106,8 @@ export const FloatingVideo = ({
         autoPlay
         muted
         playsInline
-        className="w-full h-full object-cover"
+        className="h-full w-full object-cover"
       />
-
-      {!isEnabled && (
-        <div className="absolute inset-0 flex items-center justify-center bg-muted/90">
-          <CameraOff className="h-12 w-12 text-muted-foreground" />
-        </div>
-      )}
-
-      <div
-        className={`absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/50 to-transparent transition-opacity duration-200 ${
-          showControls ? 'opacity-100' : 'opacity-0'
-        }`}
-      >
-        <div className="flex items-center justify-center gap-1">
-          <Button
-            onClick={onToggle}
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 text-white hover:bg-white/20"
-          >
-            {isEnabled ? <Camera className="h-3 w-3" /> : <CameraOff className="h-3 w-3" />}
-          </Button>
-          <Button
-            onClick={() => setIsExpanded(!isExpanded)}
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 text-white hover:bg-white/20"
-          >
-            {isExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
-          </Button>
-          <Button
-            onClick={() => setIsHidden(true)}
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 text-white hover:bg-white/20"
-          >
-            <X className="h-3 w-3" />
-          </Button>
-        </div>
-      </div>
     </div>
   );
 };
