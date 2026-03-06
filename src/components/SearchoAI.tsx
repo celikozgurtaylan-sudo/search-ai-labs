@@ -49,6 +49,7 @@ const SearchoAI = ({
   });
   const [questionsInitialized, setQuestionsInitialized] = useState(false);
   const [isWaitingForAnswer, setIsWaitingForAnswer] = useState(false);
+  const [needsRetryRecording, setNeedsRetryRecording] = useState(false);
   const [userTranscript, setUserTranscript] = useState<string>('');
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isReviewingTranscript, setIsReviewingTranscript] = useState(false);
@@ -187,6 +188,7 @@ const SearchoAI = ({
     if (!projectContext?.sessionId) return;
     setUserTranscript('');
     setIsTranscribing(false);
+    setNeedsRetryRecording(false);
     try {
       console.log('🎯 Getting next question...');
       const data = await interviewService.getNextQuestion(projectContext.sessionId);
@@ -280,6 +282,7 @@ const SearchoAI = ({
     if (audioTranscriberRef.current) {
       audioTranscriberRef.current.stop();
     }
+    setNeedsRetryRecording(false);
     setUserTranscript('');
     setIsTranscribing(true);
     setIsListening(true);
@@ -299,6 +302,7 @@ const SearchoAI = ({
       setIsTranscribing(false);
       setIsListening(false);
       setIsWaitingForAnswer(false);
+      setNeedsRetryRecording(false);
       setIsReviewingTranscript(true);
       // Don't auto-save - wait for user confirmation
     };
@@ -306,6 +310,27 @@ const SearchoAI = ({
       console.error('Transcription error:', error);
       setIsTranscribing(false);
       setIsListening(false);
+
+      if (error === 'NO_SPEECH_DETECTED') {
+        if (isRecordingVideo) {
+          void stopVideoRecording();
+        }
+        setUserTranscript('');
+        setEditableTranscript('');
+        setIsReviewingTranscript(false);
+        setIsWaitingForAnswer(true);
+        setNeedsRetryRecording(true);
+        toast({
+          title: "Ses algilanmadi",
+          description: "Lutfen yanitinizi net bir sekilde sesli olarak verin.",
+        });
+        return;
+      }
+
+      if (isRecordingVideo) {
+        void stopVideoRecording();
+      }
+
       toast({
         title: "Hata",
         description: "Ses kaydı başarısız",
@@ -378,6 +403,7 @@ const SearchoAI = ({
     setUserTranscript('');
     setEditableTranscript('');
     setIsWaitingForAnswer(true);
+    setNeedsRetryRecording(false);
 
     // Automatically start listening just like the initial flow
     await startListening();
@@ -389,6 +415,7 @@ const SearchoAI = ({
       setIsReviewingTranscript(false);
       setUserTranscript('');
       setEditableTranscript('');
+      setNeedsRetryRecording(false);
       toast({
         title: "Soru Atlandı",
         description: "Sonraki soruya geçiliyor..."
@@ -421,12 +448,12 @@ const SearchoAI = ({
   if (showTurkishPreamble && isPreamblePhase) {
     return <TurkishPreambleDisplay projectContext={projectContext} onComplete={startActualQuestions} onSkip={startActualQuestions} />;
   }
-  return <div className="h-full flex flex-col bg-background">
+  return <div className="min-h-full flex flex-col bg-background">
       {showTurkishPreamble && isPreamblePhase && <TurkishPreambleDisplay projectContext={projectContext} onComplete={startActualQuestions} onSkip={startActualQuestions} />}
 
       {!showTurkishPreamble && <>
           {/* Main Content Area */}
-          <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
+          <div className="flex-1 flex flex-col items-center px-6 py-12">
             <div className="w-full max-w-4xl space-y-8">
                 {/* Progress Indicator */}
                 <div className="text-center">
@@ -440,7 +467,7 @@ const SearchoAI = ({
                 {currentQuestion && !isPreamblePhase && <div className="space-y-6">
                     {/* Avatar Display */}
                     <div className="flex justify-center">
-                      <AvatarSpeaker questionText={currentQuestion.question_text} onSpeakingStart={() => {
+                      <AvatarSpeaker questionText={currentQuestion.question_text} isUserResponding={isListening || isTranscribing || isReviewingTranscript || Boolean(userTranscript)} onSpeakingStart={() => {
                 setIsWaitingForAnswer(false);
               }} onSpeakingComplete={async () => {
                 setIsWaitingForAnswer(true);
@@ -548,6 +575,15 @@ const SearchoAI = ({
                               <p className="text-base text-gray-600 dark:text-gray-400 font-medium text-center">
                                 Lütfen yanıtınızı sesli olarak verin...
                               </p>
+                              {needsRetryRecording ? (
+                                <Button
+                                  onClick={reRecordAnswer}
+                                  size="lg"
+                                  className="mt-2 bg-brand-primary text-white hover:bg-brand-primary-hover"
+                                >
+                                  Tekrar kaydet
+                                </Button>
+                              ) : null}
                             </div>
                           </div> : null}
                       </div>

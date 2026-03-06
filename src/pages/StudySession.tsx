@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import SearchoAI from "@/components/SearchoAI";
 import { FloatingVideo } from "@/components/FloatingVideo";
 import { participantService } from "@/services/participantService";
 import { projectService } from "@/services/projectService";
 import { interviewService } from "@/services/interviewService";
-import { CheckCircle, AlertCircle, Loader2, ExternalLink, Image as ImageIcon } from "lucide-react";
+import { CheckCircle, AlertCircle, Loader2, ExternalLink, Image as ImageIcon, Camera } from "lucide-react";
 
 // Mock data for design mode
 const MOCK_PROJECT_DATA = {
@@ -55,13 +56,17 @@ const StudySession = () => {
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
+  const [cameraGateCompleted, setCameraGateCompleted] = useState(false);
+  const [cameraRequestPending, setCameraRequestPending] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraGateVideoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     // Skip initialization in design mode
     if (isDesignMode) {
       console.log('Design mode active - using mock data');
       setLoading(false);
+      void requestCameraAccess();
       return;
     }
     
@@ -72,14 +77,29 @@ const StudySession = () => {
       setLoading(false);
     }
     
-    checkCameraPermissions();
+    void checkCameraPermissions();
 
     return () => {
-      if (cameraStream) {
-        cameraStream.getTracks().forEach(track => track.stop());
-      }
+      cameraStream?.getTracks().forEach(track => track.stop());
     };
   }, [sessionToken]);
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = cameraStream;
+      void videoRef.current.play().catch(console.error);
+    }
+
+    if (cameraGateVideoRef.current) {
+      cameraGateVideoRef.current.srcObject = cameraStream;
+      void cameraGateVideoRef.current.play().catch(console.error);
+    }
+  }, [cameraStream]);
+
+  useEffect(() => {
+    if (cameraGateCompleted || cameraEnabled || cameraRequestPending) return;
+    void requestCameraAccess();
+  }, [cameraGateCompleted, cameraEnabled, cameraRequestPending]);
 
   const initializeSession = async () => {
     try {
@@ -131,39 +151,50 @@ const StudySession = () => {
   const checkCameraPermissions = async () => {
     try {
       const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
-      setHasCameraPermission(permissionStatus.state === 'granted');
+      const granted = permissionStatus.state === 'granted';
+      setHasCameraPermission(granted);
+
+      permissionStatus.onchange = () => {
+        const isGranted = permissionStatus.state === 'granted';
+        setHasCameraPermission(isGranted);
+        if (!isGranted) {
+          setCameraGateCompleted(false);
+        }
+      };
+
+      if (granted && !cameraStream) {
+        await requestCameraAccess();
+      }
     } catch (error) {
       console.error('Error checking camera permissions:', error);
     }
   };
 
-  const toggleCamera = async () => {
-    if (cameraEnabled && cameraStream) {
-      cameraStream.getTracks().forEach(track => track.stop());
-      setCameraStream(null);
+  const requestCameraAccess = async () => {
+    setCameraRequestPending(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 960 },
+          height: { ideal: 720 },
+          facingMode: "user",
+        },
+        audio: false
+      });
+
+      cameraStream?.getTracks().forEach(track => track.stop());
+      setCameraStream(stream);
+      setCameraEnabled(true);
+      setHasCameraPermission(true);
+      return true;
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+      setHasCameraPermission(false);
       setCameraEnabled(false);
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480 },
-          audio: false
-        });
-        setCameraStream(stream);
-        setCameraEnabled(true);
-        setHasCameraPermission(true);
-        
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(console.error);
-        }
-      } catch (error) {
-        console.error('Error accessing camera:', error);
-        setHasCameraPermission(false);
-        setCameraEnabled(false);
-      }
+      toast.error("Devam etmek için kamera izni vermelisiniz");
+      return false;
+    } finally {
+      setCameraRequestPending(false);
     }
   };
 
@@ -172,6 +203,7 @@ const StudySession = () => {
   };
 
   const designScreens: Array<{ name?: string; url: string; source?: string }> = projectData?.analysis?.designScreens || [];
+  const activeScreen = designScreens[activeScreenIndex] || null;
 
   if (loading) {
     return (
@@ -228,67 +260,72 @@ const StudySession = () => {
       {/* Floating Video */}
       <FloatingVideo
         videoRef={videoRef}
-        isEnabled={cameraEnabled}
-        onToggle={toggleCamera}
         participantName={participantName || undefined}
+        isVisible={cameraGateCompleted && cameraEnabled}
       />
 
       {/* Main Content */}
-      <div className="h-screen flex flex-col">
+      <div className="min-h-screen flex flex-col">
         {designScreens.length > 0 && (
-          <div className="border-b border-border-light bg-white/95 backdrop-blur px-4 py-3">
-            <div className="flex items-center justify-between gap-3 mb-2">
-              <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
-                <ImageIcon className="w-4 h-4 text-brand-primary" />
-                Test Ekranlari
+          <div className="shrink-0 border-b border-border-light bg-white/96 backdrop-blur">
+            <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:px-6">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                  <ImageIcon className="w-4 h-4 text-brand-primary" />
+                  Test Ekranlari
+                </div>
+                <p className="text-xs text-text-secondary">
+                  {activeScreenIndex + 1} / {designScreens.length}
+                </p>
               </div>
-              <p className="text-xs text-text-secondary">Moderatör: katilimciya gorevi verip ilgili ekrani actirin.</p>
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {designScreens.map((screen, index) => (
-                <button
-                  key={`${screen.url}-${index}`}
-                  type="button"
-                  onClick={() => setActiveScreenIndex(index)}
-                  className={`shrink-0 rounded-md border px-3 py-2 text-left text-xs transition-colors ${
-                    activeScreenIndex === index
-                      ? "border-brand-primary bg-brand-primary-light text-brand-primary"
-                      : "border-border-light bg-surface hover:border-brand-primary/40"
-                  }`}
-                >
-                  <p className="font-medium line-clamp-1">{screen.name || `Screen ${index + 1}`}</p>
-                  <p className="text-text-muted">{screen.source === "figma-link" ? "Figma Link" : "Image"}</p>
-                </button>
-              ))}
-            </div>
-            {designScreens[activeScreenIndex] && (
-              <div className="mt-3 rounded-md border border-border-light bg-canvas p-2">
-                {designScreens[activeScreenIndex].source === "figma-link" ? (
-                  <a
-                    href={designScreens[activeScreenIndex].url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 text-sm text-brand-primary hover:underline"
+
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {designScreens.map((screen, index) => (
+                  <button
+                    key={`${screen.url}-${index}`}
+                    type="button"
+                    onClick={() => setActiveScreenIndex(index)}
+                    className={`shrink-0 rounded-2xl border px-4 py-3 text-left text-xs transition-colors ${
+                      activeScreenIndex === index
+                        ? "border-brand-primary bg-brand-primary-light text-brand-primary"
+                        : "border-border-light bg-surface hover:border-brand-primary/40"
+                    }`}
                   >
-                    Figma ekranini yeni sekmede ac
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                ) : (
-                  <img
-                    src={designScreens[activeScreenIndex].url}
-                    alt={designScreens[activeScreenIndex].name || "Design screen"}
-                    className="max-h-48 w-auto rounded-md border border-border-light object-contain bg-white"
-                  />
-                )}
+                    <p className="font-medium line-clamp-1">{screen.name || `Screen ${index + 1}`}</p>
+                    <p className="text-text-muted">{screen.source === "figma-link" ? "Figma Link" : "Image"}</p>
+                  </button>
+                ))}
               </div>
-            )}
+
+              {activeScreen && (
+                <div className="flex min-h-[320px] max-h-[44vh] items-center justify-center rounded-[32px] border border-border-light bg-[#f7f7f5] p-4 md:p-8">
+                  {activeScreen.source === "figma-link" ? (
+                    <a
+                      href={activeScreen.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-full border border-brand-primary/20 bg-white px-5 py-3 text-sm font-medium text-brand-primary shadow-sm hover:border-brand-primary/40"
+                    >
+                      Figma ekranini yeni sekmede ac
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  ) : (
+                    <img
+                      src={activeScreen.url}
+                      alt={activeScreen.name || "Design screen"}
+                      className="max-h-[36vh] w-auto max-w-full rounded-[28px] border border-border-light bg-white object-contain shadow-[0_24px_60px_rgba(15,23,42,0.10)] md:max-h-[38vh]"
+                    />
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {sessionId && projectData && (
-          <div className="flex-1 min-h-0">
+          <div className="flex-1">
             <SearchoAI
-              isActive={sessionStatus === 'active'}
+              isActive={sessionStatus === 'active' && cameraGateCompleted}
               projectContext={{
                 description: projectData.description || '',
                 discussionGuide: projectData.analysis?.discussionGuide || null,
@@ -303,6 +340,84 @@ const StudySession = () => {
           </div>
         )}
       </div>
+
+      {!cameraGateCompleted && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(15,23,42,0.45)] px-4 backdrop-blur-md">
+          <Card className="w-full max-w-3xl overflow-hidden rounded-[36px] border border-white/60 bg-white/95 shadow-[0_30px_80px_rgba(15,23,42,0.25)]">
+            <CardContent className="grid gap-8 p-6 md:grid-cols-[1.1fr_0.9fr] md:p-8">
+              <div className="space-y-5">
+                <div className="inline-flex items-center gap-2 rounded-full bg-brand-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-brand-primary">
+                  <Camera className="h-3.5 w-3.5" />
+                  Kamera Gerekli
+                </div>
+                <div className="space-y-3">
+                  <h2 className="text-2xl font-semibold text-text-primary md:text-3xl">
+                    Görüşmeye başlamadan önce kameranızı açın
+                  </h2>
+                  <p className="text-base leading-relaxed text-text-secondary">
+                    Bu oturum görüntülü yürütülür. Kamera izni vermeden devam edemezsiniz.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button
+                    onClick={() => setCameraGateCompleted(true)}
+                    disabled={!cameraEnabled}
+                    size="lg"
+                    className={`min-w-[180px] ${
+                      cameraEnabled
+                        ? "bg-brand-primary text-white hover:bg-brand-primary-hover"
+                        : "bg-muted text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    Devam et
+                  </Button>
+                </div>
+
+                {!cameraEnabled && !cameraRequestPending && (
+                  <p className="text-sm text-text-secondary">
+                    Kamera izni gerekiyor. Tarayıcı izin penceresini onaylayın.
+                  </p>
+                )}
+
+                {cameraRequestPending && (
+                  <p className="text-sm text-text-secondary">
+                    Kamera izni isteniyor...
+                  </p>
+                )}
+              </div>
+
+              <div className="relative overflow-hidden rounded-[28px] border border-border/70 bg-slate-950 shadow-[0_20px_50px_rgba(15,23,42,0.24)]">
+                <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 py-3">
+                  <div className="rounded-full bg-black/45 px-3 py-1 text-xs font-medium text-white backdrop-blur">
+                    {participantName || 'Katilimci'}
+                  </div>
+                  <div className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-medium text-emerald-100 backdrop-blur">
+                    Canli onizleme
+                  </div>
+                </div>
+
+                {cameraEnabled ? (
+                  <video
+                    ref={cameraGateVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className="aspect-[4/3] h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex aspect-[4/3] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_45%),linear-gradient(180deg,_#1f2937_0%,_#0f172a_100%)]">
+                    <div className="space-y-3 text-center text-white/80">
+                      <Camera className="mx-auto h-12 w-12" />
+                      <p className="text-sm">Kamera onizlemesi burada gorunecek</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };

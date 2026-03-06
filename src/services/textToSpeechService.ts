@@ -30,31 +30,44 @@ export const splitIntoSentences = (text: string): TTSSentence[] => {
 };
 
 /**
- * Convert text to speech using ElevenLabs via edge function
+ * Convert text to speech using the Turkish-first edge function pipeline.
  */
 export const textToSpeech = async (text: string): Promise<ArrayBuffer> => {
-  try {
-    const { data, error } = await supabase.functions.invoke('text-to-speech', {
-      body: { text },
-    });
-
-    if (error) throw error;
-    
-    if (!data?.audioContent) {
-      throw new Error('No audio content received');
-    }
-
-    // Convert base64 to ArrayBuffer
-    const binaryString = atob(data.audioContent);
+  const decodeAudio = (audioContent: string) => {
+    const binaryString = atob(audioContent);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-    
+
     return bytes.buffer;
-  } catch (error) {
-    console.error('TTS error:', error);
-    throw error;
+  };
+
+  const invokeTTS = async (functionName: 'turkish-tts' | 'text-to-speech') => {
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: { text },
+    });
+
+    if (error) throw error;
+
+    if (!data?.audioContent) {
+      throw new Error('No audio content received');
+    }
+
+    return decodeAudio(data.audioContent);
+  };
+
+  try {
+    return await invokeTTS('turkish-tts');
+  } catch (primaryError) {
+    console.warn('Primary Turkish TTS failed, falling back to legacy TTS:', primaryError);
+
+    try {
+      return await invokeTTS('text-to-speech');
+    } catch (fallbackError) {
+      console.error('TTS error:', fallbackError);
+      throw fallbackError;
+    }
   }
 };
 

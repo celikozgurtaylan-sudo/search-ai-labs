@@ -1,5 +1,23 @@
 import { supabase } from "@/integrations/supabase/client";
 
+const MIN_SPEECH_LEVEL = 14;
+const MIN_SPEECH_FRAMES = 4;
+const MAX_WAIT_FOR_SPEECH_MS = 5000;
+const SILENCE_AFTER_SPEECH_MS = 1800;
+const MIN_RECORDING_MS = 1200;
+const MIN_AUDIO_BLOB_SIZE = 12000;
+const HALLUCINATION_PATTERNS = [
+  /abone ol/i,
+  /yorum yap/i,
+  /begen buton/i,
+  /beğen buton/i,
+  /altyazi/i,
+  /altyazı/i,
+  /altyaz[iı] by/i,
+  /kanal[iı]m[ıi]za/i,
+  /bildirim zil/i,
+];
+
 export class AudioTranscriber {
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
@@ -8,6 +26,13 @@ export class AudioTranscriber {
   private analyser: AnalyserNode | null = null;
   private stream: MediaStream | null = null;
   private isRecording = false;
+  private recordingStartedAt = 0;
+  private speechDetected = false;
+  private speechFrameCount = 0;
+  private peakLevel = 0;
+  private totalLevel = 0;
+  private levelSampleCount = 0;
+  private stopReason: 'manual' | 'speech-ended' | 'no-speech' = 'manual';
 
   onTranscriptionUpdate: (text: string) => void = () => {};
   onComplete: (text: string) => void = () => {};
@@ -38,6 +63,13 @@ export class AudioTranscriber {
       });
 
       this.audioChunks = [];
+      this.recordingStartedAt = performance.now();
+      this.speechDetected = false;
+      this.speechFrameCount = 0;
+      this.peakLevel = 0;
+      this.totalLevel = 0;
+      this.levelSampleCount = 0;
+      this.stopReason = 'manual';
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -71,13 +103,29 @@ export class AudioTranscriber {
 
       this.analyser.getByteFrequencyData(dataArray);
       const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+      const elapsed = performance.now() - this.recordingStartedAt;
 
-      // If volume is below threshold, start silence timer
-      if (average < 10) {
+      this.totalLevel += average;
+      this.levelSampleCount += 1;
+      this.peakLevel = Math.max(this.peakLevel, average);
+
+      if (average >= MIN_SPEECH_LEVEL) {
+        this.speechFrameCount += 1;
+      } else {
+        this.speechFrameCount = Math.max(0, this.speechFrameCount - 1);
+      }
+
+      if (!this.speechDetected && this.speechFrameCount >= MIN_SPEECH_FRAMES) {
+        this.speechDetected = true;
+      }
+
+      // If volume is below threshold after speech has started, start silence timer.
+      if (this.speechDetected && average < MIN_SPEECH_LEVEL) {
         if (!this.silenceTimer) {
           this.silenceTimer = setTimeout(() => {
+            this.stopReason = 'speech-ended';
             this.stop();
-          }, 1500); // 1.5 seconds of silence
+          }, SILENCE_AFTER_SPEECH_MS);
         }
       } else {
         // Cancel silence timer if sound detected
@@ -85,6 +133,12 @@ export class AudioTranscriber {
           clearTimeout(this.silenceTimer);
           this.silenceTimer = null;
         }
+      }
+
+      if (!this.speechDetected && elapsed >= MAX_WAIT_FOR_SPEECH_MS) {
+        this.stopReason = 'no-speech';
+        this.stop();
+        return;
       }
 
       // Continue checking
@@ -119,13 +173,27 @@ export class AudioTranscriber {
 
   private async processAudio() {
     if (this.audioChunks.length === 0) {
-      this.onError('No audio recorded');
+      this.onError('NO_SPEECH_DETECTED');
       return;
     }
 
     try {
       // Combine chunks into single blob
       const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+      const recordingDuration = performance.now() - this.recordingStartedAt;
+      const averageLevel = this.levelSampleCount > 0 ? this.totalLevel / this.levelSampleCount : 0;
+
+      if (
+        this.stopReason === 'no-speech' ||
+        !this.speechDetected ||
+        recordingDuration < MIN_RECORDING_MS ||
+        audioBlob.size < MIN_AUDIO_BLOB_SIZE ||
+        this.peakLevel < MIN_SPEECH_LEVEL ||
+        averageLevel < 4
+      ) {
+        this.onError('NO_SPEECH_DETECTED');
+        return;
+      }
       
       // Convert to base64
       const base64Audio = await this.blobToBase64(audioBlob);
@@ -144,10 +212,24 @@ export class AudioTranscriber {
         return;
       }
 
-      if (data?.text) {
-        this.onComplete(data.text);
+      const transcript = typeof data?.text === 'string' ? data.text.trim() : '';
+
+      if (!transcript) {
+        this.onError('NO_SPEECH_DETECTED');
+        return;
+      }
+
+      const isHallucination = HALLUCINATION_PATTERNS.some((pattern) => pattern.test(transcript));
+      if (isHallucination) {
+        console.warn('Ignoring likely hallucinated transcription:', transcript);
+        this.onError('NO_SPEECH_DETECTED');
+        return;
+      }
+
+      if (transcript) {
+        this.onComplete(transcript);
       } else {
-        this.onError('No transcription received');
+        this.onError('NO_SPEECH_DETECTED');
       }
     } catch (error) {
       console.error('Error processing audio:', error);
