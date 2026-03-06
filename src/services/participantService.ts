@@ -160,19 +160,29 @@ export const participantService = {
     return data as StudySession;
   },
 
-  async createSessionForParticipant(projectId: string, participantId: string): Promise<StudySession> {
+  async createSessionForParticipant(projectId: string, participantId: string, invitationToken: string): Promise<StudySession> {
     const sessionToken = this.generateSessionToken();
-    
-    const session: Omit<StudySession, 'id' | 'created_at' | 'updated_at'> = {
-      project_id: projectId,
-      participant_id: participantId,
-      session_token: sessionToken,
-      status: 'active',
-      started_at: new Date().toISOString(),
-      metadata: {}
-    };
 
-    return this.createSession(session);
+    // Use RPC function to bypass RLS for anonymous participants
+    const { data, error } = await supabase
+      .rpc('create_session_for_participant', {
+        token_input: invitationToken,
+        session_token_input: sessionToken
+      })
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error creating session for participant:', error);
+      throw new Error(`Failed to create session: ${error.message}`);
+    }
+
+    const result = data as { success?: boolean; message?: string; session_data?: unknown } | null;
+
+    if (!result || !result.success) {
+      throw new Error(result?.message || 'Failed to create session');
+    }
+
+    return result.session_data as StudySession;
   },
 
   async getSessionByToken(token: string): Promise<StudySession | null> {

@@ -59,10 +59,11 @@ const ParticipantLanding = () => {
       // Update participant status to joined
       await participantService.updateParticipantStatusByToken(participant.invitation_token, 'joined');
       
-      // Create a session record in the database
+      // Create a session record in the database using RPC (bypasses RLS)
       const session = await participantService.createSessionForParticipant(
         participant.project_id,
-        participant.id!
+        participant.id!,
+        participant.invitation_token
       );
       
       // Redirect to the study interface with the database session token

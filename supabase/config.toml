@@ -1,4 +1,5 @@
-project_id = "gqdvwmwueaqyqepwyifk"
+
+project_id = "ueucxoyvktdnmxkxxbvd"
 
 [functions.speech-to-text]
 verify_jwt = false

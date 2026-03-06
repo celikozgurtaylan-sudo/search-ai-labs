@@ -22,6 +22,7 @@ interface ProjectData {
   id?: string;
   description: string;
   template?: string;
+  analysis?: any;
   timestamp: number;
 }
 
@@ -75,14 +76,21 @@ const Workspace = () => {
     if (!projectData?.id) return;
     
     try {
+      const existingAnalysis = projectData.analysis || {};
+      const nextAnalysis = {
+        ...existingAnalysis,
+        discussionGuide,
+        isResearchRelated: true,
+        updatedAt: new Date().toISOString()
+      };
+
       await projectService.updateProject(projectData.id, {
         analysis: {
-          ...projectData,
-          discussionGuide,
-          isResearchRelated: true,
-          updatedAt: new Date().toISOString()
+          ...nextAnalysis
         }
       });
+
+      setProjectData((prev) => (prev ? { ...prev, analysis: nextAnalysis } : prev));
     } catch (error) {
       console.error('Failed to update project:', error);
     }

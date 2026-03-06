@@ -7,7 +7,7 @@ import { FloatingVideo } from "@/components/FloatingVideo";
 import { participantService } from "@/services/participantService";
 import { projectService } from "@/services/projectService";
 import { interviewService } from "@/services/interviewService";
-import { CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { CheckCircle, AlertCircle, Loader2, ExternalLink, Image as ImageIcon } from "lucide-react";
 
 // Mock data for design mode
 const MOCK_PROJECT_DATA = {
@@ -51,6 +51,7 @@ const StudySession = () => {
   const [participantName, setParticipantName] = useState<string | null>(isDesignMode ? 'Örnek Katılımcı' : null);
   const [projectData, setProjectData] = useState<any>(isDesignMode ? MOCK_PROJECT_DATA : null);
   const [sessionStatus, setSessionStatus] = useState<'waiting' | 'active' | 'completed'>(isDesignMode ? 'active' : 'waiting');
+  const [activeScreenIndex, setActiveScreenIndex] = useState(0);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
@@ -170,6 +171,8 @@ const StudySession = () => {
     setSessionStatus('completed');
   };
 
+  const designScreens: Array<{ name?: string; url: string; source?: string }> = projectData?.analysis?.designScreens || [];
+
   if (loading) {
     return (
       <div className="min-h-screen bg-canvas flex items-center justify-center">
@@ -232,19 +235,72 @@ const StudySession = () => {
 
       {/* Main Content */}
       <div className="h-screen flex flex-col">
+        {designScreens.length > 0 && (
+          <div className="border-b border-border-light bg-white/95 backdrop-blur px-4 py-3">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                <ImageIcon className="w-4 h-4 text-brand-primary" />
+                Test Ekranlari
+              </div>
+              <p className="text-xs text-text-secondary">Moderatör: katilimciya gorevi verip ilgili ekrani actirin.</p>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {designScreens.map((screen, index) => (
+                <button
+                  key={`${screen.url}-${index}`}
+                  type="button"
+                  onClick={() => setActiveScreenIndex(index)}
+                  className={`shrink-0 rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                    activeScreenIndex === index
+                      ? "border-brand-primary bg-brand-primary-light text-brand-primary"
+                      : "border-border-light bg-surface hover:border-brand-primary/40"
+                  }`}
+                >
+                  <p className="font-medium line-clamp-1">{screen.name || `Screen ${index + 1}`}</p>
+                  <p className="text-text-muted">{screen.source === "figma-link" ? "Figma Link" : "Image"}</p>
+                </button>
+              ))}
+            </div>
+            {designScreens[activeScreenIndex] && (
+              <div className="mt-3 rounded-md border border-border-light bg-canvas p-2">
+                {designScreens[activeScreenIndex].source === "figma-link" ? (
+                  <a
+                    href={designScreens[activeScreenIndex].url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-brand-primary hover:underline"
+                  >
+                    Figma ekranini yeni sekmede ac
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                ) : (
+                  <img
+                    src={designScreens[activeScreenIndex].url}
+                    alt={designScreens[activeScreenIndex].name || "Design screen"}
+                    className="max-h-48 w-auto rounded-md border border-border-light object-contain bg-white"
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {sessionId && projectData && (
-          <SearchoAI
-            isActive={sessionStatus === 'active'}
-            projectContext={{
-              description: projectData.description || '',
-              discussionGuide: projectData.analysis?.discussionGuide || null,
-              template: 'interview',
-              sessionId: sessionId,
-              projectId: projectData.id,
-              participantId: participantId
-            }}
-            onSessionEnd={handleCompleteSession}
-          />
+          <div className="flex-1 min-h-0">
+            <SearchoAI
+              isActive={sessionStatus === 'active'}
+              projectContext={{
+                description: projectData.description || '',
+                discussionGuide: projectData.analysis?.discussionGuide || null,
+                template: 'interview',
+                sessionId: sessionId,
+                projectId: projectData.id,
+                participantId: participantId,
+                designScreens
+              }}
+              onSessionEnd={handleCompleteSession}
+            />
+          </div>
         )}
       </div>
     </div>

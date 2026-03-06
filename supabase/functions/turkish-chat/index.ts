@@ -263,7 +263,7 @@ serve(async (req) => {
       throw new Error('OPENAI_API_KEY is not set');
     }
 
-    const { message, conversationHistory = [] } = await req.json();
+    const { message, conversationHistory = [], researchContext = null } = await req.json();
     console.log(`[Searcho] Message: "${message.substring(0, 80)}..."`);
     console.log(`[Searcho] Conversation depth: ${Math.floor(conversationHistory.length / 2)}`);
 
@@ -273,6 +273,30 @@ serve(async (req) => {
       { role: 'user', content: SYSTEM_PROMPT },
       { role: 'assistant', content: 'Anlasıldı. Searcho AI asistanı olarak hazırım. Kullanıcının mesajını bekliyor ve karar çerçeveme göre yanıt vereceğim.' }
     ];
+
+    if (researchContext?.usabilityTesting) {
+      const usableScreens = Array.isArray(researchContext.designScreens)
+        ? researchContext.designScreens.map((s: any) => `${s.name || 'Screen'} (${s.source || 'unknown'}): ${s.url || ''}`).join('\n')
+        : '';
+
+      const usabilityContextPrompt = `USABILITY_TESTING_CONTEXT:
+Bu proje ekran tabanli kullanilabilirlik testidir. Konusma boyunca su prensipleri uygula:
+- Belirsiz noktalarda kullaniciya netlestirici sorular sor.
+- Sorulari gorev tamamlama, anlasilirlik, guven, karar verme ve surtunme noktalarina odakla.
+- PLAN olustururken bolum ve sorulari ekran kullanilabilirligi odakli kur.
+
+Arastirma amaci: ${researchContext.usabilityTesting.objective || 'Belirtilmedi'}
+Ana kullanici gorevi: ${researchContext.usabilityTesting.primaryTask || 'Belirtilmedi'}
+Hedef kullanicilar: ${researchContext.usabilityTesting.targetUsers || 'Belirtilmedi'}
+Basari kriterleri: ${researchContext.usabilityTesting.successSignals || 'Belirtilmedi'}
+Riskli alanlar: ${researchContext.usabilityTesting.riskAreas || 'Belirtilmedi'}
+Ek yonlendirme: ${researchContext.usabilityTesting.guidancePrompt || 'Yok'}
+Screen listesi:
+${usableScreens || 'Screen bilgisi yok'}`;
+
+      messages.push({ role: 'user', content: usabilityContextPrompt });
+      messages.push({ role: 'assistant', content: 'Usability test baglamini aldim. Sorularimi ekran kullanilabilirligi ekseninde kuracagim.' });
+    }
 
     // Add conversation history
     for (const msg of conversationHistory) {
