@@ -40,13 +40,13 @@ const templates = [{
 }];
 
 const placeholderHints = [
-  "Searcho AI, bu açılış sayfasında dönüşümü düşüren 3 kritik friksiyonu bulur musun?",
-  "Bu reklam mesajında güveni zedeleyen ifadeleri tespit edip daha güçlü alternatifler önerir misin?",
-  "Hedef kitlemiz için hangi görüşme sorularını sorarsak satın alma engellerini daha net görürüz?",
-  "Kullanıcıların karar anında yaşadığı tereddütleri çıkarıp önceliklendirilmiş bir aksiyon planı oluşturur musun?",
-  "Rakiplerle kıyaslayıp değer önerimizdeki boşlukları ve fırsatları net bir rapora dönüştürür müsün?",
-  "İlk 10 kullanıcı görüşmesinden tema analizi yapıp en yüksek etkili iyileştirmeleri sıralar mısın?"
-];
+"Searcho AI, bu açılış sayfasında dönüşümü düşüren 3 kritik friksiyonu bulur musun?",
+"Bu reklam mesajında güveni zedeleyen ifadeleri tespit edip daha güçlü alternatifler önerir misin?",
+"Hedef kitlemiz için hangi görüşme sorularını sorarsak satın alma engellerini daha net görürüz?",
+"Kullanıcıların karar anında yaşadığı tereddütleri çıkarıp önceliklendirilmiş bir aksiyon planı oluşturur musun?",
+"Rakiplerle kıyaslayıp değer önerimizdeki boşlukları ve fırsatları net bir rapora dönüştürür müsün?",
+"İlk 10 kullanıcı görüşmesinden tema analizi yapıp en yüksek etkili iyileştirmeleri sıralar mısın?"];
+
 
 interface DesignScreenDraft {
   id: string;
@@ -106,12 +106,12 @@ const Index = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       setIsTransitioning(true);
-      
+
       setTimeout(() => {
         const currentIndex = placeholderHints.indexOf(currentPlaceholder);
         const nextIndex = (currentIndex + 1) % placeholderHints.length;
         const afterNextIndex = (nextIndex + 1) % placeholderHints.length;
-        
+
         setCurrentPlaceholder(placeholderHints[nextIndex]);
         setNextPlaceholder(placeholderHints[afterNextIndex]);
         setIsTransitioning(false);
@@ -139,15 +139,15 @@ const Index = () => {
     const items = Array.from(event.clipboardData.items || []);
     if (items.length === 0) return;
 
-    const imageFiles = items
-      .filter((item) => item.type.startsWith("image/"))
-      .map((item, index) => {
-        const file = item.getAsFile();
-        if (!file) return null;
-        const extension = file.type.split("/")[1] || "png";
-        return new File([file], `figma-screen-${Date.now()}-${index}.${extension}`, { type: file.type });
-      })
-      .filter((file): file is File => file !== null);
+    const imageFiles = items.
+    filter((item) => item.type.startsWith("image/")).
+    map((item, index) => {
+      const file = item.getAsFile();
+      if (!file) return null;
+      const extension = file.type.split("/")[1] || "png";
+      return new File([file], `figma-screen-${Date.now()}-${index}.${extension}`, { type: file.type });
+    }).
+    filter((file): file is File => file !== null);
 
     if (imageFiles.length === 0) return;
 
@@ -167,18 +167,18 @@ const Index = () => {
   };
 
   const fileToDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          resolve(reader.result);
-          return;
-        }
-        reject(new Error("Failed to encode image"));
-      };
-      reader.onerror = () => reject(new Error("Failed to read image file"));
-      reader.readAsDataURL(file);
-    });
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("Failed to encode image"));
+    };
+    reader.onerror = () => reject(new Error("Failed to read image file"));
+    reader.readAsDataURL(file);
+  });
 
   const uploadDesignScreens = async (): Promise<UploadedDesignScreen[]> => {
     if (!user || screenDrafts.length === 0) return [];
@@ -205,12 +205,12 @@ const Index = () => {
           const safeFileName = draft.name.replace(/[^a-zA-Z0-9._-]/g, "_");
           const filePath = `${user.id}/${Date.now()}-${safeFileName}`;
           try {
-            const { error: uploadError } = await supabase.storage
-              .from(DESIGN_SCREENS_BUCKET)
-              .upload(filePath, draft.file, {
-                contentType: draft.file.type,
-                upsert: false
-              });
+            const { error: uploadError } = await supabase.storage.
+            from(DESIGN_SCREENS_BUCKET).
+            upload(filePath, draft.file, {
+              contentType: draft.file.type,
+              upsert: false
+            });
 
             if (uploadError) {
               throw new Error(uploadError.message);
@@ -283,19 +283,19 @@ const Index = () => {
       const uploadedScreens = await uploadDesignScreens();
       const designScreens: UploadedDesignScreen[] = [...uploadedScreens];
 
-      const usabilityTesting = hasScreenContext
-        ? {
-            mode: "figma-usability",
-            objective: usabilityIntake.objective.trim(),
-            primaryTask: usabilityIntake.primaryTask.trim(),
-            targetUsers: usabilityIntake.targetUsers.trim(),
-            successSignals: usabilityIntake.successSignals.trim(),
-            riskAreas: usabilityIntake.riskAreas.trim(),
-            guidancePrompt:
-              "Bu proje ekran tabanlı kullanılabilirlik testidir. Sorular kullanıcı davranışı, görev tamamlama, anlaşılırlık, güven ve sürtünme noktalarına odaklanmalıdır.",
-            createdAt: new Date().toISOString()
-          }
-        : null;
+      const usabilityTesting = hasScreenContext ?
+      {
+        mode: "figma-usability",
+        objective: usabilityIntake.objective.trim(),
+        primaryTask: usabilityIntake.primaryTask.trim(),
+        targetUsers: usabilityIntake.targetUsers.trim(),
+        successSignals: usabilityIntake.successSignals.trim(),
+        riskAreas: usabilityIntake.riskAreas.trim(),
+        guidancePrompt:
+        "Bu proje ekran tabanlı kullanılabilirlik testidir. Sorular kullanıcı davranışı, görev tamamlama, anlaşılırlık, güven ve sürtünme noktalarına odaklanmalıdır.",
+        createdAt: new Date().toISOString()
+      } :
+      null;
 
       const analysisPayload = {
         ...(templateId ? { template: templateId } : {}),
@@ -316,10 +316,10 @@ const Index = () => {
         analysis: project.analysis || analysisPayload,
         timestamp: Date.now()
       }));
-      
+
       // Set flag to trigger LLM analysis on workspace page
       localStorage.setItem('searchai-analyze-request', 'true');
-      
+
       navigate('/workspace');
     } catch (error: any) {
       toast.error('Failed to create project: ' + error.message);
@@ -372,8 +372,8 @@ const Index = () => {
             </div>
             
             <div className="flex items-center space-x-6">
-              {user ? (
-                <>
+              {user ?
+            <>
                   <Link to="/projects" className="flex items-center space-x-2 text-text-secondary hover:text-text-primary cursor-pointer transition-colors">
                     <span className="text-sm font-medium">Projelerim</span>
                     <div className="w-6 h-6 bg-brand-primary-light rounded-full flex items-center justify-center">
@@ -390,23 +390,23 @@ const Index = () => {
                     <span className="text-sm font-medium text-text-primary">
                       {user.user_metadata?.display_name || 'Demo User'}
                     </span>
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      onClick={handleSignOut}
-                      className="ml-2 p-1 h-6 w-6 hover:bg-destructive/10"
-                    >
+                    <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSignOut}
+                  className="ml-2 p-1 h-6 w-6 hover:bg-destructive/10">
+                  
                       <LogOut className="w-3 h-3 text-text-secondary hover:text-destructive" />
                     </Button>
                   </div>
-                </>
-              ) : (
-                <div className="flex items-center space-x-4">
+                </> :
+
+            <div className="flex items-center space-x-4">
                   <Link to="/auth">
                     <Button variant="outline">Sign In</Button>
                   </Link>
                 </div>
-              )}
+            }
             </div>
           </div>
         </div>
@@ -423,74 +423,74 @@ const Index = () => {
         <div className="landing-input-card bg-card border border-border rounded-xl p-8 mb-8 shadow-sm landing-fade-in landing-fade-in--4">
           <div className="relative">
             {/* Custom Animated Placeholder Overlay */}
-            {!projectDescription && (
-              <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            {!projectDescription &&
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
                 <div className="absolute left-3 top-2 right-3">
                   <div className="landing-placeholder-stack relative h-[120px] overflow-hidden">
-                    <div 
-                      className={`text-lg text-muted-foreground transition-all duration-600 ease-in-out ${
-                        isTransitioning ? "animate-scroll-down-out" : ""
-                      }`}
-                      style={{ 
-                        position: 'absolute',
-                        width: '100%',
-                        top: 0
-                      }}
-                    >
+                    <div
+                  className={`text-lg text-muted-foreground transition-all duration-600 ease-in-out ${
+                  isTransitioning ? "animate-scroll-down-out" : ""}`
+                  }
+                  style={{
+                    position: 'absolute',
+                    width: '100%',
+                    top: 0
+                  }}>
+                  
                       {currentPlaceholder}
                     </div>
-                    <div 
-                      className={`text-lg text-muted-foreground transition-all duration-600 ease-in-out ${
-                        isTransitioning ? "animate-scroll-up-in" : "opacity-0"
-                      }`}
-                      style={{ 
-                        position: 'absolute',
-                        width: '100%',
-                        top: 0
-                      }}
-                    >
+                    <div
+                  className={`text-lg text-muted-foreground transition-all duration-600 ease-in-out ${
+                  isTransitioning ? "animate-scroll-up-in" : "opacity-0"}`
+                  }
+                  style={{
+                    position: 'absolute',
+                    width: '100%',
+                    top: 0
+                  }}>
+                  
                       {nextPlaceholder}
                     </div>
                   </div>
                 </div>
               </div>
-            )}
+          }
             
-            <Textarea 
-              value={projectDescription} 
-              onChange={e => setProjectDescription(e.target.value)} 
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && projectDescription.trim()) {
-                  e.preventDefault();
-                  handleStartProject();
-                }
-              }}
-              placeholder=""
-              className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary relative z-10 bg-transparent landing-textarea"
-            />
+            <Textarea
+            value={projectDescription}
+            onChange={(e) => setProjectDescription(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && projectDescription.trim()) {
+                e.preventDefault();
+                handleStartProject();
+              }
+            }}
+            placeholder=""
+            className="min-h-[120px] text-lg border-border-light resize-none focus:ring-brand-primary focus:border-brand-primary relative z-10 bg-transparent landing-textarea" />
+          
           </div>
 
           <div
-            className={`overflow-hidden transition-all duration-500 ${
-              isDesignModuleOpen
-                ? "mt-5 max-h-[1200px] opacity-100 translate-y-0"
-                : "mt-0 max-h-0 opacity-0 -translate-y-1 pointer-events-none"
-            }`}
-            style={{ transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)" }}
-            aria-hidden={!isDesignModuleOpen}
-          >
+          className={`overflow-hidden transition-all duration-500 ${
+          isDesignModuleOpen ?
+          "mt-5 max-h-[1200px] opacity-100 translate-y-0" :
+          "mt-0 max-h-0 opacity-0 -translate-y-1 pointer-events-none"}`
+          }
+          style={{ transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)" }}
+          aria-hidden={!isDesignModuleOpen}>
+          
             <div className="rounded-lg border border-border-light bg-surface/50 p-4 space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <ImagePlus className="w-4 h-4 text-brand-primary" />
                   <p className="text-sm font-medium text-text-primary">Figma ekranları ve prototip bağlamı</p>
                 </div>
-                {hasScreenContext && (
-                  <Badge className="bg-brand-primary-light text-brand-primary border-0">
+                {hasScreenContext &&
+              <Badge className="bg-brand-primary-light text-brand-primary border-0">
                     <Sparkles className="w-3 h-3 mr-1" />
                     Usability Mode
                   </Badge>
-                )}
+              }
               </div>
 
               <p className="text-xs text-text-secondary">
@@ -501,12 +501,12 @@ const Index = () => {
                 <Label className="text-xs text-text-secondary">Ekran Yapıştırma Alanı</Label>
                 <div className="space-y-2">
                   <div
-                    role="textbox"
-                    tabIndex={0}
-                    onPaste={handleScreenPaste}
-                    onClick={(e) => e.currentTarget.focus()}
-                    className="min-h-[88px] rounded-md border border-dashed border-border-light bg-white/80 p-3 text-sm text-text-secondary outline-none transition-colors focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20"
-                  >
+                  role="textbox"
+                  tabIndex={0}
+                  onPaste={handleScreenPaste}
+                  onClick={(e) => e.currentTarget.focus()}
+                  className="min-h-[88px] rounded-md border border-dashed border-border-light bg-white/80 p-3 text-sm text-text-secondary outline-none transition-colors focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20">
+                  
                     Buraya tıklayıp Cmd/Ctrl + V yapın.
                     <div className="mt-1 text-xs text-text-muted">
                       İpucu: Figma'da ilgili frame'i seçip Copy as PNG yaptıktan sonra yapıştırın.
@@ -515,93 +515,93 @@ const Index = () => {
                 </div>
               </div>
 
-              {screenDrafts.length > 0 && (
-                <div className="space-y-2">
+              {screenDrafts.length > 0 &&
+            <div className="space-y-2">
                   <p className="text-xs text-text-secondary">Yüklenecek ekranlar</p>
                   <div className="flex flex-wrap gap-2">
-                    {screenDrafts.map((draft) => (
-                      <div key={draft.id} className="group relative">
+                    {screenDrafts.map((draft) =>
+                <div key={draft.id} className="group relative">
                         <img src={draft.previewUrl} alt={draft.name} className="h-16 w-28 rounded-md border border-border-light object-cover" />
                         <button
-                          type="button"
-                          onClick={() => removeScreenDraft(draft.id)}
-                          className="absolute -right-2 -top-2 hidden h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white group-hover:flex"
-                          aria-label="Remove screen"
-                        >
+                    type="button"
+                    onClick={() => removeScreenDraft(draft.id)}
+                    className="absolute -right-2 -top-2 hidden h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white group-hover:flex"
+                    aria-label="Remove screen">
+                    
                           <X className="w-3 h-3" />
                         </button>
                       </div>
-                    ))}
+                )}
                   </div>
                 </div>
-              )}
+            }
 
-              {hasScreenContext && (
-                <div className="space-y-3 rounded-md border border-brand-primary/20 bg-white p-3">
+              {hasScreenContext &&
+            <div className="space-y-3 rounded-md border border-brand-primary/20 bg-white p-3">
                   <p className="text-sm font-medium text-text-primary">Usability test intake</p>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-2 md:col-span-2">
                       <Label className="text-xs text-text-secondary">1) Bu ekranlardan neyi anlamak istiyorsunuz? *</Label>
                       <Textarea
-                        value={usabilityIntake.objective}
-                        onChange={(e) => setUsabilityIntake((prev) => ({ ...prev, objective: e.target.value }))}
-                        placeholder="Örn: Kullanıcılar onboarding akışında neden terk ediyor?"
-                        className="min-h-[74px]"
-                      />
+                    value={usabilityIntake.objective}
+                    onChange={(e) => setUsabilityIntake((prev) => ({ ...prev, objective: e.target.value }))}
+                    placeholder="Örn: Kullanıcılar onboarding akışında neden terk ediyor?"
+                    className="min-h-[74px]" />
+                  
                     </div>
 
                     <div className="space-y-2 md:col-span-2">
                       <Label className="text-xs text-text-secondary">2) Kullanıcının bu ekranlarda tamamlamasını beklediğiniz ana görev nedir? *</Label>
                       <Textarea
-                        value={usabilityIntake.primaryTask}
-                        onChange={(e) => setUsabilityIntake((prev) => ({ ...prev, primaryTask: e.target.value }))}
-                        placeholder="Örn: Kullanıcı kredi kartı başvurusunu hatasız tamamlamalı."
-                        className="min-h-[74px]"
-                      />
+                    value={usabilityIntake.primaryTask}
+                    onChange={(e) => setUsabilityIntake((prev) => ({ ...prev, primaryTask: e.target.value }))}
+                    placeholder="Örn: Kullanıcı kredi kartı başvurusunu hatasız tamamlamalı."
+                    className="min-h-[74px]" />
+                  
                     </div>
 
                     <div className="space-y-2">
                       <Label className="text-xs text-text-secondary">3) Hedef kullanıcı tipi</Label>
                       <Input
-                        value={usabilityIntake.targetUsers}
-                        onChange={(e) => setUsabilityIntake((prev) => ({ ...prev, targetUsers: e.target.value }))}
-                        placeholder="Örn: 25-40 yaş dijital bankacılık kullanıcıları"
-                      />
+                    value={usabilityIntake.targetUsers}
+                    onChange={(e) => setUsabilityIntake((prev) => ({ ...prev, targetUsers: e.target.value }))}
+                    placeholder="Örn: 25-40 yaş dijital bankacılık kullanıcıları" />
+                  
                     </div>
 
                     <div className="space-y-2">
                       <Label className="text-xs text-text-secondary">4) Başarı kriteri</Label>
                       <Input
-                        value={usabilityIntake.successSignals}
-                        onChange={(e) => setUsabilityIntake((prev) => ({ ...prev, successSignals: e.target.value }))}
-                        placeholder="Örn: %80 görev tamamlama, düşük hata oranı"
-                      />
+                    value={usabilityIntake.successSignals}
+                    onChange={(e) => setUsabilityIntake((prev) => ({ ...prev, successSignals: e.target.value }))}
+                    placeholder="Örn: %80 görev tamamlama, düşük hata oranı" />
+                  
                     </div>
 
                     <div className="space-y-2 md:col-span-2">
                       <Label className="text-xs text-text-secondary">5) Özellikle test edilmesini istediğiniz riskli alanlar</Label>
                       <Textarea
-                        value={usabilityIntake.riskAreas}
-                        onChange={(e) => setUsabilityIntake((prev) => ({ ...prev, riskAreas: e.target.value }))}
-                        placeholder="Örn: Form alanlarının anlaşılabilirliği, güven algısı, CTA metinleri"
-                        className="min-h-[68px]"
-                      />
+                    value={usabilityIntake.riskAreas}
+                    onChange={(e) => setUsabilityIntake((prev) => ({ ...prev, riskAreas: e.target.value }))}
+                    placeholder="Örn: Form alanlarının anlaşılabilirliği, güven algısı, CTA metinleri"
+                    className="min-h-[68px]" />
+                  
                     </div>
                   </div>
                 </div>
-              )}
+            }
             </div>
           </div>
           
           <div className="flex items-center justify-between mt-6">
             <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => setIsDesignModuleOpen((prev) => !prev)}
-              className="h-9 w-9 rounded-full border-border-light bg-white/95 hover:bg-white shadow-sm"
-              aria-label="Open design context panel"
-            >
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => setIsDesignModuleOpen((prev) => !prev)}
+            className="h-9 w-9 rounded-full border-border-light bg-white/95 hover:bg-white shadow-sm"
+            aria-label="Open design context panel">
+            
               <Plus className={`w-4.5 h-4.5 transition-transform duration-300 ${isDesignModuleOpen ? "rotate-45" : ""}`} />
             </Button>
             <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading || isUploadingScreens} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
@@ -641,7 +641,7 @@ const Index = () => {
 
         {/* Footer */}
         <div className="text-center text-text-muted landing-fade-in landing-fade-in--6">
-          <p>Dünya çapında 500+ araştırma ekibi tarafından güveniliyor</p>
+          
         </div>
       </main>
     </div>;
