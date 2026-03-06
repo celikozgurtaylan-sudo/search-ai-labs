@@ -249,6 +249,77 @@ Yanit:
 - Arastirma sorulari acik uclu olmali (evet/hayir degil)
 - Section id'leri snake_case Ingilizce olmali`;
 
+const slugifySectionId = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40) || "section";
+
+const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
+  const usability = researchContext?.usabilityTesting || {};
+  const titleBase = usability.objective || message || "Kullanilabilirlik Testi";
+  const primaryTask = usability.primaryTask || "Belirtilmedi";
+  const targetUsers = usability.targetUsers || "Belirtilmedi";
+  const successSignals = usability.successSignals || "Belirtilmedi";
+  const riskAreas = usability.riskAreas || "Belirtilmedi";
+  const screenNames = Array.isArray(researchContext?.designScreens) && researchContext.designScreens.length > 0
+    ? researchContext.designScreens.map((screen: any, index: number) => screen?.name || `Screen ${index + 1}`).join(", ")
+    : "Paylasilan ekranlar";
+
+  const sections = [
+    {
+      id: slugifySectionId("task_flow"),
+      title: "Gorev Akisi ve Beklentiler",
+      questions: [
+        `${screenNames} ekranlarina baktiginizda ilk olarak ne yapmaniz gerektigini nasil anliyorsunuz?`,
+        `${primaryTask} gorevini tamamlarken hangi adim size en belirsiz veya zor gorunuyor?`,
+        `Bu akista ilerlerken neyin dogru gittigini ya da ters gittigini nasil anlarsiniz?`,
+      ],
+    },
+    {
+      id: slugifySectionId("clarity_and_trust"),
+      title: "Anlasilirlik ve Guven",
+      questions: [
+        `Bu ekranlarda hangi bilgi ya da ifade size yeterince acik gelmiyor?`,
+        `Karar vermeden once hangi noktada daha fazla guvence veya aciklama duymak istersiniz?`,
+        `Bu deneyimin ${targetUsers} icin guven verici olup olmadigini size ne hissettiriyor?`,
+      ],
+    },
+    {
+      id: slugifySectionId("friction_and_improvements"),
+      title: "Surtunme Noktalari ve Iyilestirme",
+      questions: [
+        `${riskAreas} basliginda sizi en cok endiselendiren an hangi ekran veya adim oluyor?`,
+        `${successSignals} hedefine ulasmak icin bu deneyimde hangi degisiklikler en cok fark yaratir?`,
+        `Bu gorevi daha hizli ve daha rahat tamamlayabilmeniz icin ilk neyi degistirirdiniz?`,
+      ],
+    },
+  ];
+
+  return {
+    action: "PLAN",
+    chatResponse: "Kullanilabilirlik testi baglamina gore arastirma planinizi olusturdum. Sorular gorev akisi, anlasilirlik, guven ve surtunme noktalarina odaklaniyor.",
+    researchPlan: {
+      title: `${titleBase} Kullanilabilirlik Arastirmasi`,
+      sections,
+    },
+  };
+};
+
+const describeScreenForPrompt = (screen: any, index: number) => {
+  const name = screen?.name || `Screen ${index + 1}`;
+  const source = screen?.source || 'unknown';
+  const rawUrl = typeof screen?.url === 'string' ? screen.url : '';
+  const urlDescription = rawUrl.startsWith('data:image/')
+    ? '[inline-image-attached]'
+    : rawUrl
+      ? rawUrl
+      : '[no-url]';
+
+  return `${name} (${source}): ${urlDescription}`;
+};
+
 // ============================================================
 // MAIN REQUEST HANDLER
 // ============================================================
@@ -263,7 +334,7 @@ serve(async (req) => {
       throw new Error('OPENAI_API_KEY is not set');
     }
 
-    const { message, conversationHistory = [], researchContext = null } = await req.json();
+    const { message, conversationHistory = [], researchContext = null, forcePlan = false } = await req.json();
     console.log(`[Searcho] Message: "${message.substring(0, 80)}..."`);
     console.log(`[Searcho] Conversation depth: ${Math.floor(conversationHistory.length / 2)}`);
 
@@ -276,7 +347,7 @@ serve(async (req) => {
 
     if (researchContext?.usabilityTesting) {
       const usableScreens = Array.isArray(researchContext.designScreens)
-        ? researchContext.designScreens.map((s: any) => `${s.name || 'Screen'} (${s.source || 'unknown'}): ${s.url || ''}`).join('\n')
+        ? researchContext.designScreens.map((s: any, index: number) => describeScreenForPrompt(s, index)).join('\n')
         : '';
 
       const usabilityContextPrompt = `USABILITY_TESTING_CONTEXT:
@@ -296,6 +367,13 @@ ${usableScreens || 'Screen bilgisi yok'}`;
 
       messages.push({ role: 'user', content: usabilityContextPrompt });
       messages.push({ role: 'assistant', content: 'Usability test baglamini aldim. Sorularimi ekran kullanilabilirligi ekseninde kuracagim.' });
+
+      if (forcePlan || conversationHistory.length === 0) {
+        messages.push({
+          role: 'user',
+          content: `Bu ilk degerlendirme turu. Netlestirme sorulari sormadan dogrudan action=PLAN ile kullanilabilirlik odakli arastirma plani uret. researchPlan null olamaz.`,
+        });
+      }
     }
 
     // Add conversation history
@@ -354,6 +432,11 @@ ${usableScreens || 'Screen bilgisi yok'}`;
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    if ((forcePlan || (researchContext?.usabilityTesting && conversationHistory.length === 0)) && (parsed.action !== 'PLAN' || parsed.researchPlan === null)) {
+      console.log('[Searcho] Model returned CHAT while PLAN was required, using fallback usability plan');
+      parsed = buildUsabilityFallbackPlan(message, researchContext);
     }
 
     const isResearchPlan = parsed.action === 'PLAN' && parsed.researchPlan !== null;

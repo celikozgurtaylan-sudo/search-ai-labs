@@ -9,6 +9,15 @@ interface ChatMessage {
   type: 'user' | 'ai';
   content: string;
   timestamp: Date;
+  clarifications?: Array<{
+    question: string;
+    answer: string;
+  }>;
+  attachments?: Array<{
+    name?: string;
+    source?: string;
+    url?: string;
+  }>;
 }
 
 interface ChatPanelProps {
@@ -34,6 +43,12 @@ interface ResearchContextPayload {
   }>;
 }
 
+interface SendToLlmOptions {
+  forcePlan?: boolean;
+}
+
+const isInlineImageUrl = (value?: string) => typeof value === "string" && value.startsWith("data:image/");
+
 const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }: ChatPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -42,6 +57,7 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
 
   const endRef = useRef<HTMLDivElement | null>(null);
   const isWritingResearchPlanRef = useRef(false);
+  const hasTriggeredInitialMessageRef = useRef(false);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -49,7 +65,8 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
 
   // Load initial message from localStorage if available
   useEffect(() => {
-    if (projectData?.description) {
+    if (projectData?.description && !hasTriggeredInitialMessageRef.current) {
+      hasTriggeredInitialMessageRef.current = true;
       handleInitialMessage(projectData.description);
     }
   }, [projectData]);
@@ -76,28 +93,116 @@ ${screens}
 Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik odaginda olustur.`;
   };
 
+  const getClarificationRecap = () => {
+    const usability = projectData?.analysis?.usabilityTesting;
+    if (!usability) return [];
+
+    const pairs = [
+      {
+        question: "Bu ekranlardan neyi anlamak istiyorsunuz?",
+        answer: usability.objective || "",
+      },
+      {
+        question: "Kullanıcının bu ekranlarda tamamlamasını beklediğiniz ana görev nedir?",
+        answer: usability.primaryTask || "",
+      },
+      {
+        question: "Hedef kullanıcı tipi",
+        answer: usability.targetUsers || "",
+      },
+      {
+        question: "Başarı kriteri",
+        answer: usability.successSignals || "",
+      },
+      {
+        question: "Özellikle test edilmesini istediğiniz riskli alanlar",
+        answer: usability.riskAreas || "",
+      },
+    ];
+
+    return pairs.filter((pair) => pair.answer.trim().length > 0);
+  };
+
+  const getChatAttachments = () => {
+    if (!Array.isArray(projectData?.analysis?.designScreens)) return [];
+
+    return projectData.analysis.designScreens
+      .filter((screen: any) => typeof screen?.url === "string" && screen.url.length > 0)
+      .map((screen: any) => ({
+        name: screen.name || "Screen",
+        source: screen.source || "unknown",
+        url: screen.url
+      }));
+  };
+
+  const getResearchContext = (): ResearchContextPayload | null => {
+    if (!projectData?.analysis?.usabilityTesting) return null;
+
+    const sanitizedScreens = Array.isArray(projectData.analysis.designScreens)
+      ? projectData.analysis.designScreens.map((screen: any) => ({
+          name: screen?.name || "Screen",
+          source: screen?.source || "unknown",
+          url: isInlineImageUrl(screen?.url) ? "[inline-image-attached]" : screen?.url
+        }))
+      : [];
+
+    return {
+      usabilityTesting: projectData.analysis.usabilityTesting,
+      designScreens: sanitizedScreens
+    };
+  };
+
+  const buildInitialPrompt = (initialMessage: string) => {
+    const usability = projectData?.analysis?.usabilityTesting;
+    if (!usability) {
+      return {
+        outgoingMessage: initialMessage,
+        displayMessage: initialMessage,
+        forcePlan: false,
+      };
+    }
+
+    const screens = Array.isArray(projectData?.analysis?.designScreens)
+      ? projectData.analysis.designScreens
+          .map((screen: any, index: number) => `${index + 1}. ${screen.name || "Screen"}`)
+          .join(", ")
+      : "Screen bilgisi yok";
+
+    return {
+      displayMessage: initialMessage,
+      outgoingMessage: `${initialMessage}
+
+Bu bir ekran tabanli kullanilabilirlik testidir. Elimde arastirma amaci, ana gorev ve ekranlar var.
+Simdi ek netlestirme sormadan dogrudan kullanilabilirlik odakli arastirma plani olustur.
+Plan:
+- en az 3 bolumden olussun
+- her bolum 2-4 acik uclu soru icersin
+- sorular gorev tamamlama, anlasilirlik, guven, karar anlari ve surtunme noktalarina odaklansin
+- ekranlar: ${screens}`,
+      forcePlan: true,
+    };
+  };
+
   const handleInitialMessage = async (initialMessage: string) => {
-    const contextualInitialMessage = `${initialMessage}${buildUsabilityContextBlock()}`;
+    const initialPrompt = buildInitialPrompt(initialMessage);
+    const contextualInitialMessage = `${initialPrompt.outgoingMessage}${buildUsabilityContextBlock()}`;
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
-      content: initialMessage,
-      timestamp: new Date()
+      content: initialPrompt.displayMessage,
+      timestamp: new Date(),
+      clarifications: getClarificationRecap(),
+      attachments: getChatAttachments()
     };
     
     setMessages([userMessage]);
-    await sendToLLM(contextualInitialMessage);
+    await sendToLLM(contextualInitialMessage, { forcePlan: initialPrompt.forcePlan });
   };
 
-  const sendToLLM = async (messageText: string) => {
+  const sendToLLM = async (messageText: string, options: SendToLlmOptions = {}) => {
     setIsLoading(true);
 
-    const researchContext: ResearchContextPayload | null = projectData?.analysis?.usabilityTesting
-      ? {
-          usabilityTesting: projectData.analysis.usabilityTesting,
-          designScreens: projectData.analysis.designScreens || []
-        }
-      : null;
+    const researchContext = getResearchContext();
     
     // Add loading message
     const loadingMessage: ChatMessage = {
@@ -113,7 +218,8 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
         body: { 
           message: messageText,
           conversationHistory: conversationHistory,
-          researchContext
+          researchContext,
+          forcePlan: options.forcePlan === true
         }
       });
 
@@ -290,6 +396,39 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
                       <p className="text-sm leading-relaxed whitespace-pre-line">
                         {message.content}
                       </p>
+                      {message.clarifications && message.clarifications.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                          {message.clarifications.map((clarification, index) => (
+                            <div
+                              key={`${message.id}-clarification-${index}`}
+                              className="rounded-2xl border border-white/20 bg-white px-3 py-3 text-left text-text-primary"
+                            >
+                              <p className="text-sm font-semibold leading-snug">
+                                {clarification.question}
+                              </p>
+                              <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                                {clarification.answer}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {message.attachments && message.attachments.length > 0 && (
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {message.attachments.map((attachment, index) => (
+                            <div key={`${message.id}-attachment-${index}`} className="overflow-hidden rounded-xl border border-white/20 bg-white/10">
+                              <img
+                                src={attachment.url}
+                                alt={attachment.name || "Attached screen"}
+                                className="h-28 w-full object-cover"
+                              />
+                              <div className="px-2 py-1 text-[11px] text-white/85">
+                                {attachment.name || "Screen"}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <p className="text-xs text-text-muted mt-1 ml-4">
                       {message.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
