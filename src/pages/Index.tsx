@@ -72,6 +72,7 @@ interface UsabilityIntake {
 }
 
 const DESIGN_SCREENS_BUCKET = "design-screens";
+const USE_STORAGE_FOR_DESIGN_SCREENS = false;
 
 const Index = () => {
   const [projectDescription, setProjectDescription] = useState("");
@@ -165,39 +166,84 @@ const Index = () => {
     });
   };
 
+  const fileToDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          resolve(reader.result);
+          return;
+        }
+        reject(new Error("Failed to encode image"));
+      };
+      reader.onerror = () => reject(new Error("Failed to read image file"));
+      reader.readAsDataURL(file);
+    });
+
   const uploadDesignScreens = async (): Promise<UploadedDesignScreen[]> => {
     if (!user || screenDrafts.length === 0) return [];
 
     setIsUploadingScreens(true);
     try {
+      if (!USE_STORAGE_FOR_DESIGN_SCREENS) {
+        const inlineScreens = await Promise.all(
+          screenDrafts.map(async (draft) => ({
+            id: draft.id,
+            name: draft.name,
+            url: await fileToDataUrl(draft.file),
+            source: "upload" as const,
+            mimeType: draft.file.type
+          }))
+        );
+        return inlineScreens;
+      }
+
+      let usedInlineFallback = false;
+
       const uploads = await Promise.all(
         screenDrafts.map(async (draft) => {
           const safeFileName = draft.name.replace(/[^a-zA-Z0-9._-]/g, "_");
           const filePath = `${user.id}/${Date.now()}-${safeFileName}`;
-          const { error: uploadError } = await supabase.storage
-            .from(DESIGN_SCREENS_BUCKET)
-            .upload(filePath, draft.file, {
-              contentType: draft.file.type,
-              upsert: false
-            });
+          try {
+            const { error: uploadError } = await supabase.storage
+              .from(DESIGN_SCREENS_BUCKET)
+              .upload(filePath, draft.file, {
+                contentType: draft.file.type,
+                upsert: false
+              });
 
-          if (uploadError) {
-            throw new Error(uploadError.message);
+            if (uploadError) {
+              throw new Error(uploadError.message);
+            }
+
+            const {
+              data: { publicUrl }
+            } = supabase.storage.from(DESIGN_SCREENS_BUCKET).getPublicUrl(filePath);
+
+            return {
+              id: draft.id,
+              name: draft.name,
+              url: publicUrl,
+              source: "upload" as const,
+              mimeType: draft.file.type
+            };
+          } catch (error) {
+            usedInlineFallback = true;
+            const inlineUrl = await fileToDataUrl(draft.file);
+            return {
+              id: draft.id,
+              name: draft.name,
+              url: inlineUrl,
+              source: "upload" as const,
+              mimeType: draft.file.type
+            };
           }
-
-          const {
-            data: { publicUrl }
-          } = supabase.storage.from(DESIGN_SCREENS_BUCKET).getPublicUrl(filePath);
-
-          return {
-            id: draft.id,
-            name: draft.name,
-            url: publicUrl,
-            source: "upload" as const,
-            mimeType: draft.file.type
-          };
         })
       );
+
+      if (usedInlineFallback) {
+        toast.warning("Ekranlar geçici olarak lokal veri olarak eklendi. Storage izinleri tamamlandığında otomatik yükleme aktif olur.");
+      }
 
       return uploads;
     } finally {
