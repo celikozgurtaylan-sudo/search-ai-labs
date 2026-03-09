@@ -8,10 +8,10 @@ const corsHeaders = {
 
 // ============================================================
 // MODEL CONFIGURATION
-// One model to rule them all — o4-mini handles everything:
+// One model to rule them all — GPT-5.2 handles everything:
 // intent detection, Socratic questioning, and plan generation.
 // ============================================================
-const MODEL = Deno.env.get('ORCHESTRATOR_MODEL') || 'o4-mini-2025-04-16';
+const MODEL = Deno.env.get('ORCHESTRATOR_MODEL') || 'openai/gpt-5.2';
 
 // ============================================================
 // RESPONSE FORMAT — enforces structured JSON output
