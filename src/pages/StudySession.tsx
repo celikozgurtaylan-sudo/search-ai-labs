@@ -111,6 +111,7 @@ const StudySession = () => {
   const cameraGateVideoRef = useRef<HTMLVideoElement>(null);
   const previewFailureTimerRef = useRef<number | null>(null);
   const hasShownCameraFailureRef = useRef(false);
+  const cameraRequestedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Skip initialization in design mode
@@ -158,6 +159,13 @@ const StudySession = () => {
 
     const interval = window.setInterval(() => {
       const previewElement = cameraGateCompleted ? videoRef.current : cameraGateVideoRef.current;
+      const activeVideoTrack = cameraStream.getVideoTracks()[0];
+      const trackSettings = activeVideoTrack?.getSettings?.() || {};
+      const hasLiveTrack = Boolean(
+        activeVideoTrack &&
+        activeVideoTrack.readyState === 'live' &&
+        activeVideoTrack.enabled
+      );
       const hasLiveFrame = Boolean(
         previewElement &&
         previewElement.srcObject &&
@@ -167,8 +175,19 @@ const StudySession = () => {
         !previewElement.paused &&
         !previewElement.ended
       );
+      const hasUsableTrackFallback = Boolean(
+        hasLiveTrack &&
+        ((typeof trackSettings.width === 'number' && trackSettings.width > 0) ||
+          (typeof trackSettings.height === 'number' && trackSettings.height > 0))
+      );
+      const canTrustTrackFallback = Boolean(
+        !cameraGateCompleted &&
+        hasUsableTrackFallback &&
+        cameraRequestedAtRef.current &&
+        Date.now() - cameraRequestedAtRef.current > 1800
+      );
 
-      if (hasLiveFrame) {
+      if (hasLiveFrame || canTrustTrackFallback) {
         if (previewFailureTimerRef.current) {
           window.clearTimeout(previewFailureTimerRef.current);
           previewFailureTimerRef.current = null;
@@ -339,6 +358,7 @@ const StudySession = () => {
 
   const requestCameraAccess = async () => {
     setCameraRequestPending(true);
+    cameraRequestedAtRef.current = Date.now();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
