@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MessageSquare, Calendar, Users, MoreHorizontal, Archive, Trash2, RotateCcw, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, MessageSquare, Calendar, Users, MoreHorizontal, Archive, Trash2, RotateCcw, Eye, EyeOff, Copy, Check } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { projectService, Project } from "@/services/projectService";
@@ -35,6 +35,7 @@ const ProjectHistory = () => {
   const [showArchived, setShowArchived] = useState(false);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState("");
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [deleteCopyFeedback, setDeleteCopyFeedback] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -110,11 +111,30 @@ const ProjectHistory = () => {
   const openDeleteConfirmation = (project: Project) => {
     setProjectToDelete(project);
     setDeleteConfirmationText("");
+    setDeleteCopyFeedback(false);
   };
 
   const closeDeleteConfirmation = () => {
     setProjectToDelete(null);
     setDeleteConfirmationText("");
+    setDeleteCopyFeedback(false);
+  };
+
+  const copyDeleteProjectTitle = async () => {
+    if (!projectToDelete?.title) return;
+
+    try {
+      await navigator.clipboard.writeText(projectToDelete.title);
+      setDeleteConfirmationText(projectToDelete.title);
+      setDeleteCopyFeedback(true);
+      toast.success("Proje basligi kopyalandi");
+      window.setTimeout(() => setDeleteCopyFeedback(false), 1800);
+    } catch (error) {
+      setDeleteConfirmationText(projectToDelete.title);
+      setDeleteCopyFeedback(true);
+      toast.success("Proje basligi alana yerlestirildi");
+      window.setTimeout(() => setDeleteCopyFeedback(false), 1800);
+    }
   };
 
   const isDeleteConfirmed = projectToDelete && deleteConfirmationText === projectToDelete.title;
@@ -382,8 +402,16 @@ const ProjectHistory = () => {
               </p>
               <div className="space-y-2">
                 <Label htmlFor="delete-confirmation" className="text-sm font-medium">
-                  Silmek için proje başlığını yazın: <span className="font-bold text-text-primary">"{projectToDelete?.title}"</span>
+                  Silmek icin proje basligini onaylayin:
                 </Label>
+                <button
+                  type="button"
+                  onClick={copyDeleteProjectTitle}
+                  className="inline-flex max-w-full items-center gap-2 rounded-2xl border border-border-light bg-muted/40 px-3 py-2 text-left text-sm font-medium text-text-primary transition-colors hover:border-brand-primary/35 hover:bg-brand-primary/5"
+                >
+                  <span className="truncate">{projectToDelete?.title}</span>
+                  {deleteCopyFeedback ? <Check className="h-4 w-4 text-brand-primary" /> : <Copy className="h-4 w-4 text-text-secondary" />}
+                </button>
                 <Input
                   id="delete-confirmation"
                   value={deleteConfirmationText}
