@@ -73,6 +73,7 @@ interface UsabilityIntake {
 
 const DESIGN_SCREENS_BUCKET = "design-screens";
 const USE_STORAGE_FOR_DESIGN_SCREENS = false;
+const SCREEN_NAME_PREFIX = "Ekran";
 
 const Index = () => {
   const [projectDescription, setProjectDescription] = useState("");
@@ -121,18 +122,32 @@ const Index = () => {
     return () => clearInterval(interval);
   }, [currentPlaceholder]);
 
+  const getNextScreenNumber = (drafts: DesignScreenDraft[]) => {
+    const screenNumbers = drafts
+      .map((draft) => {
+        const match = draft.name.match(new RegExp(`^${SCREEN_NAME_PREFIX}\\s+(\\d+)$`));
+        return match ? Number(match[1]) : 0;
+      })
+      .filter((value) => Number.isFinite(value));
+
+    return screenNumbers.length > 0 ? Math.max(...screenNumbers) + 1 : 1;
+  };
+
   const addScreenDrafts = (files: File[]) => {
     const validImageFiles = files.filter((file) => file.type.startsWith("image/"));
     if (validImageFiles.length === 0) return;
 
-    const newDrafts = validImageFiles.map((file) => ({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      name: file.name,
-      previewUrl: URL.createObjectURL(file),
-      file
-    }));
+    setScreenDrafts((prev) => {
+      const nextScreenNumber = getNextScreenNumber(prev);
+      const newDrafts = validImageFiles.map((file, index) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        name: `${SCREEN_NAME_PREFIX} ${nextScreenNumber + index}`,
+        previewUrl: URL.createObjectURL(file),
+        file
+      }));
 
-    setScreenDrafts((prev) => [...prev, ...newDrafts]);
+      return [...prev, ...newDrafts];
+    });
   };
 
   const handleScreenPaste = (event: ClipboardEvent<HTMLDivElement>) => {
@@ -164,6 +179,19 @@ const Index = () => {
       }
       return prev.filter((item) => item.id !== draftId);
     });
+  };
+
+  const renameScreenDraft = (draftId: string, nextName: string) => {
+    setScreenDrafts((prev) =>
+      prev.map((draft) =>
+        draft.id === draftId
+          ? {
+              ...draft,
+              name: nextName
+            }
+          : draft
+      )
+    );
   };
 
   const fileToDataUrl = (file: File): Promise<string> =>
@@ -518,20 +546,44 @@ const Index = () => {
               {screenDrafts.length > 0 &&
             <div className="space-y-2">
                   <p className="text-xs text-text-secondary">Yüklenecek ekranlar</p>
-                  <div className="flex flex-wrap gap-2">
-                    {screenDrafts.map((draft) =>
-                <div key={draft.id} className="group relative">
-                        <img src={draft.previewUrl} alt={draft.name} className="h-16 w-28 rounded-md border border-border-light object-cover" />
-                        <button
-                    type="button"
-                    onClick={() => removeScreenDraft(draft.id)}
-                    className="absolute -right-2 -top-2 hidden h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white group-hover:flex"
-                    aria-label="Remove screen">
-                    
-                          <X className="w-3 h-3" />
-                        </button>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {screenDrafts.map((draft) => (
+                      <div key={draft.id} className="group relative rounded-xl border border-border-light bg-white p-3">
+                        <div className="absolute right-2 top-2">
+                          <button
+                            type="button"
+                            onClick={() => removeScreenDraft(draft.id)}
+                            className="flex h-6 w-6 items-center justify-center rounded-full bg-black/75 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                            aria-label="Remove screen"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <div className="flex items-start gap-3">
+                          <img src={draft.previewUrl} alt={draft.name} className="h-20 w-14 rounded-lg border border-border-light object-cover" />
+
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="space-y-1">
+                              <Label htmlFor={`screen-name-${draft.id}`} className="text-xs text-text-secondary">
+                                Ekran başlığı
+                              </Label>
+                              <Input
+                                id={`screen-name-${draft.id}`}
+                                value={draft.name}
+                                onChange={(e) => renameScreenDraft(draft.id, e.target.value)}
+                                placeholder="Ekran başlığı"
+                                className="h-9"
+                              />
+                            </div>
+
+                            <p className="text-[11px] leading-5 text-text-muted">
+                              Bu başlık kullanıcının göreceği bir başlık olacaktır.
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                )}
+                ))}
                   </div>
                 </div>
             }
