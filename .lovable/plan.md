@@ -1,52 +1,28 @@
 
 
-# Update FRONTEND_URL to beta.searcho.online
+# Update Lovable AI Gateway models to `openai/gpt-5.2` + Fix build error
 
-## Problem
-The invitation email links should use `beta.searcho.online` as the domain, not `searcho.lovable.app`.
+## Build Error Fix
+**File**: `supabase/functions/speech-to-text/index.ts` (line 89)
+- Fix `error.message` → `(error instanceof Error ? error.message : 'Unknown error')`
+- This file uses OpenAI's API directly (`api.openai.com`), so its model stays unchanged.
 
-## Solution
-Update the `FRONTEND_URL` secret and harden the edge function code to prevent whitespace issues.
+## Model Updates (Lovable AI Gateway only)
 
----
+These files call `ai.gateway.lovable.dev` and will be updated to `openai/gpt-5.2`:
 
-## Implementation
+| File | Current Model | Lines |
+|------|--------------|-------|
+| `generate-questions/index.ts` | `google/gemini-2.5-flash` (×2) | 86, 127 |
+| `analyze-project/index.ts` | `google/gemini-2.5-flash` | 25 |
+| `interview-analysis/index.ts` | `google/gemini-2.5-pro` | 150 |
 
-### Step 1: Update the Secret
-Update the `FRONTEND_URL` secret to:
-- **Value**: `https://beta.searcho.online` (no trailing whitespace)
-
-### Step 2: Fix Whitespace Issue in Edge Function
-The logs showed trailing spaces were causing malformed URLs. Add `.trim()` to prevent this:
-
-**File**: `supabase/functions/send-invitation-email/index.ts`
-**Line 33**: Change from:
-```typescript
-const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://beta.searcho.online';
-```
-To:
-```typescript
-const frontendUrl = (Deno.env.get('FRONTEND_URL') || 'https://beta.searcho.online').trim();
-```
-
-### Step 3: Redeploy Edge Function
-Redeploy `send-invitation-email` to apply both changes.
-
-### Step 4: Resend Invitation
-Send a new invitation to verify the link works correctly.
-
----
-
-## Expected Result
-After this fix, invitation emails will contain working links:
-`https://beta.searcho.online/join/research/user-study-xxxxx`
-
----
-
-## Files to Modify
-
-| File | Change |
+## Not Changed
+| File | Reason |
 |------|--------|
-| **Secret: FRONTEND_URL** | Set to `https://beta.searcho.online` |
-| `supabase/functions/send-invitation-email/index.ts` | Add `.trim()` on line 33 |
+| `speech-to-text/index.ts` | Uses `api.openai.com` directly (Whisper), not Lovable gateway |
+| `turkish-tts/index.ts` | TTS model, not a chat model |
+| `turkish-chat/index.ts` | Need to verify if it uses Lovable gateway |
+
+**Note**: I'll check `turkish-chat/index.ts` before implementing to confirm whether it uses the Lovable gateway.
 
