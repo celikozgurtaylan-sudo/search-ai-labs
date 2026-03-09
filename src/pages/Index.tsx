@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowRight, MessageSquare, BarChart3, Users, Search, LogOut, ImagePlus, X, Sparkles, Plus } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { AnimatedHeadline } from "@/components/ui/animated-headline";
+import { SearchoMark } from "@/components/icons/SearchoMark";
 import { useAuth } from "@/contexts/AuthContext";
 import { projectService, Project } from "@/services/projectService";
 import { toast } from "sonner";
@@ -392,9 +393,13 @@ const Index = () => {
       <header className="relative z-10 border-b border-border-light landing-fade-in landing-fade-in--1">
         <div className="max-w-6xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 relative">
+            <div className="flex items-center space-x-3 relative">
+              <SearchoMark className="w-8 h-8 shrink-0" />
               <span className="text-xl font-semibold text-text-primary">Searcho</span>
-              <Badge variant="secondary" className="absolute -top-2 left-full ml-1 text-xs px-1.5 py-0.5 bg-brand-primary-light text-brand-primary">
+              <Badge
+                variant="secondary"
+                className="absolute -top-2 left-full ml-1 text-xs px-1.5 py-0.5 bg-brand-primary-light text-brand-primary shadow-sm transition-transform duration-300 ease-out hover:rotate-[20deg] hover:-translate-y-0.5 hover:scale-105 hover:bg-brand-primary-light hover:text-brand-primary"
+              >
                 Beta
               </Badge>
             </div>
