@@ -4,7 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-session-token',
 };
 
 const supabase = createClient(
@@ -19,6 +19,45 @@ serve(async (req) => {
 
   try {
     const { sessionId, projectId } = await req.json();
+
+    // Validate session token
+    const sessionToken = req.headers.get('x-session-token');
+    if (!sessionToken) {
+      return new Response(
+        JSON.stringify({ error: 'Missing session token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!sessionId) {
+      return new Response(
+        JSON.stringify({ error: 'Missing sessionId' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Verify the session token matches
+    const { data: session, error: sessionError } = await supabase
+      .from('study_sessions')
+      .select('id, project_id')
+      .eq('id', sessionId)
+      .eq('session_token', sessionToken)
+      .maybeSingle();
+
+    if (sessionError || !session) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid or mismatched session token' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Also verify that the projectId matches the session's project
+    if (projectId && session.project_id !== projectId) {
+      return new Response(
+        JSON.stringify({ error: 'Project ID does not match session' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Get all questions and responses for the session
     const { data: questions, error } = await supabase
@@ -90,7 +129,6 @@ async function generateAnalysis(interviewData: any[]) {
     throw new Error('Lovable API key not configured');
   }
 
-  // Prepare comprehensive analysis prompt
   const analysisPrompt = `
 You are a UX research expert analyzing interview responses. Please provide a comprehensive analysis of the following interview data.
 
@@ -165,10 +203,8 @@ Focus on actionable insights that can drive product decisions. Look for patterns
   let analysisText = data.choices[0].message.content;
 
   try {
-    // Try to parse as JSON
     return JSON.parse(analysisText);
   } catch (e) {
-    // If not valid JSON, return structured fallback
     return {
       summary: analysisText,
       keyInsights: ["Analysis completed - see summary for details"],
