@@ -65,6 +65,12 @@ const ParticipantLanding = () => {
         participant.id!,
         participant.invitation_token
       );
+
+      localStorage.setItem('participant-session', JSON.stringify({
+        token: session.session_token,
+        session,
+        participant
+      }));
       
       // Redirect to the study interface with the database session token
       navigate(`/study-session/${session.session_token}`);

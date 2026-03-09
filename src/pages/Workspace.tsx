@@ -65,6 +65,35 @@ const Workspace = () => {
     }
   }, [navigate]);
 
+  useEffect(() => {
+    const hydrateLatestProject = async () => {
+      if (!projectData?.id || !user) return;
+
+      try {
+        const latestProject = await projectService.getProject(projectData.id);
+        if (!latestProject) return;
+
+        const mergedProject = {
+          ...projectData,
+          title: latestProject.title,
+          description: latestProject.description,
+          template: latestProject.analysis?.template || projectData.template,
+          analysis: latestProject.analysis || projectData.analysis,
+        };
+
+        setProjectData(mergedProject);
+        localStorage.setItem('searchai-project', JSON.stringify({
+          ...mergedProject,
+          timestamp: Date.now()
+        }));
+      } catch (error) {
+        console.error('Failed to hydrate latest project:', error);
+      }
+    };
+
+    void hydrateLatestProject();
+  }, [projectData?.id, user]);
+
   // Update project in database when research is detected
   useEffect(() => {
     if (isResearchRelated && projectData?.id && discussionGuide) {
