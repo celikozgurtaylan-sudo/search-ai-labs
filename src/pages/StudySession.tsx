@@ -7,7 +7,7 @@ import SearchoAI from "@/components/SearchoAI";
 import { FloatingVideo } from "@/components/FloatingVideo";
 import { participantService } from "@/services/participantService";
 import { projectService } from "@/services/projectService";
-import { interviewService, InterviewProgress, InterviewQuestion } from "@/services/interviewService";
+import { interviewService, InterviewProgress, InterviewQuestion, setInterviewSessionToken } from "@/services/interviewService";
 import { CheckCircle, AlertCircle, Loader2, ExternalLink, Image as ImageIcon, Camera } from "lucide-react";
 
 type CameraValidationState = 'idle' | 'requesting' | 'verifying' | 'preview' | 'stream' | 'failed';
@@ -388,6 +388,7 @@ const StudySession = () => {
   useEffect(() => {
     // Skip initialization in design mode
     if (isDesignMode) {
+      setInterviewSessionToken(null);
       console.log('Design mode active - using mock data');
       setLoading(false);
       void requestCameraAccess();
@@ -395,8 +396,10 @@ const StudySession = () => {
     }
     
     if (sessionToken) {
+      setInterviewSessionToken(sessionToken);
       initializeSession();
     } else {
+      setInterviewSessionToken(null);
       setError("Geçersiz oturum");
       setLoading(false);
     }
@@ -404,6 +407,7 @@ const StudySession = () => {
     void checkCameraPermissions();
 
     return () => {
+      setInterviewSessionToken(null);
       stopCameraStream(cameraStreamRef.current);
     };
   }, [sessionToken]);

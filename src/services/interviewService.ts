@@ -74,7 +74,7 @@ const createMockQuestions = (discussionGuide: any, projectId: string, sessionId:
 // Store session token for authenticated edge function calls
 let _sessionToken: string | null = null;
 
-export const setInterviewSessionToken = (token: string) => {
+export const setInterviewSessionToken = (token: string | null) => {
   _sessionToken = token;
 };
 
