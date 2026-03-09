@@ -21,6 +21,7 @@ export const AvatarSpeaker = ({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const playbackTokenRef = useRef(0);
+  const hasPlayedProviderAudioRef = useRef(false);
   const onSpeakingStartRef = useRef(onSpeakingStart);
   const onSpeakingCompleteRef = useRef(onSpeakingComplete);
   const listeningHintTimerRef = useRef<number | null>(null);
@@ -56,6 +57,28 @@ export const AvatarSpeaker = ({
     setOrbState('listening');
     setShowListeningHint(false);
     onSpeakingCompleteRef.current();
+  };
+
+  const shouldUseBrowserFallback = (error?: unknown) => {
+    if (hasPlayedProviderAudioRef.current) {
+      return false;
+    }
+
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    const normalizedMessage = message.toLowerCase();
+
+    return [
+      'functionsfetcherror',
+      'failed to send a request to the edge function',
+      'edge function returned a non-2xx status code',
+      'networkerror',
+      'load failed',
+      'failed to fetch',
+      '404',
+      '503',
+      '504',
+      'no audio content received',
+    ].some((pattern) => normalizedMessage.includes(pattern));
   };
 
   const speakWithBrowserFallback = (text: string, token: number) => {
@@ -111,6 +134,7 @@ export const AvatarSpeaker = ({
 
         audio.onplay = () => {
           if (playbackTokenRef.current !== token) return;
+          hasPlayedProviderAudioRef.current = true;
           setOrbState('speaking');
           onSpeakingStartRef.current();
         };
@@ -128,14 +152,18 @@ export const AvatarSpeaker = ({
             objectUrl = null;
           }
           audioRef.current = null;
-          speakWithBrowserFallback(questionText, token);
+          console.error('Provider audio playback failed; skipping browser fallback for this question');
+          completeSpeaking(token);
         };
 
         await audio.play();
       } catch (error) {
-        console.error('Turkish TTS playback failed, using browser fallback as plan C:', error);
-        if (!cancelled && playbackTokenRef.current === token) {
+        console.error('Turkish TTS playback failed:', error);
+        if (!cancelled && playbackTokenRef.current === token && shouldUseBrowserFallback(error)) {
+          console.warn('Using browser fallback as last resort for TTS startup failure');
           speakWithBrowserFallback(questionText, token);
+        } else if (!cancelled && playbackTokenRef.current === token) {
+          completeSpeaking(token);
         }
       }
     };

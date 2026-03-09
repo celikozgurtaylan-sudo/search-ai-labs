@@ -6,6 +6,7 @@ const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 const DEFAULT_VOICE = '9BWtsMINqrJLrRacOk9x';
 const ELEVENLABS_MODEL = 'eleven_multilingual_v2';
 const ELEVENLABS_TIMEOUT_MS = 6500;
+const ELEVENLABS_RETRY_DELAY_MS = 300;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -25,6 +26,39 @@ const toBase64Audio = (arrayBuffer: ArrayBuffer) => {
   return btoa(binary);
 };
 
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const shouldRetryElevenLabs = (status?: number, errorText = '', error?: unknown) => {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return true;
+  }
+
+  if (error instanceof TypeError) {
+    return true;
+  }
+
+  if (!status) {
+    return false;
+  }
+
+  if (status === 408 || status === 409 || status === 429) {
+    return true;
+  }
+
+  if (status >= 500) {
+    return true;
+  }
+
+  const normalizedError = errorText.toLowerCase();
+  return [
+    'too_many_requests',
+    'rate limit',
+    'timeout',
+    'temporarily unavailable',
+    'overloaded',
+  ].some((pattern) => normalizedError.includes(pattern));
+};
+
 const shouldFallbackToOpenAI = (status?: number, errorText = '', error?: unknown) => {
   if (error instanceof DOMException && error.name === 'AbortError') {
     return true;
@@ -42,19 +76,13 @@ const shouldFallbackToOpenAI = (status?: number, errorText = '', error?: unknown
     return true;
   }
 
-  if (status >= 401 && status <= 403) {
-    return true;
-  }
-
   const normalizedError = errorText.toLowerCase();
   return [
-    'quota_exceeded',
-    'sign_in_required',
-    'authentication_error',
     'too_many_requests',
     'rate limit',
-    'credit',
-    'insufficient',
+    'timeout',
+    'temporarily unavailable',
+    'overloaded',
   ].some((pattern) => normalizedError.includes(pattern));
 };
 
@@ -151,6 +179,41 @@ async function generateWithElevenLabs(text: string, voice: string) {
   }
 }
 
+async function generatePreferredTTS(text: string, voice: string, corsHeaders: Record<string, string>) {
+  const firstAttempt = await generateWithElevenLabs(text, voice);
+
+  if (firstAttempt.ok) {
+    return firstAttempt;
+  }
+
+  console.error('ElevenLabs TTS failed:', firstAttempt.errorText);
+  console.error('ElevenLabs status:', firstAttempt.status ?? 'request_error');
+
+  if (shouldRetryElevenLabs(firstAttempt.status, firstAttempt.errorText, firstAttempt.error)) {
+    console.log('Retrying ElevenLabs before fallback...');
+    await wait(ELEVENLABS_RETRY_DELAY_MS);
+
+    const retryAttempt = await generateWithElevenLabs(text, voice);
+
+    if (retryAttempt.ok) {
+      console.log('ElevenLabs retry succeeded');
+      return retryAttempt;
+    }
+
+    console.error('ElevenLabs retry failed:', retryAttempt.errorText);
+    console.error('ElevenLabs retry status:', retryAttempt.status ?? 'request_error');
+
+    if (shouldFallbackToOpenAI(retryAttempt.status, retryAttempt.errorText, retryAttempt.error)) {
+      console.log('Falling back to OpenAI TTS after repeated transient ElevenLabs failure');
+      return await generateWithOpenAI(text, corsHeaders);
+    }
+
+    throw new Error(`TTS generation failed: ${retryAttempt.status ?? 'request_error'} - ${retryAttempt.errorText}`);
+  }
+
+  throw new Error(`TTS generation failed: ${firstAttempt.status ?? 'request_error'} - ${firstAttempt.errorText}`);
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -169,22 +232,13 @@ serve(async (req) => {
     console.log('ElevenLabs API key present:', !!elevenlabsApiKey);
 
     if (!elevenlabsApiKey) {
-      console.warn('ElevenLabs API key not found, using OpenAI fallback immediately');
-      return await generateWithOpenAI(text, corsHeaders);
+      throw new Error('ElevenLabs API key not configured');
     }
 
-    const elevenlabsResult = await generateWithElevenLabs(text, voice);
+    const elevenlabsResult = await generatePreferredTTS(text, voice, corsHeaders);
 
-    if (!elevenlabsResult.ok) {
-      console.error('ElevenLabs TTS failed:', elevenlabsResult.errorText);
-      console.error('ElevenLabs status:', elevenlabsResult.status ?? 'request_error');
-
-      if (shouldFallbackToOpenAI(elevenlabsResult.status, elevenlabsResult.errorText, elevenlabsResult.error)) {
-        console.log('Falling back to OpenAI TTS after ElevenLabs failure');
-        return await generateWithOpenAI(text, corsHeaders);
-      }
-
-      throw new Error(`TTS generation failed: ${elevenlabsResult.status ?? 'request_error'} - ${elevenlabsResult.errorText}`);
+    if (elevenlabsResult instanceof Response) {
+      return elevenlabsResult;
     }
 
     console.log('ElevenLabs TTS response successful');
