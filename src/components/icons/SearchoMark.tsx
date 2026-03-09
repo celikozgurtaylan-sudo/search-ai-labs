@@ -1,24 +1,16 @@
-import type { SVGProps } from "react";
+import type { ComponentPropsWithoutRef } from "react";
+import searchoMarkSrc from "@/assets/searcho-mark.svg";
 
-export const SearchoMark = ({ className, ...props }: SVGProps<SVGSVGElement>) => {
+export const SearchoMark = ({ className, ...props }: ComponentPropsWithoutRef<"img">) => {
   return (
-    <svg
-      viewBox="0 0 64 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
+    <img
+      src={searchoMarkSrc}
+      alt=""
       aria-hidden="true"
+      className={["object-contain", className].filter(Boolean).join(" ")}
+      draggable={false}
       {...props}
-    >
-      <path
-        d="M18 8C11.3726 8 6 13.3726 6 20C6 26.6274 11.3726 32 18 32H22V42C22 48.6274 27.3726 54 34 54C40.6274 54 46 48.6274 46 42V32H46C52.6274 32 58 26.6274 58 20C58 13.3726 52.6274 8 46 8C41.0477 8 36.7966 11.0007 34.9567 15.2827C34.8153 15.6117 34.5016 15.824 34.1435 15.824H29.8565C29.4984 15.824 29.1847 15.6117 29.0433 15.2827C27.2034 11.0007 22.9523 8 18 8Z"
-        fill="currentColor"
-      />
-      <path
-        d="M18 56C11.3726 56 6 50.6274 6 44C6 37.3726 11.3726 32 18 32H22V22C22 15.3726 27.3726 10 34 10C40.6274 10 46 15.3726 46 22V32H46C52.6274 32 58 37.3726 58 44C58 50.6274 52.6274 56 46 56C41.0477 56 36.7966 52.9993 34.9567 48.7173C34.8153 48.3883 34.5016 48.176 34.1435 48.176H29.8565C29.4984 48.176 29.1847 48.3883 29.0433 48.7173C27.2034 52.9993 22.9523 56 18 56Z"
-        fill="currentColor"
-      />
-    </svg>
+    />
   );
 };
 
