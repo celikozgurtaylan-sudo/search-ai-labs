@@ -1,7 +1,15 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { Resend } from "https://esm.sh/resend@2.0.0";
 
-const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+const resendApiKey = Deno.env.get("RESEND_API_KEY")?.trim();
+const invitationFromEmail = (
+  Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "no-reply@invite.searcho.online"
+);
+const invitationFromName = (
+  Deno.env.get("RESEND_FROM_NAME")?.trim() || "Searcho Research"
+);
+const invitationFromAddress = `${invitationFromName} <${invitationFromEmail}>`;
+const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -327,6 +335,14 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
+    if (!resend) {
+      throw new Error("RESEND_API_KEY secret is missing");
+    }
+
+    if (invitationFromEmail.endsWith("@resend.dev")) {
+      throw new Error("RESEND_FROM_EMAIL must use a verified custom domain, not resend.dev");
+    }
+
     const { 
       participantEmail, 
       participantName, 
@@ -350,6 +366,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log('Sending invitation email to:', participantEmail);
     console.log('Invitation token:', invitationToken);
+    console.log('Using sender address:', invitationFromAddress);
 
     const emailHtml = createEmailTemplate(
       participantName || participantEmail.split('@')[0], 
@@ -362,7 +379,7 @@ const handler = async (req: Request): Promise<Response> => {
     );
 
     const emailResponse = await resend.emails.send({
-      from: 'UX Araştırma <onboarding@resend.dev>',
+      from: invitationFromAddress,
       to: [participantEmail],
       subject: `🔬 Araştırma Davetiyesi - ${projectTitle || 'UX Araştırması'}`,
       html: emailHtml,
