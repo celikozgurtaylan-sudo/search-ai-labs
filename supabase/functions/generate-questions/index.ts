@@ -83,10 +83,10 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
-          messages: [
-            { role: 'user', content: validationPrompt }
-          ],
+         model: 'openai/gpt-5.2',
+         messages: [
+           { role: 'user', content: validationPrompt }
+         ],
           temperature: 0.3,
           max_tokens: 200,
         }),
@@ -124,7 +124,7 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'openai/gpt-5.2',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
