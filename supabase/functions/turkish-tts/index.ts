@@ -3,10 +3,59 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const elevenlabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+const DEFAULT_VOICE = '9BWtsMINqrJLrRacOk9x';
+const ELEVENLABS_MODEL = 'eleven_multilingual_v2';
+const ELEVENLABS_TIMEOUT_MS = 6500;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const toBase64Audio = (arrayBuffer: ArrayBuffer) => {
+  const uint8Array = new Uint8Array(arrayBuffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+
+  for (let i = 0; i < uint8Array.length; i += chunkSize) {
+    const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+
+  return btoa(binary);
+};
+
+const shouldFallbackToOpenAI = (status?: number, errorText = '', error?: unknown) => {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return true;
+  }
+
+  if (error instanceof TypeError) {
+    return true;
+  }
+
+  if (!status) {
+    return false;
+  }
+
+  if (status >= 500 || status === 408 || status === 409 || status === 429) {
+    return true;
+  }
+
+  if (status >= 401 && status <= 403) {
+    return true;
+  }
+
+  const normalizedError = errorText.toLowerCase();
+  return [
+    'quota_exceeded',
+    'sign_in_required',
+    'authentication_error',
+    'too_many_requests',
+    'rate limit',
+    'credit',
+    'insufficient',
+  ].some((pattern) => normalizedError.includes(pattern));
 };
 
 // Fallback function using OpenAI TTS
@@ -39,29 +88,67 @@ async function generateWithOpenAI(text: string, corsHeaders: Record<string, stri
 
   console.log('OpenAI TTS fallback successful');
 
-  // Convert to base64
-  const arrayBuffer = await response.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
-  let binary = '';
-  const chunkSize = 0x8000;
-  
-  for (let i = 0; i < uint8Array.length; i += chunkSize) {
-    const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
-    binary += String.fromCharCode.apply(null, Array.from(chunk));
-  }
-  
-  const base64Audio = btoa(binary);
+  const base64Audio = toBase64Audio(await response.arrayBuffer());
   
   return new Response(
     JSON.stringify({ 
       audioContent: base64Audio,
       text: text,
-      source: 'openai' // Indicate fallback was used
+      source: 'openai',
     }),
     {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     },
   );
+}
+
+async function generateWithElevenLabs(text: string, voice: string) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ELEVENLABS_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': elevenlabsApiKey!,
+      },
+      body: JSON.stringify({
+        text,
+        model_id: ELEVENLABS_MODEL,
+        voice_settings: {
+          stability: 0.42,
+          similarity_boost: 0.78,
+          style: 0.1,
+          use_speaker_boost: true,
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        ok: false as const,
+        status: response.status,
+        errorText,
+      };
+    }
+
+    return {
+      ok: true as const,
+      base64Audio: toBase64Audio(await response.arrayBuffer()),
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      error,
+      errorText: error instanceof Error ? error.message : 'Unknown ElevenLabs error',
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 serve(async (req) => {
@@ -71,13 +158,7 @@ serve(async (req) => {
   }
 
   try {
-    if (!elevenlabsApiKey) {
-      console.error('ElevenLabs API key not found in environment variables');
-      throw new Error('ElevenLabs API key not configured');
-    }
-
-    // Default to a Turkish-sounding voice
-    const { text, voice = 'cgSgspJ2msm6clMCkdW9' } = await req.json(); // Jessica voice
+    const { text, voice = DEFAULT_VOICE } = await req.json();
 
     if (!text) {
       throw new Error('Text is required for TTS generation');
@@ -87,62 +168,33 @@ serve(async (req) => {
     console.log('Using voice:', voice);
     console.log('ElevenLabs API key present:', !!elevenlabsApiKey);
 
-    // Generate speech using ElevenLabs TTS
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}`, {
-      method: 'POST',
-      headers: {
-        'Accept': 'audio/mpeg',
-        'Content-Type': 'application/json',
-        'xi-api-key': elevenlabsApiKey,
-      },
-      body: JSON.stringify({
-        text: text,
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.5,
-          style: 0.0,
-          use_speaker_boost: true
-        }
-      }),
-    });
+    if (!elevenlabsApiKey) {
+      console.warn('ElevenLabs API key not found, using OpenAI fallback immediately');
+      return await generateWithOpenAI(text, corsHeaders);
+    }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('ElevenLabs TTS API error:', errorText);
-      console.error('Response status:', response.status);
-      console.error('Response headers:', Object.fromEntries(response.headers.entries()));
-      
-      // If quota exceeded, try OpenAI TTS as fallback
-      if (response.status === 401 && errorText.includes('quota_exceeded')) {
-        console.log('ElevenLabs quota exceeded, falling back to OpenAI TTS...');
+    const elevenlabsResult = await generateWithElevenLabs(text, voice);
+
+    if (!elevenlabsResult.ok) {
+      console.error('ElevenLabs TTS failed:', elevenlabsResult.errorText);
+      console.error('ElevenLabs status:', elevenlabsResult.status ?? 'request_error');
+
+      if (shouldFallbackToOpenAI(elevenlabsResult.status, elevenlabsResult.errorText, elevenlabsResult.error)) {
+        console.log('Falling back to OpenAI TTS after ElevenLabs failure');
         return await generateWithOpenAI(text, corsHeaders);
       }
-      
-      throw new Error(`TTS generation failed: ${response.status} - ${errorText}`);
+
+      throw new Error(`TTS generation failed: ${elevenlabsResult.status ?? 'request_error'} - ${elevenlabsResult.errorText}`);
     }
 
     console.log('ElevenLabs TTS response successful');
-
-    // Convert to base64 safely to avoid stack overflow
-    const arrayBuffer = await response.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
-    let binary = '';
-    const chunkSize = 0x8000; // 32KB chunks to avoid stack overflow
-    
-    for (let i = 0; i < uint8Array.length; i += chunkSize) {
-      const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
-      binary += String.fromCharCode.apply(null, Array.from(chunk));
-    }
-    
-    const base64Audio = btoa(binary);
-    
-    console.log('Successfully generated base64 audio, length:', base64Audio.length);
+    console.log('Successfully generated base64 audio, length:', elevenlabsResult.base64Audio.length);
 
     return new Response(
       JSON.stringify({ 
-        audioContent: base64Audio,
-        text: text
+        audioContent: elevenlabsResult.base64Audio,
+        text,
+        source: 'elevenlabs',
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

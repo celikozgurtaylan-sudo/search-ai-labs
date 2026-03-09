@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { AudioTranscriber } from '@/utils/AudioTranscriber';
-import { interviewService, InterviewQuestion, InterviewProgress } from '@/services/interviewService';
+import { interviewService, InterviewQuestion, InterviewProgress, setInterviewSessionToken } from '@/services/interviewService';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
 import { AvatarSpeaker } from './AvatarSpeaker';
 
@@ -18,6 +18,7 @@ interface SearchoAIProps {
     discussionGuide?: any;
     template?: string;
     sessionId?: string;
+    sessionToken?: string;
     projectId?: string;
     participantId?: string;
     designScreens?: Array<{
@@ -73,6 +74,14 @@ const SearchoAI = ({
   const videoChunksRef = useRef<Blob[]>([]);
   const audioTranscriberRef = useRef<AudioTranscriber | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    setInterviewSessionToken(projectContext?.sessionToken ?? null);
+
+    return () => {
+      setInterviewSessionToken(null);
+    };
+  }, [projectContext?.sessionToken]);
 
   // Initialize questions when session starts
   useEffect(() => {

@@ -208,20 +208,20 @@ const Workspace = () => {
           id: 'detailed-exploration',
           title: 'Detaylı Keşif',
           questions: [
-            'Bunu normalde nasıl yaklaşacağınızı anlatabilir misiniz?',
-            'Bu sizin için daha değerli kılacak şey nedir?',
-            'Hangi endişeleriniz veya tereddütleriniz var?',
-            'Bu mevcut iş akışınıza nasıl uyar?',
-            'Görmeyi beklediğiniz ama eksik olan şey nedir?'
+            'Buna normalde nasıl yaklaştığınızı anlatır mısınız?',
+            'Burada sizin için değerli görünen unsurlar neler?',
+            'Bu deneyim sizde hangi düşünceleri uyandırdı?',
+            'Bu mevcut iş akışınızın neresine oturuyor?',
+            'Burada görmeyi beklediğiniz şeyler nelerdi?'
           ]
         },
         {
           id: 'final-thoughts',
           title: 'Son Düşünceler ve Öneriler',
           questions: [
-            'Genel olarak bunu nasıl değerlendirirsiniz?',
+            'Genel olarak bu deneyimi nasıl özetlersiniz?',
             'Elinizde olsa neyi değiştirirdiniz?',
-            'Bunu bir meslektaşınıza tavsiye eder misiniz? Neden?',
+            'Bunu bir meslektaşınıza nasıl anlatırdınız?',
             'Son düşünceleriniz veya önerileriniz var mı?'
           ]
         }

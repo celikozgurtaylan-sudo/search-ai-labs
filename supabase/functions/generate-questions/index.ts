@@ -6,6 +6,128 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const parseQuestionsFromText = (generatedText: string): string[] => {
+  try {
+    const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(parsed.questions)) {
+        return parsed.questions;
+      }
+    }
+  } catch (error) {
+    console.error('JSON parsing failed, using fallback:', error);
+  }
+
+  const numberedQuestions = generatedText
+    .split('\n')
+    .filter((line: string) => line.trim().match(/^\d+\./))
+    .map((line: string) => line.replace(/^\d+\.\s*/, '').trim())
+    .slice(0, 3);
+
+  if (numberedQuestions.length > 0) {
+    return numberedQuestions;
+  }
+
+  return generatedText
+    .split('\n')
+    .filter((line: string) => line.trim().length > 10)
+    .slice(0, 3)
+    .map((line: string) => line.replace(/^[-*]\s*/, '').trim());
+};
+
+const normalizeQuestion = (question: string) =>
+  question
+    .toLocaleLowerCase('tr-TR')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const isLikelyLeadingQuestion = (question: string) => {
+  const normalized = normalizeQuestion(question);
+
+  const directLeadingPatterns = [
+    /oldu mu\??$/,
+    /geldi mi\??$/,
+    /verdi mi\??$/,
+    /yaşad[ıi]n[ıi]z mı\??$/,
+    /yaşad[ıi]ğ[ıi]n[ıi]z bir .* oldu mu\??$/,
+    /fark ettiniz mi\??$/,
+    /zorland[ıi]n[ıi]z mı\??$/,
+    /memnun musunuz\??$/,
+    /ikna edici/,
+    /güven ver/,
+    /karışıklık/,
+  ];
+
+  if (directLeadingPatterns.some((pattern) => pattern.test(normalized))) {
+    return true;
+  }
+
+  const assumptiveStarts = [
+    'hangi sorun',
+    'hangi problem',
+    'hangi endişe',
+    'hangi tereddüt',
+    'nerede zorland',
+    'neden zorland',
+    'hangi noktada zorland',
+    'neden karıştı',
+    'hangi bölüm yetersiz',
+    'hangi bölüm eksik',
+  ];
+
+  return assumptiveStarts.some((pattern) => normalized.startsWith(pattern));
+};
+
+const sanitizeQuestions = (questions: string[]) => {
+  const uniqueQuestions = Array.from(new Set(
+    questions
+      .map((question) => question.trim())
+      .filter((question) => question.length > 0)
+  ));
+
+  const valid = uniqueQuestions.filter((question) => !isLikelyLeadingQuestion(question));
+  const rejected = uniqueQuestions.filter((question) => isLikelyLeadingQuestion(question));
+
+  return { valid, rejected };
+};
+
+const getFallbackQuestions = (sectionTitle: string) => {
+  const normalizedSectionTitle = sectionTitle.toLocaleLowerCase('tr-TR');
+
+  if (normalizedSectionTitle.includes('ilk izlenim')) {
+    return [
+      'Bu ekranı ilk gördüğünüzde dikkatinizi en çok ne çekti?',
+      'Burada size ne anlatılmak istendiğini kendi cümlelerinizle nasıl tarif edersiniz?',
+      'İlk bakışta size net gelen ve belirsiz kalan noktalar nelerdi?',
+    ];
+  }
+
+  if (normalizedSectionTitle.includes('son düşünce')) {
+    return [
+      'Bu deneyimi genel olarak nasıl özetlersiniz?',
+      'Sizin için en önemli nokta neydi?',
+      'Bu deneyimi geliştirmek için nereden başlamayı önerirsiniz?',
+    ];
+  }
+
+  return [
+    'Bu bölümde dikkatinizi en çok ne çekti?',
+    'Burada yaşadığınız deneyimi kendi cümlelerinizle anlatır mısınız?',
+    'Bu bölüm size neyi düşündürdü?',
+  ];
+};
+
+const buildQuestionPrompt = (sectionTitle: string, sectionId: string, projectDescription: string, existingQuestions: string[]) => `Proje: ${projectDescription}
+
+Bölüm: "${sectionTitle}" (ID: ${sectionId})
+
+Var olan sorular:
+${existingQuestions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}
+
+Bu bölüm için 3 yeni, farklı ve yaratıcı soru üret. JSON formatında döndür:
+{"questions": ["soru1", "soru2", "soru3"]}`;
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -38,6 +160,7 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 ✓ **Keşfedici**: Kullanıcının deneyimini, duygularını, motivasyonunu anlamaya yönelik
 ✓ **Jargonsuz**: Teknik terimler yerine anlaşılır günlük dil
 ✓ **Bağlamsal**: Var olan soruları tekrar etme, farklı açılardan yaklaş
+✓ **Nötr ve Yönlendirmesiz**: Kullanıcıya bir sorun, duygu veya yargı empoze etme
 
 ## Bölüm Türlerine Göre Yaklaşım
 - **Profesyonel Geçmiş**: "Bu alanda ne zamandır çalışıyorsun?", "Günlük iş akışında hangi araçları kullanıyorsun?"
@@ -48,17 +171,23 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 ## Önemli
 - Sorular 15-25 kelime uzunluğunda olsun
 - Her soru farklı bir açıdan yaklaşsın
-- Kullanıcının hikayesini dinlemeye odaklan, sorgu değil keşif yap`;
+- Kullanıcının hikayesini dinlemeye odaklan, sorgu değil keşif yap
 
-    const userPrompt = `Proje: ${projectDescription}
+## Kesin Yasaklar
+- Leading question yazma
+- Sorunun içinde "karışıklık", "sorun", "problem", "eksik", "güven verdi", "ikna edici" gibi yargı veya varsayım gömme
+- Evet/hayır ile cevaplanabilecek şekilde soru kurma
+- Kullanıcının olumsuz bir deneyim yaşadığını varsayma
 
-Bölüm: "${sectionTitle}" (ID: ${sectionId})
+## Kötü ve İyi Örnekler
+- Kötü: "Promosyon metni ve görsel öğeler arasında anlam karışıklığı yaşadığınız bir bölüm oldu mu?"
+- İyi: "Promosyon metni ve görsellerin birlikte nasıl bir mesaj verdiğini anlatır mısınız?"
+- Kötü: "Bu alan size güven verdi mi?"
+- İyi: "Bu alan sizde nasıl bir izlenim bıraktı?"
 
-Var olan sorular:
-${existingQuestions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}
+Çıktıdan önce kendi kendine kontrol et: Her soru nötr, açık uçlu ve varsayımsız mı? Değilse yeniden yaz.`;
 
-Bu bölüm için 3 yeni, farklı ve yaratıcı soru üret. JSON formatında döndür:
-{"questions": ["soru1", "soru2", "soru3"]}`;
+    const userPrompt = buildQuestionPrompt(sectionTitle, sectionId, projectDescription, existingQuestions);
 
     console.log('Generating questions for section:', sectionTitle);
 
@@ -129,7 +258,7 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        temperature: 0.8,
+        temperature: 0.5,
         max_tokens: 500,
       }),
     });
@@ -145,41 +274,58 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
     
     console.log('Generated response:', generatedText);
 
-    // Try to parse JSON from the response
-    let questions;
-    try {
-      const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        questions = JSON.parse(jsonMatch[0]).questions;
-      } else {
-        // Fallback: split by lines and clean up
-        questions = generatedText
-          .split('\n')
-          .filter((line: string) => line.trim().match(/^\d+\./))
-          .map((line: string) => line.replace(/^\d+\.\s*/, '').trim())
-          .slice(0, 3);
+    let questions = parseQuestionsFromText(generatedText);
+    let { valid, rejected } = sanitizeQuestions(questions);
+
+    if (valid.length < 3) {
+      console.log('Retrying question generation due to leading or weak questions:', rejected);
+
+      const retryPrompt = `${buildQuestionPrompt(sectionTitle, sectionId, projectDescription, existingQuestions)}
+
+Aşağıdaki sorular leading, varsayımsız değil veya yeterince açık uçlu olmadığı için reddedildi:
+${questions.map((question, index) => `${index + 1}. ${question}`).join('\n')}
+
+Sadece nötr, açık uçlu ve varsayımsız 3 soru üret. "Oldu mu?", "yaşadınız mı?", "karışıklık", "sorun", "problem", "güven verdi mi?" gibi kalıpları kullanma.`;
+
+      const retryResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-5.2',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: retryPrompt }
+          ],
+          temperature: 0.35,
+          max_tokens: 500,
+        }),
+      });
+
+      if (retryResponse.ok) {
+        const retryData = await retryResponse.json();
+        questions = parseQuestionsFromText(retryData.choices[0].message.content);
+        ({ valid, rejected } = sanitizeQuestions(questions));
       }
-    } catch (e) {
-      console.error('JSON parsing failed, using fallback:', e);
-      questions = generatedText
-        .split('\n')
-        .filter((line: string) => line.trim().length > 10)
-        .slice(0, 3)
-        .map((line: string) => line.replace(/^[-*]\s*/, '').trim());
     }
 
-    // Ensure we have at least some questions
-    if (!questions || questions.length === 0) {
-      questions = [
-        'Bu konudaki deneyiminizi paylaşır mısınız?',
-        'Size en çok ne dikkat çekiyor?',
-        'Hangi iyileştirmeleri önerirsiniz?'
-      ];
+    if (rejected.length > 0) {
+      console.log('Rejected leading questions:', rejected);
     }
 
-    console.log('Final questions:', questions);
+    if (valid.length === 0) {
+      valid = getFallbackQuestions(sectionTitle);
+    }
 
-    return new Response(JSON.stringify({ questions: questions.slice(0, 3) }), {
+    if (valid.length < 3) {
+      valid = [...valid, ...getFallbackQuestions(sectionTitle)].slice(0, 3);
+    }
+
+    console.log('Final questions:', valid);
+
+    return new Response(JSON.stringify({ questions: valid.slice(0, 3) }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {

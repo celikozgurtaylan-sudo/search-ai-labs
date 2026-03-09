@@ -894,6 +894,7 @@ const StudySession = () => {
                     discussionGuide: projectData.analysis?.discussionGuide || null,
                     template: 'interview',
                     sessionId: sessionId,
+                    sessionToken,
                     projectId: projectData.id,
                     participantId: participantId,
                     designScreens

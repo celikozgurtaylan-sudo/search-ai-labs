@@ -60,7 +60,19 @@ export const textToSpeech = async (text: string): Promise<ArrayBuffer> => {
   try {
     return await invokeTTS('turkish-tts');
   } catch (primaryError) {
-    console.warn('Primary Turkish TTS failed, falling back to legacy TTS:', primaryError);
+    const errorMessage = primaryError instanceof Error ? primaryError.message : String(primaryError);
+    const shouldTryLegacyFallback =
+      errorMessage.includes('Edge Function returned a non-2xx status code') ||
+      errorMessage.includes('Failed to send a request to the Edge Function') ||
+      errorMessage.includes('FunctionsFetchError') ||
+      errorMessage.includes('404');
+
+    if (!shouldTryLegacyFallback) {
+      console.error('Primary Turkish TTS failed after provider fallback chain:', primaryError);
+      throw primaryError;
+    }
+
+    console.warn('Primary Turkish TTS invocation failed, falling back to legacy TTS endpoint:', primaryError);
 
     try {
       return await invokeTTS('text-to-speech');
