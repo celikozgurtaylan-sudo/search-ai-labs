@@ -10,6 +10,15 @@ import { projectService } from "@/services/projectService";
 import { interviewService, InterviewProgress, InterviewQuestion } from "@/services/interviewService";
 import { CheckCircle, AlertCircle, Loader2, ExternalLink, Image as ImageIcon, Camera } from "lucide-react";
 
+type CameraValidationState = 'idle' | 'requesting' | 'verifying' | 'preview' | 'stream' | 'failed';
+
+type CameraValidationResult = {
+  verified: boolean;
+  preview: boolean;
+  state: Extract<CameraValidationState, 'preview' | 'stream' | 'failed'>;
+  message: string | null;
+};
+
 const svgToDataUrl = (svg: string) => `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 
 const createMockScreen = (accent: string, title: string, subtitle: string, cta: string) =>
@@ -107,11 +116,274 @@ const StudySession = () => {
   const [cameraGateCompleted, setCameraGateCompleted] = useState(false);
   const [cameraRequestPending, setCameraRequestPending] = useState(false);
   const [cameraPreviewReady, setCameraPreviewReady] = useState(false);
+  const [cameraStreamVerified, setCameraStreamVerified] = useState(false);
+  const [cameraValidationState, setCameraValidationState] = useState<CameraValidationState>('idle');
+  const [cameraValidationMessage, setCameraValidationMessage] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraGateVideoRef = useRef<HTMLVideoElement>(null);
-  const previewFailureTimerRef = useRef<number | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const hasShownCameraFailureRef = useRef(false);
-  const cameraRequestedAtRef = useRef<number | null>(null);
+
+  const stopCameraStream = (stream: MediaStream | null) => {
+    stream?.getTracks().forEach(track => track.stop());
+  };
+
+  const resetCameraState = (message: string | null = null) => {
+    setCameraEnabled(false);
+    setCameraPreviewReady(false);
+    setCameraStreamVerified(false);
+    setCameraGateCompleted(false);
+    setCameraValidationState(message ? 'failed' : 'idle');
+    setCameraValidationMessage(message);
+  };
+
+  const isLiveVideoTrack = (track?: MediaStreamTrack | null) =>
+    Boolean(track && track.readyState === 'live' && track.enabled !== false);
+
+  const waitForVideoMetadata = async (video: HTMLVideoElement, timeoutMs = 2000) =>
+    new Promise<boolean>((resolve) => {
+      if (
+        video.readyState >= HTMLMediaElement.HAVE_METADATA &&
+        video.videoWidth > 0 &&
+        video.videoHeight > 0
+      ) {
+        resolve(true);
+        return;
+      }
+
+      let settled = false;
+      let intervalId: number | null = null;
+      let timeoutId: number | null = null;
+
+      const finish = (result: boolean) => {
+        if (settled) return;
+        settled = true;
+        if (intervalId !== null) window.clearInterval(intervalId);
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+        resolve(result);
+      };
+
+      intervalId = window.setInterval(() => {
+        if (
+          video.readyState >= HTMLMediaElement.HAVE_METADATA &&
+          video.videoWidth > 0 &&
+          video.videoHeight > 0
+        ) {
+          finish(true);
+        }
+      }, 120);
+
+      timeoutId = window.setTimeout(() => finish(false), timeoutMs);
+    });
+
+  const waitForRenderedPreview = async (video: HTMLVideoElement, timeoutMs = 2200) =>
+    new Promise<boolean>((resolve) => {
+      const canUseVideoFrameCallback = typeof (video as HTMLVideoElement & {
+        requestVideoFrameCallback?: (callback: () => void) => number;
+      }).requestVideoFrameCallback === 'function';
+
+      let settled = false;
+      let intervalId: number | null = null;
+      let timeoutId: number | null = null;
+      let frameCount = 0;
+
+      const finish = (result: boolean) => {
+        if (settled) return;
+        settled = true;
+        if (intervalId !== null) window.clearInterval(intervalId);
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+        resolve(result);
+      };
+
+      const hasRenderableFrame = () =>
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        video.videoWidth > 0 &&
+        video.videoHeight > 0 &&
+        !video.paused &&
+        !video.ended;
+
+      timeoutId = window.setTimeout(() => finish(false), timeoutMs);
+
+      if (canUseVideoFrameCallback) {
+        const frameVideo = video as HTMLVideoElement & {
+          requestVideoFrameCallback: (callback: () => void) => number;
+        };
+
+        const tick = () => {
+          frameVideo.requestVideoFrameCallback(() => {
+            if (settled) return;
+
+            if (hasRenderableFrame()) {
+              frameCount += 1;
+              if (frameCount >= 2) {
+                finish(true);
+                return;
+              }
+            }
+
+            tick();
+          });
+        };
+
+        tick();
+        return;
+      }
+
+      intervalId = window.setInterval(() => {
+        if (hasRenderableFrame()) {
+          finish(true);
+        }
+      }, 120);
+    });
+
+  const verifyTrackWithImageCapture = async (track: MediaStreamTrack) => {
+    const ImageCaptureCtor = (window as Window & {
+      ImageCapture?: new (mediaStreamTrack: MediaStreamTrack) => { grabFrame: () => Promise<ImageBitmap> };
+    }).ImageCapture;
+
+    if (!ImageCaptureCtor) return false;
+
+    try {
+      const capture = new ImageCaptureCtor(track);
+      const bitmap = await capture.grabFrame();
+      const isValid = bitmap.width > 0 && bitmap.height > 0;
+      if (typeof bitmap.close === 'function') {
+        bitmap.close();
+      }
+      return isValid;
+    } catch (error) {
+      console.warn('ImageCapture validation failed:', error);
+      return false;
+    }
+  };
+
+  const verifyTrackWithRecorder = async (stream: MediaStream, timeoutMs = 2600) => {
+    if (typeof MediaRecorder === 'undefined') return false;
+
+    const preferredMimeTypes = [
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm',
+      'video/mp4',
+    ];
+
+    const supportedMimeType = preferredMimeTypes.find((candidate) =>
+      typeof MediaRecorder.isTypeSupported === 'function'
+        ? MediaRecorder.isTypeSupported(candidate)
+        : candidate === 'video/webm'
+    );
+
+    try {
+      const recorder = supportedMimeType
+        ? new MediaRecorder(stream, { mimeType: supportedMimeType })
+        : new MediaRecorder(stream);
+
+      return await new Promise<boolean>((resolve) => {
+        let recordedBytes = 0;
+        let settled = false;
+
+        const finish = (result: boolean) => {
+          if (settled) return;
+          settled = true;
+          resolve(result);
+        };
+
+        const timeoutId = window.setTimeout(() => {
+          if (recorder.state !== 'inactive') {
+            recorder.stop();
+          }
+          finish(false);
+        }, timeoutMs);
+
+        recorder.ondataavailable = (event) => {
+          recordedBytes += event.data?.size || 0;
+        };
+
+        recorder.onerror = () => {
+          window.clearTimeout(timeoutId);
+          finish(false);
+        };
+
+        recorder.onstop = () => {
+          window.clearTimeout(timeoutId);
+          finish(recordedBytes > 0);
+        };
+
+        recorder.start(250);
+
+        window.setTimeout(() => {
+          if (recorder.state !== 'inactive') {
+            recorder.stop();
+          }
+        }, 900);
+      });
+    } catch (error) {
+      console.warn('MediaRecorder validation failed:', error);
+      return false;
+    }
+  };
+
+  const validateCameraStream = async (stream: MediaStream): Promise<CameraValidationResult> => {
+    const videoTrack = stream.getVideoTracks()[0];
+    if (!isLiveVideoTrack(videoTrack)) {
+      return {
+        verified: false,
+        preview: false,
+        state: 'failed',
+        message: 'Kamera akisi baslatilamadi. Lutfen tekrar deneyin.',
+      };
+    }
+
+    const previewElement = cameraGateVideoRef.current;
+
+    if (previewElement) {
+      previewElement.srcObject = stream;
+
+      try {
+        await previewElement.play();
+      } catch (error) {
+        console.warn('Preview playback could not start immediately:', error);
+      }
+
+      const hasMetadata = await waitForVideoMetadata(previewElement);
+      if (hasMetadata) {
+        const hasRenderedPreview = await waitForRenderedPreview(previewElement);
+        if (hasRenderedPreview) {
+          return {
+            verified: true,
+            preview: true,
+            state: 'preview',
+            message: null,
+          };
+        }
+      }
+    }
+
+    if (await verifyTrackWithImageCapture(videoTrack)) {
+      return {
+        verified: true,
+        preview: false,
+        state: 'stream',
+        message: 'Tarayiciniz canli onizlemeyi gostermese de kameraniz aktif olarak dogrulandi. Devam edebilirsiniz.',
+      };
+    }
+
+    if (await verifyTrackWithRecorder(stream)) {
+      return {
+        verified: true,
+        preview: false,
+        state: 'stream',
+        message: 'Tarayiciniz canli onizlemeyi gostermese de kameraniz aktif olarak dogrulandi. Devam edebilirsiniz.',
+      };
+    }
+
+    return {
+      verified: false,
+      preview: false,
+      state: 'failed',
+      message: 'Canli kamera goruntusu dogrulanamadi. Kamerayi yeniden deneyin.',
+    };
+  };
 
   useEffect(() => {
     // Skip initialization in design mode
@@ -132,12 +404,13 @@ const StudySession = () => {
     void checkCameraPermissions();
 
     return () => {
-      if (previewFailureTimerRef.current) {
-        window.clearTimeout(previewFailureTimerRef.current);
-      }
-      cameraStream?.getTracks().forEach(track => track.stop());
+      stopCameraStream(cameraStreamRef.current);
     };
   }, [sessionToken]);
+
+  useEffect(() => {
+    cameraStreamRef.current = cameraStream;
+  }, [cameraStream]);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -152,78 +425,49 @@ const StudySession = () => {
   }, [cameraStream]);
 
   useEffect(() => {
-    if (!cameraStream) {
-      setCameraPreviewReady(false);
-      return;
-    }
+    if (!cameraStream || !cameraGateCompleted) return;
 
-    const interval = window.setInterval(() => {
-      const previewElement = cameraGateCompleted ? videoRef.current : cameraGateVideoRef.current;
-      const activeVideoTrack = cameraStream.getVideoTracks()[0];
-      const trackSettings = activeVideoTrack?.getSettings?.() || {};
-      const hasLiveTrack = Boolean(
-        activeVideoTrack &&
-        activeVideoTrack.readyState === 'live' &&
-        activeVideoTrack.enabled
-      );
-      const hasLiveFrame = Boolean(
-        previewElement &&
-        previewElement.srcObject &&
-        previewElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-        previewElement.videoWidth > 0 &&
-        previewElement.videoHeight > 0 &&
-        !previewElement.paused &&
-        !previewElement.ended
-      );
-      const hasUsableTrackFallback = Boolean(
-        hasLiveTrack &&
-        ((typeof trackSettings.width === 'number' && trackSettings.width > 0) ||
-          (typeof trackSettings.height === 'number' && trackSettings.height > 0))
-      );
-      const canTrustTrackFallback = Boolean(
-        !cameraGateCompleted &&
-        hasUsableTrackFallback &&
-        cameraRequestedAtRef.current &&
-        Date.now() - cameraRequestedAtRef.current > 1800
-      );
+    const previewElement = videoRef.current;
+    if (!previewElement) return;
 
-      if (hasLiveFrame || canTrustTrackFallback) {
-        if (previewFailureTimerRef.current) {
-          window.clearTimeout(previewFailureTimerRef.current);
-          previewFailureTimerRef.current = null;
-        }
-        hasShownCameraFailureRef.current = false;
-        setCameraPreviewReady(true);
-        return;
+    let intervalId: number | null = null;
+
+    const syncPreviewHealth = async () => {
+      if (!previewElement.srcObject) {
+        previewElement.srcObject = cameraStream;
       }
 
-      setCameraPreviewReady(false);
+      try {
+        await previewElement.play();
+      } catch (error) {
+        console.warn('Floating preview playback could not start immediately:', error);
+      }
 
-      if (!cameraGateCompleted || previewFailureTimerRef.current) return;
+      intervalId = window.setInterval(() => {
+        const hasRenderableFrame =
+          previewElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+          previewElement.videoWidth > 0 &&
+          previewElement.videoHeight > 0 &&
+          !previewElement.paused &&
+          !previewElement.ended;
 
-      previewFailureTimerRef.current = window.setTimeout(() => {
-        setCameraGateCompleted(false);
-        if (!hasShownCameraFailureRef.current) {
-          toast.error("Kamera goruntusu kesildi. Devam etmeden once yeniden baglanin.");
-          hasShownCameraFailureRef.current = true;
-        }
-        previewFailureTimerRef.current = null;
-      }, 1500);
-    }, 400);
+        setCameraPreviewReady(hasRenderableFrame);
+      }, 800);
+    };
+
+    void syncPreviewHealth();
 
     return () => {
-      window.clearInterval(interval);
-      if (previewFailureTimerRef.current) {
-        window.clearTimeout(previewFailureTimerRef.current);
-        previewFailureTimerRef.current = null;
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
       }
     };
   }, [cameraStream, cameraGateCompleted]);
 
   useEffect(() => {
-    if (cameraGateCompleted || cameraEnabled || cameraRequestPending) return;
+    if (cameraGateCompleted || cameraEnabled || cameraRequestPending || cameraValidationState === 'failed') return;
     void requestCameraAccess();
-  }, [cameraGateCompleted, cameraEnabled, cameraRequestPending]);
+  }, [cameraGateCompleted, cameraEnabled, cameraRequestPending, cameraValidationState]);
 
   useEffect(() => {
     if (!cameraStream) return;
@@ -231,27 +475,31 @@ const StudySession = () => {
     const videoTrack = cameraStream.getVideoTracks()[0];
     if (!videoTrack) return;
 
+    let disconnected = false;
+
     const handleTrackInterrupted = () => {
-      setCameraPreviewReady(false);
-      setCameraGateCompleted(false);
+      if (disconnected) return;
+      disconnected = true;
+
+      stopCameraStream(cameraStream);
+      setCameraStream(null);
+      resetCameraState("Kamera baglantisi kesildi. Devam etmeden once yeniden baglanin.");
       if (!hasShownCameraFailureRef.current) {
         toast.error("Kamera baglantisi kesildi. Oturum devam etmeden once kamerayi yeniden acin.");
         hasShownCameraFailureRef.current = true;
       }
     };
 
-    const handleTrackResumed = () => {
-      hasShownCameraFailureRef.current = false;
-    };
-
     videoTrack.addEventListener('ended', handleTrackInterrupted);
-    videoTrack.addEventListener('mute', handleTrackInterrupted);
-    videoTrack.addEventListener('unmute', handleTrackResumed);
+    const healthInterval = window.setInterval(() => {
+      if (!isLiveVideoTrack(videoTrack)) {
+        handleTrackInterrupted();
+      }
+    }, 1200);
 
     return () => {
       videoTrack.removeEventListener('ended', handleTrackInterrupted);
-      videoTrack.removeEventListener('mute', handleTrackInterrupted);
-      videoTrack.removeEventListener('unmute', handleTrackResumed);
+      window.clearInterval(healthInterval);
     };
   }, [cameraStream]);
 
@@ -336,6 +584,10 @@ const StudySession = () => {
 
   const checkCameraPermissions = async () => {
     try {
+      if (!('permissions' in navigator) || !navigator.permissions?.query) {
+        return;
+      }
+
       const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
       const granted = permissionStatus.state === 'granted';
       setHasCameraPermission(granted);
@@ -344,7 +596,9 @@ const StudySession = () => {
         const isGranted = permissionStatus.state === 'granted';
         setHasCameraPermission(isGranted);
         if (!isGranted) {
-          setCameraGateCompleted(false);
+          stopCameraStream(cameraStreamRef.current);
+          setCameraStream(null);
+          resetCameraState("Tarayici kamera iznini kapatti. Devam etmek icin izni yeniden acin.");
         }
       };
 
@@ -358,30 +612,96 @@ const StudySession = () => {
 
   const requestCameraAccess = async () => {
     setCameraRequestPending(true);
-    cameraRequestedAtRef.current = Date.now();
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 960 },
-          height: { ideal: 720 },
-          facingMode: "user",
-        },
-        audio: false
-      });
+    setCameraValidationState('requesting');
+    setCameraValidationMessage(null);
+    hasShownCameraFailureRef.current = false;
 
-      cameraStream?.getTracks().forEach(track => track.stop());
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+      const fallbackCamera = devices.find((device) => device.kind === 'videoinput');
+      const constraintsQueue: MediaStreamConstraints[] = [
+        {
+          video: {
+            width: { ideal: 960 },
+            height: { ideal: 720 },
+            facingMode: { ideal: "user" },
+          },
+          audio: false,
+        },
+        {
+          video: {
+            width: { ideal: 960 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        },
+      ];
+
+      if (fallbackCamera?.deviceId) {
+        constraintsQueue.push({
+          video: {
+            deviceId: { exact: fallbackCamera.deviceId },
+          },
+          audio: false,
+        });
+      }
+
+      constraintsQueue.push({ video: true, audio: false });
+
+      let stream: MediaStream | null = null;
+      let lastError: unknown = null;
+
+      for (const constraints of constraintsQueue) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (!stream) {
+        throw lastError;
+      }
+
+      stopCameraStream(cameraStreamRef.current);
       setCameraStream(stream);
       setCameraEnabled(true);
       setHasCameraPermission(true);
       setCameraPreviewReady(false);
-      hasShownCameraFailureRef.current = false;
+      setCameraStreamVerified(false);
+      setCameraValidationState('verifying');
+      setCameraValidationMessage("Kamera baglantisi dogrulaniyor...");
+
+      const validation = await validateCameraStream(stream);
+
+      if (!validation.verified) {
+        stopCameraStream(stream);
+        setCameraStream(null);
+        resetCameraState(validation.message);
+        toast.error(validation.message || "Canli kamera goruntusu dogrulanamadi.");
+        return false;
+      }
+
+      setCameraStreamVerified(true);
+      setCameraPreviewReady(validation.preview);
+      setCameraValidationState(validation.state);
+      setCameraValidationMessage(validation.message);
       return true;
     } catch (error) {
       console.error('Error accessing camera:', error);
+      const errorName = error instanceof DOMException ? error.name : '';
+      const permissionDenied = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(errorName);
+      const cameraUnavailable = ['NotFoundError', 'DevicesNotFoundError', 'OverconstrainedError', 'NotReadableError', 'TrackStartError'].includes(errorName);
+      const message = permissionDenied
+        ? "Devam etmek icin kamera izni vermelisiniz."
+        : cameraUnavailable
+          ? "Kamera bulunamadi veya kullanilamiyor. Lutfen baska bir kamera secip tekrar deneyin."
+          : "Kamera baslatilamadi. Lutfen tekrar deneyin.";
+
       setHasCameraPermission(false);
-      setCameraEnabled(false);
-      setCameraPreviewReady(false);
-      toast.error("Devam etmek için kamera izni vermelisiniz");
+      resetCameraState(message);
+      toast.error(message);
       return false;
     } finally {
       setCameraRequestPending(false);
@@ -470,7 +790,7 @@ const StudySession = () => {
       <FloatingVideo
         videoRef={videoRef}
         participantName={participantName || undefined}
-        isVisible={cameraGateCompleted && cameraEnabled && cameraPreviewReady}
+        isVisible={cameraGateCompleted && cameraEnabled}
       />
 
       {/* Main Content */}
@@ -607,19 +927,32 @@ const StudySession = () => {
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <Button
                     onClick={() => setCameraGateCompleted(true)}
-                    disabled={!cameraEnabled || !cameraPreviewReady}
+                    disabled={!cameraEnabled || !cameraStreamVerified}
                     size="lg"
                     className={`min-w-[180px] ${
-                      cameraEnabled && cameraPreviewReady
+                      cameraEnabled && cameraStreamVerified
                         ? "bg-brand-primary text-white hover:bg-brand-primary-hover"
                         : "bg-muted text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     Devam et
                   </Button>
+
+                  {cameraValidationState === 'failed' && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="lg"
+                      className="min-w-[180px]"
+                      onClick={() => void requestCameraAccess()}
+                      disabled={cameraRequestPending}
+                    >
+                      Kamerayi yeniden dene
+                    </Button>
+                  )}
                 </div>
 
-                {!cameraEnabled && !cameraRequestPending && (
+                {!cameraEnabled && !cameraRequestPending && !cameraValidationMessage && (
                   <p className="text-sm text-text-secondary">
                     Kamera izni gerekiyor. Tarayıcı izin penceresini onaylayın.
                   </p>
@@ -631,9 +964,15 @@ const StudySession = () => {
                   </p>
                 )}
 
-                {cameraEnabled && !cameraPreviewReady && !cameraRequestPending && (
+                {cameraEnabled && cameraValidationState === 'verifying' && !cameraRequestPending && (
                   <p className="text-sm text-text-secondary">
-                    Kamera baglandi. Canli goruntu hazir olunca devam edebilirsiniz.
+                    Kamera baglandi. Baglanti dogrulaniyor...
+                  </p>
+                )}
+
+                {cameraValidationMessage && (
+                  <p className="text-sm text-text-secondary">
+                    {cameraValidationMessage}
                   </p>
                 )}
               </div>
@@ -649,17 +988,42 @@ const StudySession = () => {
                 </div>
 
                 {cameraEnabled ? (
-                  <video
-                    ref={cameraGateVideoRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    onLoadedData={() => setCameraPreviewReady(true)}
-                    onPlaying={() => setCameraPreviewReady(true)}
-                    onEmptied={() => setCameraPreviewReady(false)}
-                    onStalled={() => setCameraPreviewReady(false)}
-                    className="aspect-[4/3] h-full w-full object-cover"
-                  />
+                  <>
+                    <video
+                      ref={cameraGateVideoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      onLoadedData={() => {
+                        if (cameraStreamVerified) {
+                          setCameraPreviewReady(true);
+                        }
+                      }}
+                      onPlaying={() => {
+                        if (cameraStreamVerified) {
+                          setCameraPreviewReady(true);
+                        }
+                      }}
+                      onEmptied={() => setCameraPreviewReady(false)}
+                      onStalled={() => setCameraPreviewReady(false)}
+                      className={`aspect-[4/3] h-full w-full object-cover transition-opacity duration-300 ${
+                        cameraPreviewReady ? 'opacity-100' : 'opacity-0'
+                      }`}
+                    />
+
+                    {!cameraPreviewReady && (
+                      <div className="absolute inset-0 flex aspect-[4/3] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.16),_transparent_45%),linear-gradient(180deg,_#111827_0%,_#0f172a_100%)] px-6 text-center">
+                        <div className="space-y-3 text-white/85">
+                          <Camera className="mx-auto h-12 w-12" />
+                          <p className="text-sm leading-relaxed">
+                            {cameraStreamVerified
+                              ? "Kamera aktif dogrulandi. Bu tarayici canli onizlemeyi gostermeyebilir."
+                              : "Canli goruntu hazirlaniyor. Birkac saniye icinde dogrulanmazsa yeniden deneyin."}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="flex aspect-[4/3] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_45%),linear-gradient(180deg,_#1f2937_0%,_#0f172a_100%)]">
                     <div className="space-y-3 text-center text-white/80">
