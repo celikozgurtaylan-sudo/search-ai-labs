@@ -8,10 +8,10 @@ const corsHeaders = {
 
 // ============================================================
 // MODEL CONFIGURATION
-// One model to rule them all — o4-mini handles everything:
+// One model to rule them all — GPT-5.2 handles everything:
 // intent detection, Socratic questioning, and plan generation.
 // ============================================================
-const MODEL = Deno.env.get('ORCHESTRATOR_MODEL') || 'o4-mini-2025-04-16';
+const MODEL = Deno.env.get('ORCHESTRATOR_MODEL') || 'openai/gpt-5.2';
 
 // ============================================================
 // RESPONSE FORMAT — enforces structured JSON output
@@ -329,9 +329,9 @@ serve(async (req) => {
   }
 
   try {
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openaiApiKey) {
-      throw new Error('OPENAI_API_KEY is not set');
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    if (!lovableApiKey) {
+      throw new Error('LOVABLE_API_KEY is not set');
     }
 
     const { message, conversationHistory = [], researchContext = null, forcePlan = false } = await req.json();
@@ -389,11 +389,11 @@ ${usableScreens || 'Screen bilgisi yok'}`;
 
     console.log(`[Searcho] Calling ${MODEL} with ${messages.length} messages`);
 
-    // Single API call — o4-mini handles everything
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Single API call — GPT-5.2 handles everything
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
+        'Authorization': `Bearer ${lovableApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

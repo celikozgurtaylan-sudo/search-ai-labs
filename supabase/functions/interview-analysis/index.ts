@@ -147,7 +147,7 @@ Focus on actionable insights that can drive product decisions. Look for patterns
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'google/gemini-2.5-pro',
+      model: 'openai/gpt-5.2',
       messages: [
         { role: 'system', content: 'You are a UX research expert. Provide structured, actionable analysis of user interview data.' },
         { role: 'user', content: analysisPrompt }
