@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { Bot, User, Send } from "lucide-react";
+import { Send } from "lucide-react";
 import { supabase } from '@/integrations/supabase/client';
 import userAvatar from "@/assets/user-avatar.jpg";
+import { SearchoMark } from "@/components/icons/SearchoMark";
 
 interface ChatMessage {
   id: string;
@@ -382,7 +383,7 @@ Plan:
       <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 scroll-smooth space-y-4">
         {messages.length === 0 ? (
           <div className="text-center text-text-muted py-8">
-            <Bot className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <SearchoMark className="w-12 h-12 mx-auto mb-4 opacity-50 text-brand-primary" />
             <p>Merhaba! Size nasıl yardımcı olabilirim?</p>
             <p className="text-sm mt-2">Sormak istediğiniz her şeyi yazabilirsiniz.</p>
           </div>
@@ -446,7 +447,7 @@ Plan:
               ) : (
                 <div className="flex space-x-3 justify-start">
                   <div className="w-8 h-8 bg-brand-primary-light text-brand-primary rounded-full flex items-center justify-center flex-shrink-0">
-                    <Bot className="w-4 h-4" />
+                    <SearchoMark className="w-4 h-4" />
                   </div>
                   
                   <div className="flex-1 max-w-lg">
@@ -467,7 +468,7 @@ Plan:
         {isLoading && (
           <div className="flex justify-start space-x-3">
             <div className="w-8 h-8 bg-brand-primary-light text-brand-primary rounded-full flex items-center justify-center">
-              <Bot className="w-4 h-4" />
+              <SearchoMark className="w-4 h-4" />
             </div>
             <div className="bg-surface text-text-primary border border-border p-3 rounded-2xl">
               <div className="flex space-x-1">

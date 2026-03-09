@@ -239,6 +239,38 @@ const StudySession = () => {
   const initializeSession = async () => {
     try {
       setLoading(true);
+
+      const cachedParticipantSession = localStorage.getItem('participant-session');
+      if (cachedParticipantSession && sessionToken) {
+        const parsed = JSON.parse(cachedParticipantSession);
+        if (parsed?.token === sessionToken && parsed?.session) {
+          const cachedSession = parsed.session;
+          const cachedParticipant = parsed.participant;
+
+          setSessionId(cachedSession.id || null);
+          setParticipantId(cachedSession.participant_id || cachedParticipant?.id || null);
+          setParticipantName(cachedParticipant?.name || cachedParticipant?.email || 'Katilimci');
+
+          const project = await projectService.getProjectBySessionToken(sessionToken);
+          if (!project) {
+            setError("Proje bilgileri yüklenemedi");
+            return;
+          }
+
+          setProjectData(project);
+
+          if (project.analysis?.discussionGuide) {
+            await interviewService.initializeQuestions(
+              project.id!,
+              cachedSession.id!,
+              project.analysis.discussionGuide
+            );
+          }
+
+          setSessionStatus('active');
+          return;
+        }
+      }
       
       // Fetch session data using the token
       const session = await participantService.getSessionByToken(sessionToken!);
@@ -337,6 +369,7 @@ const StudySession = () => {
   };
 
   const handleCompleteSession = () => {
+    localStorage.removeItem('participant-session');
     setSessionStatus('completed');
   };
 

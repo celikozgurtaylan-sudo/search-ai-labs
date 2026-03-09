@@ -64,8 +64,10 @@ const ProjectHistory = () => {
     // Store project data for the workspace
     localStorage.setItem('searchai-project', JSON.stringify({
       id: project.id,
+      title: project.title,
       description: project.description,
       template: project.analysis?.template || null,
+      analysis: project.analysis || null,
       timestamp: Date.now()
     }));
     
