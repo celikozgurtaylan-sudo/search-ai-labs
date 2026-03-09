@@ -195,6 +195,29 @@
 
   body {
     @apply bg-background text-foreground;
+    cursor: default;
+  }
+
+  a,
+  button,
+  summary,
+  select,
+  [role="button"],
+  [role="link"],
+  [role="menuitem"],
+  [role="switch"],
+  [role="checkbox"],
+  [role="radio"],
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    cursor: pointer;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  [contenteditable="true"] {
+    cursor: text;
   }
 }
 

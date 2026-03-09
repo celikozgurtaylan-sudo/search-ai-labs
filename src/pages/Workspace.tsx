@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Search, ArrowLeft, Video, Users, Play, BarChart3, Square, ChevronLeft, ChevronRight } from "lucide-react";
+import { SearchoMark } from "@/components/icons/SearchoMark";
 import ChatPanel from "@/components/workspace/ChatPanel";
 import StudyPanel from "@/components/workspace/StudyPanel";
 import InvitationPanel from "@/components/workspace/InvitationPanel";
@@ -376,7 +377,8 @@ const Workspace = () => {
               
               <Separator orientation="vertical" className="h-6" />
               
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-3">
+                <SearchoMark className="w-7 h-7 shrink-0" />
                 <span className="font-semibold text-text-primary">Searcho</span>
               </div>
             </div>
