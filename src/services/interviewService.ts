@@ -71,6 +71,33 @@ const createMockQuestions = (discussionGuide: any, projectId: string, sessionId:
   return questions;
 };
 
+// Store session token for authenticated edge function calls
+let _sessionToken: string | null = null;
+
+export const setInterviewSessionToken = (token: string) => {
+  _sessionToken = token;
+};
+
+export const getInterviewSessionToken = () => _sessionToken;
+
+const invokeWithSessionToken = async (functionName: string, body: any) => {
+  const headers: Record<string, string> = {};
+  if (_sessionToken) {
+    headers['x-session-token'] = _sessionToken;
+  }
+  
+  const { data, error } = await supabase.functions.invoke(functionName, {
+    body,
+    headers,
+  });
+
+  if (error) {
+    throw new Error(`Failed to invoke ${functionName}: ${error.message}`);
+  }
+
+  return data;
+};
+
 export const interviewService = {
   async initializeQuestions(projectId: string, sessionId: string, discussionGuide: any) {
     // Design mode: Create mock questions in memory
@@ -81,21 +108,12 @@ export const interviewService = {
       return { success: true, count: mockQuestions.length };
     }
     
-    // Production mode: Use database
-    const { data, error } = await supabase.functions.invoke('interview-manager', {
-      body: {
-        action: 'initialize_questions',
-        projectId,
-        sessionId,
-        questionData: discussionGuide
-      }
-    })
-
-    if (error) {
-      throw new Error(`Failed to initialize questions: ${error.message}`)
-    }
-
-    return data
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'initialize_questions',
+      projectId,
+      sessionId,
+      questionData: discussionGuide
+    });
   },
 
   async getNextQuestion(sessionId: string) {
@@ -116,19 +134,10 @@ export const interviewService = {
       return { nextQuestion, progress };
     }
     
-    // Production mode: Use database
-    const { data, error } = await supabase.functions.invoke('interview-manager', {
-      body: {
-        action: 'get_next_question',
-        sessionId
-      }
-    })
-
-    if (error) {
-      throw new Error(`Failed to get next question: ${error.message}`)
-    }
-
-    return data
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'get_next_question',
+      sessionId
+    });
   },
 
   async saveResponse(sessionId: string, responseData: {
@@ -149,20 +158,11 @@ export const interviewService = {
       return { success: true };
     }
     
-    // Production mode: Use database
-    const { data, error } = await supabase.functions.invoke('interview-manager', {
-      body: {
-        action: 'save_response',
-        sessionId,
-        responseData
-      }
-    })
-
-    if (error) {
-      throw new Error(`Failed to save response: ${error.message}`)
-    }
-
-    return data
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'save_response',
+      sessionId,
+      responseData
+    });
   },
 
   async completeQuestion(sessionId: string, questionId: string) {
@@ -173,20 +173,11 @@ export const interviewService = {
       return { success: true };
     }
     
-    // Production mode: Use database
-    const { data, error } = await supabase.functions.invoke('interview-manager', {
-      body: {
-        action: 'complete_question',
-        sessionId,
-        responseData: { questionId }
-      }
-    })
-
-    if (error) {
-      throw new Error(`Failed to complete question: ${error.message}`)
-    }
-
-    return data
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'complete_question',
+      sessionId,
+      responseData: { questionId }
+    });
   },
 
   async getInterviewProgress(sessionId: string): Promise<{ questions: InterviewQuestion[], progress: InterviewProgress }> {
@@ -206,19 +197,10 @@ export const interviewService = {
       return { questions: mockQuestions, progress };
     }
     
-    // Production mode: Use database
-    const { data, error } = await supabase.functions.invoke('interview-manager', {
-      body: {
-        action: 'get_interview_progress',
-        sessionId
-      }
-    })
-
-    if (error) {
-      throw new Error(`Failed to get interview progress: ${error.message}`)
-    }
-
-    return data
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'get_interview_progress',
+      sessionId
+    });
   },
 
   async analyzeInterview(sessionId: string, projectId: string) {
@@ -228,18 +210,9 @@ export const interviewService = {
       return { success: true, message: 'Design mode - analysis skipped' };
     }
     
-    // Production mode: Use database
-    const { data, error } = await supabase.functions.invoke('interview-analysis', {
-      body: {
-        sessionId,
-        projectId
-      }
-    })
-
-    if (error) {
-      throw new Error(`Failed to analyze interview: ${error.message}`)
-    }
-
-    return data
+    return await invokeWithSessionToken('interview-analysis', {
+      sessionId,
+      projectId
+    });
   }
 }

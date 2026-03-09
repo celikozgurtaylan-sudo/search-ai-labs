@@ -114,13 +114,13 @@ export const participantService = {
   },
 
   generateInvitationToken(): string {
-    const prefix = 'user-study';
-    const randomPart = Math.random().toString(36).substring(2, 10); // shorter, more readable
-    return `${prefix}-${randomPart}`;
+    return `user-study-${crypto.randomUUID()}`;
   },
 
   generateSessionToken(): string {
-    return `session_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    const token = btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, '');
+    return `session_${token}`;
   },
 
   // Token-based status update using RPC function

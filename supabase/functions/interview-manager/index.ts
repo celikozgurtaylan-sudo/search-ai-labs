@@ -4,13 +4,28 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-session-token',
 };
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
+
+// Validate that the provided session token matches the sessionId
+async function validateSessionToken(sessionId: string, sessionToken: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('study_sessions')
+    .select('id')
+    .eq('id', sessionId)
+    .eq('session_token', sessionToken)
+    .maybeSingle();
+
+  if (error || !data) {
+    return false;
+  }
+  return true;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -19,6 +34,32 @@ serve(async (req) => {
 
   try {
     const { action, sessionId, projectId, questionData, responseData } = await req.json();
+
+    // Extract session token from header
+    const sessionToken = req.headers.get('x-session-token');
+
+    // All actions require a valid session token
+    if (!sessionToken) {
+      return new Response(
+        JSON.stringify({ error: 'Missing session token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!sessionId) {
+      return new Response(
+        JSON.stringify({ error: 'Missing sessionId' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const isValid = await validateSessionToken(sessionId, sessionToken);
+    if (!isValid) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid or mismatched session token' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     switch (action) {
       case 'initialize_questions':
@@ -54,7 +95,6 @@ serve(async (req) => {
 async function initializeQuestions(projectId: string, sessionId: string, discussionGuide: any) {
   console.log('Initializing questions for session:', sessionId);
   
-  // Check if questions already exist for this session to prevent duplicates
   const { data: existingQuestions, error: checkError } = await supabase
     .from('interview_questions')
     .select('id')
@@ -65,7 +105,6 @@ async function initializeQuestions(projectId: string, sessionId: string, discuss
     console.error('Error checking existing questions:', checkError);
   }
   
-  // If questions already exist, return them without inserting duplicates
   if (existingQuestions && existingQuestions.length > 0) {
     console.log('Questions already initialized for session, skipping duplicate insertion');
     const { data: allQuestions } = await supabase
@@ -80,7 +119,6 @@ async function initializeQuestions(projectId: string, sessionId: string, discuss
     );
   }
   
-  // Parse discussion guide and create question records
   const questions: any[] = [];
   let order = 1;
   
@@ -119,7 +157,6 @@ async function initializeQuestions(projectId: string, sessionId: string, discuss
 async function getNextQuestion(sessionId: string) {
   console.log('Getting next question for session:', sessionId);
   
-  // Get the next unanswered question
   const { data: questions, error } = await supabase
     .from('interview_questions')
     .select(`
@@ -133,7 +170,6 @@ async function getNextQuestion(sessionId: string) {
     throw new Error(`Failed to get questions: ${error.message}`);
   }
 
-  // Find first question without a complete response
   const nextQuestion = questions?.find(q => 
     !q.interview_responses || 
     q.interview_responses.length === 0 || 
