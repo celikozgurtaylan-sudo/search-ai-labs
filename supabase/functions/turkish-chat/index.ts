@@ -389,11 +389,11 @@ ${usableScreens || 'Screen bilgisi yok'}`;
 
     console.log(`[Searcho] Calling ${MODEL} with ${messages.length} messages`);
 
-    // Single API call — o4-mini handles everything
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Single API call — GPT-5.2 handles everything
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
+        'Authorization': `Bearer ${lovableApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
