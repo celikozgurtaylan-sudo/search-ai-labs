@@ -7,29 +7,70 @@ import SearchoAI from "@/components/SearchoAI";
 import { FloatingVideo } from "@/components/FloatingVideo";
 import { participantService } from "@/services/participantService";
 import { projectService } from "@/services/projectService";
-import { interviewService } from "@/services/interviewService";
+import { interviewService, InterviewProgress, InterviewQuestion } from "@/services/interviewService";
 import { CheckCircle, AlertCircle, Loader2, ExternalLink, Image as ImageIcon, Camera } from "lucide-react";
+
+const svgToDataUrl = (svg: string) => `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+
+const createMockScreen = (accent: string, title: string, subtitle: string, cta: string) =>
+  svgToDataUrl(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="720" height="1280" viewBox="0 0 720 1280" fill="none">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${accent}"/>
+          <stop offset="100%" stop-color="#F6F1FF"/>
+        </linearGradient>
+      </defs>
+      <rect width="720" height="1280" rx="56" fill="url(#bg)"/>
+      <rect x="56" y="58" width="608" height="72" rx="36" fill="rgba(255,255,255,0.72)"/>
+      <rect x="84" y="84" width="182" height="20" rx="10" fill="rgba(43,17,98,0.18)"/>
+      <rect x="560" y="84" width="76" height="20" rx="10" fill="rgba(43,17,98,0.10)"/>
+      <rect x="84" y="182" width="552" height="344" rx="40" fill="rgba(255,255,255,0.88)"/>
+      <rect x="116" y="222" width="214" height="24" rx="12" fill="rgba(43,17,98,0.14)"/>
+      <rect x="116" y="274" width="420" height="110" rx="26" fill="#FFFFFF"/>
+      <rect x="116" y="412" width="224" height="72" rx="36" fill="${accent}"/>
+      <text x="360" y="646" text-anchor="middle" font-family="Arial, sans-serif" font-size="58" font-weight="700" fill="#1F1635">${title}</text>
+      <text x="360" y="720" text-anchor="middle" font-family="Arial, sans-serif" font-size="31" fill="#4E4662">${subtitle}</text>
+      <rect x="88" y="830" width="544" height="124" rx="38" fill="rgba(255,255,255,0.94)"/>
+      <text x="360" y="907" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#2F1B55">${cta}</text>
+      <rect x="88" y="986" width="544" height="92" rx="34" fill="rgba(46,20,96,0.08)" stroke="rgba(46,20,96,0.18)" stroke-width="4"/>
+      <text x="360" y="1044" text-anchor="middle" font-family="Arial, sans-serif" font-size="31" fill="#5B4C7E">Daha sonra bakacagim</text>
+      <rect x="248" y="1154" width="224" height="10" rx="5" fill="rgba(31,22,53,0.18)"/>
+    </svg>
+  `);
 
 // Mock data for design mode
 const MOCK_PROJECT_DATA = {
   id: 'mock-project-id',
-  title: 'Kullanıcı Deneyimi Araştırması',
-  description: 'Bu bir örnek araştırma projesidir. Kullanıcıların mobil uygulama deneyimlerini anlamak için tasarlanmıştır.',
+  title: 'Pop-up Ekrani Ilk Gorunus ve Algilama Testi',
+  description: 'Bu bir ornek usability arastirmasi. Katilimcinin kopyalanip yapistirilmis Figma ekranini ilk gorunuste nasil yorumladigini anlamak icin tasarlandi.',
   analysis: {
+    designScreens: [
+      {
+        name: 'Promosyon Pop-up',
+        url: createMockScreen('#6E3BFF', 'Ramazan Hediyesi', 'Ilk bakista anlasilir mi?', 'Hemen Katil'),
+        source: 'upload'
+      },
+      {
+        name: 'Kayit Alt Ekrani',
+        url: createMockScreen('#4D8DFF', 'Dakikalar Icinde Kayit', 'Form alanlari net mi?', 'Kaydi Baslat'),
+        source: 'upload'
+      }
+    ],
     discussionGuide: {
       sections: [
         {
           title: 'Giriş ve Isınma',
           questions: [
-            'Kendinizden bahseder misiniz?',
-            'Günlük teknoloji kullanımınızdan bahseder misiniz?'
+            'Bu ekrani ilk gordugunuzde size ne anlatiyor?',
+            'Burada ilk olarak ne yapmaniz beklendigini nasil anladiniz?'
           ]
         },
         {
           title: 'Ana Sorular',
           questions: [
-            'Mobil uygulamaları kullanırken en çok neye dikkat ediyorsunuz?',
-            'En son karşılaştığınız kullanıcı deneyimi problemi neydi?'
+            'Bu pop-up size guven veriyor mu, neden?',
+            'Dikkatinizi dagitan veya kararsiz birakan alanlar var mi?'
           ]
         }
       ]
@@ -53,6 +94,13 @@ const StudySession = () => {
   const [projectData, setProjectData] = useState<any>(isDesignMode ? MOCK_PROJECT_DATA : null);
   const [sessionStatus, setSessionStatus] = useState<'waiting' | 'active' | 'completed'>(isDesignMode ? 'active' : 'waiting');
   const [activeScreenIndex, setActiveScreenIndex] = useState(0);
+  const [currentInterviewQuestion, setCurrentInterviewQuestion] = useState<InterviewQuestion | null>(null);
+  const [currentInterviewProgress, setCurrentInterviewProgress] = useState<InterviewProgress>({
+    completed: 0,
+    total: 0,
+    isComplete: false,
+    percentage: 0
+  });
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
@@ -293,6 +341,24 @@ const StudySession = () => {
   };
 
   const designScreens: Array<{ name?: string; url: string; source?: string }> = projectData?.analysis?.designScreens || [];
+  const questionsPerScreen = designScreens.length > 0 && currentInterviewProgress.total > 0
+    ? Math.max(1, Math.ceil(currentInterviewProgress.total / designScreens.length))
+    : 1;
+
+  useEffect(() => {
+    if (designScreens.length <= 1 || !currentInterviewQuestion || currentInterviewProgress.total <= 0) {
+      setActiveScreenIndex(0);
+      return;
+    }
+
+    const nextScreenIndex = Math.min(
+      Math.floor(currentInterviewQuestion.question_order / questionsPerScreen),
+      designScreens.length - 1
+    );
+
+    setActiveScreenIndex(nextScreenIndex);
+  }, [currentInterviewQuestion, currentInterviewProgress.total, designScreens.length, questionsPerScreen]);
+
   const activeScreen = designScreens[activeScreenIndex] || null;
 
   if (loading) {
@@ -355,11 +421,11 @@ const StudySession = () => {
       />
 
       {/* Main Content */}
-      <div className="min-h-screen flex flex-col">
-        {designScreens.length > 0 && (
-          <div className="shrink-0 border-b border-border-light bg-white/96 backdrop-blur">
-            <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:px-6">
-              <div className="flex items-center justify-between gap-3">
+      <div className="min-h-screen">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-6">
+          {designScreens.length > 0 && (
+            <div className="shrink-0 rounded-[28px] border border-border-light bg-white/96 p-4 backdrop-blur">
+              <div className="mb-4 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
                   <ImageIcon className="w-4 h-4 text-brand-primary" />
                   Test Ekranlari
@@ -371,10 +437,8 @@ const StudySession = () => {
 
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {designScreens.map((screen, index) => (
-                  <button
+                  <div
                     key={`${screen.url}-${index}`}
-                    type="button"
-                    onClick={() => setActiveScreenIndex(index)}
                     className={`shrink-0 rounded-2xl border px-4 py-3 text-left text-xs transition-colors ${
                       activeScreenIndex === index
                         ? "border-brand-primary bg-brand-primary-light text-brand-primary"
@@ -382,53 +446,91 @@ const StudySession = () => {
                     }`}
                   >
                     <p className="font-medium line-clamp-1">{screen.name || `Screen ${index + 1}`}</p>
-                    <p className="text-text-muted">{screen.source === "figma-link" ? "Figma Link" : "Image"}</p>
-                  </button>
+                    <p className="text-text-muted">
+                      {activeScreenIndex === index
+                        ? "Bu soruda gosterilen ekran"
+                        : "Siradaki ekran"}
+                    </p>
+                  </div>
                 ))}
               </div>
-
-              {activeScreen && (
-                <div className="flex min-h-[320px] max-h-[44vh] items-center justify-center rounded-[32px] border border-border-light bg-[#f7f7f5] p-4 md:p-8">
-                  {activeScreen.source === "figma-link" ? (
-                    <a
-                      href={activeScreen.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-2 rounded-full border border-brand-primary/20 bg-white px-5 py-3 text-sm font-medium text-brand-primary shadow-sm hover:border-brand-primary/40"
-                    >
-                      Figma ekranini yeni sekmede ac
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
-                  ) : (
-                    <img
-                      src={activeScreen.url}
-                      alt={activeScreen.name || "Design screen"}
-                      className="max-h-[36vh] w-auto max-w-full rounded-[28px] border border-border-light bg-white object-contain shadow-[0_24px_60px_rgba(15,23,42,0.10)] md:max-h-[38vh]"
-                    />
-                  )}
-                </div>
-              )}
             </div>
-          </div>
-        )}
+          )}
 
-        {sessionId && projectData && (
-          <div className="flex-1">
-            <SearchoAI
-              isActive={sessionStatus === 'active' && cameraGateCompleted}
-              projectContext={{
-                description: projectData.description || '',
-                discussionGuide: projectData.analysis?.discussionGuide || null,
-                template: 'interview',
-                sessionId: sessionId,
-                projectId: projectData.id,
-                participantId: participantId,
-                designScreens
-              }}
-              onSessionEnd={handleCompleteSession}
-            />
+          <div className={`grid gap-6 ${designScreens.length > 0 ? "xl:grid-cols-[minmax(320px,0.92fr)_minmax(0,1.08fr)]" : ""}`}>
+            {designScreens.length > 0 && activeScreen && (
+              <div className="xl:sticky xl:top-6 xl:self-start">
+                <div className="overflow-hidden rounded-[32px] border border-border-light bg-white shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
+                  <div className="border-b border-border-light bg-[linear-gradient(180deg,rgba(124,77,255,0.06),rgba(255,255,255,0.96))] px-5 py-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-text-primary">
+                          {activeScreen.name || `Screen ${activeScreenIndex + 1}`}
+                        </p>
+                        <p className="mt-1 text-xs text-text-secondary">
+                          {activeScreen.source === "figma-link" ? "Figma Link" : "Image"}
+                        </p>
+                      </div>
+                      {activeScreen.source === "figma-link" ? (
+                        <a
+                          href={activeScreen.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-full border border-brand-primary/20 bg-white px-4 py-2 text-xs font-medium text-brand-primary shadow-sm hover:border-brand-primary/40"
+                        >
+                          Yeni sekmede ac
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="flex min-h-[480px] items-center justify-center bg-[radial-gradient(circle_at_top,rgba(124,77,255,0.10),transparent_38%),linear-gradient(180deg,#f8f7ff_0%,#f2f4f8_100%)] p-5 md:min-h-[620px] md:p-8">
+                    {activeScreen.source === "figma-link" ? (
+                      <a
+                        href={activeScreen.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 rounded-full border border-brand-primary/20 bg-white px-5 py-3 text-sm font-medium text-brand-primary shadow-sm hover:border-brand-primary/40"
+                      >
+                        Figma ekranini yeni sekmede ac
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    ) : (
+                      <img
+                        src={activeScreen.url}
+                        alt={activeScreen.name || "Design screen"}
+                        className="max-h-[72vh] w-auto max-w-full rounded-[28px] border border-border-light bg-white object-contain shadow-[0_30px_80px_rgba(15,23,42,0.12)]"
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {sessionId && projectData && (
+              <div className="min-w-0">
+                <SearchoAI
+                  isActive={sessionStatus === 'active' && cameraGateCompleted}
+                  projectContext={{
+                    description: projectData.description || '',
+                    discussionGuide: projectData.analysis?.discussionGuide || null,
+                    template: 'interview',
+                    sessionId: sessionId,
+                    projectId: projectData.id,
+                    participantId: participantId,
+                    designScreens
+                  }}
+                  onSessionEnd={handleCompleteSession}
+                  onQuestionChange={(question, progress) => {
+                    setCurrentInterviewQuestion(question);
+                    setCurrentInterviewProgress(progress);
+                  }}
+                />
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {!cameraGateCompleted && (

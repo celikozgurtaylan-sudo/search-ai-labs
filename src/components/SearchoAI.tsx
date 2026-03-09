@@ -27,11 +27,13 @@ interface SearchoAIProps {
     }>;
   };
   onSessionEnd?: () => void;
+  onQuestionChange?: (question: InterviewQuestion | null, progress: InterviewProgress) => void;
 }
 const SearchoAI = ({
   isActive,
   projectContext,
-  onSessionEnd
+  onSessionEnd,
+  onQuestionChange
 }: SearchoAIProps) => {
   const {
     toast
@@ -202,6 +204,7 @@ const SearchoAI = ({
       setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
       setResponseTimerExpired(false);
       setInterviewProgress(data.progress);
+      onQuestionChange?.(data.nextQuestion, data.progress);
       setIsWaitingForAnswer(false);
       if (data.progress.isComplete) {
         console.log('🎉 Interview completed!');
@@ -235,7 +238,7 @@ const SearchoAI = ({
         variant: "destructive"
       });
     }
-  }, [projectContext, isRecordingVideo, stopVideoRecording, startVideoRecording]);
+  }, [projectContext, isRecordingVideo, stopVideoRecording, startVideoRecording, onQuestionChange]);
   const saveResponse = useCallback(async (transcription: string) => {
     if (!projectContext?.sessionId || !currentQuestion) {
       throw new Error('Session or question not available');
