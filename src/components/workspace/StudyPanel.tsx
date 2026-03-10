@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import { Plus, Edit3, Check, X, FileText, Download, Share, CheckCircle2, Clock, Circle, PlayCircle, BarChart3, Camera, Monitor, Loader2, TrendingUp, AlertTriangle, Users, Video, User, Sparkles, RefreshCw } from "lucide-react";
+import { Plus, Edit3, Check, X, FileText, Download, Share, CheckCircle2, Clock, Circle, PlayCircle, BarChart3, Camera, Monitor, Loader2, TrendingUp, AlertTriangle, Users, Video, User, Sparkles, RefreshCw, Trash2, GripVertical } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import TypewriterText from "@/components/ui/typewriter-text";
@@ -25,6 +25,12 @@ const StudyPanel = ({
 }: StudyPanelProps) => {
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [editingGuideTitle, setEditingGuideTitle] = useState(false);
+  const [editGuideTitleValue, setEditGuideTitleValue] = useState("");
+  const [editingSection, setEditingSection] = useState<string | null>(null);
+  const [editSectionValue, setEditSectionValue] = useState("");
+  const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null);
+  const [dragOverSectionId, setDragOverSectionId] = useState<string | null>(null);
   const [isScreenRecording, setIsScreenRecording] = useState(false);
   const [isCameraRecording, setIsCameraRecording] = useState(false);
   const [loadingQuestions, setLoadingQuestions] = useState<{
@@ -46,9 +52,145 @@ const StudyPanel = ({
   }>({});
   const [loadingMessages] = useState(["AI soruları oluşturuluyor...", "Katılımcı deneyimini analiz ediyor...", "En iyi soruları seçiyor...", "Araştırma planını optimize ediyor..."]);
   const [currentLoadingIndex, setCurrentLoadingIndex] = useState(0);
+  const handleEditGuideTitle = (currentValue: string) => {
+    setEditingGuideTitle(true);
+    setEditGuideTitleValue(currentValue);
+  };
+  const handleSaveGuideTitle = () => {
+    if (!discussionGuide) return;
+
+    onGuideUpdate({
+      ...discussionGuide,
+      title: editGuideTitleValue.trim() || "Adsız Araştırma Kılavuzu"
+    });
+    setEditingGuideTitle(false);
+    setEditGuideTitleValue("");
+  };
   const handleEditQuestion = (questionId: string, currentValue: string) => {
     setEditingQuestion(questionId);
     setEditValue(currentValue);
+  };
+  const handleEditSection = (sectionId: string, currentValue: string) => {
+    setEditingSection(sectionId);
+    setEditSectionValue(currentValue);
+  };
+  const handleSaveSectionTitle = (sectionId: string) => {
+    if (!discussionGuide) return;
+    const trimmedValue = editSectionValue.trim();
+    const updatedGuide = {
+      ...discussionGuide,
+      sections: discussionGuide.sections.map((section: any, index: number) => {
+        if (section.id === sectionId) {
+          return {
+            ...section,
+            title: trimmedValue || `Başlıksız Bölüm ${index + 1}`
+          };
+        }
+        return section;
+      })
+    };
+    onGuideUpdate(updatedGuide);
+    setEditingSection(null);
+    setEditSectionValue("");
+  };
+  const handleDeleteSection = (sectionId: string) => {
+    if (!discussionGuide) return;
+
+    const updatedSections = discussionGuide.sections.filter((section: any) => section.id !== sectionId);
+    const updatedGuide = {
+      ...discussionGuide,
+      sections: updatedSections
+    };
+
+    onGuideUpdate(updatedGuide);
+    setEditingSection(current => current === sectionId ? null : current);
+    setEditSectionValue("");
+    setShowSectionTypewriters(prev => {
+      const next = {
+        ...prev
+      };
+      delete next[sectionId];
+      return next;
+    });
+    setShowQuestionTypewriters(prev => {
+      const next = {
+        ...prev
+      };
+      Object.keys(next).forEach(key => {
+        if (key.startsWith(`${sectionId}-`)) {
+          delete next[key];
+        }
+      });
+      return next;
+    });
+  };
+  const handleAddSection = () => {
+    if (!discussionGuide) return;
+
+    const sectionId = `section-${Date.now()}`;
+    const questionKey = `${sectionId}-0`;
+    const newSection = {
+      id: sectionId,
+      title: "Yeni Bölüm",
+      questions: ["Yeni soru - düzenlemek için tıklayın"]
+    };
+
+    onGuideUpdate({
+      ...discussionGuide,
+      sections: [...(discussionGuide.sections || []), newSection]
+    });
+
+    setShowSectionTypewriters(prev => ({
+      ...prev,
+      [sectionId]: false
+    }));
+    setShowQuestionTypewriters(prev => ({
+      ...prev,
+      [questionKey]: false
+    }));
+    setEditingSection(sectionId);
+    setEditSectionValue(newSection.title);
+  };
+  const handleMoveSection = (sourceSectionId: string, targetSectionId: string) => {
+    if (!discussionGuide || sourceSectionId === targetSectionId) return;
+
+    const sections = [...discussionGuide.sections];
+    const sourceIndex = sections.findIndex((section: any) => section.id === sourceSectionId);
+    const targetIndex = sections.findIndex((section: any) => section.id === targetSectionId);
+
+    if (sourceIndex < 0 || targetIndex < 0) return;
+
+    const [movedSection] = sections.splice(sourceIndex, 1);
+    sections.splice(targetIndex, 0, movedSection);
+
+    onGuideUpdate({
+      ...discussionGuide,
+      sections
+    });
+  };
+  const handleSectionDragStart = (event: React.DragEvent<HTMLElement>, sectionId: string) => {
+    setDraggedSectionId(sectionId);
+    setDragOverSectionId(sectionId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", sectionId);
+  };
+  const handleSectionDragOver = (event: React.DragEvent<HTMLDivElement>, sectionId: string) => {
+    if (!draggedSectionId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (draggedSectionId !== sectionId && dragOverSectionId !== sectionId) {
+      handleMoveSection(draggedSectionId, sectionId);
+    }
+    setDragOverSectionId(sectionId);
+  };
+  const handleSectionDrop = (event: React.DragEvent<HTMLDivElement>, sectionId: string) => {
+    event.preventDefault();
+    setDraggedSectionId(null);
+    setDragOverSectionId(null);
+  };
+  const handleSectionDragEnd = () => {
+    setDraggedSectionId(null);
+    setDragOverSectionId(null);
   };
   const handleSaveQuestion = (sectionId: string, questionIndex: number) => {
     if (!discussionGuide) return;
@@ -69,6 +211,35 @@ const StudyPanel = ({
     onGuideUpdate(updatedGuide);
     setEditingQuestion(null);
     setEditValue("");
+  };
+  const handleDeleteQuestion = (sectionId: string, questionIndex: number) => {
+    if (!discussionGuide) return;
+
+    const updatedGuide = {
+      ...discussionGuide,
+      sections: discussionGuide.sections.map((section: any) => {
+        if (section.id === sectionId) {
+          return {
+            ...section,
+            questions: section.questions.filter((_: string, index: number) => index !== questionIndex)
+          };
+        }
+        return section;
+      })
+    };
+
+    onGuideUpdate(updatedGuide);
+
+    const questionKey = `${sectionId}-${questionIndex}`;
+    setEditingQuestion(current => current === questionKey ? null : current);
+    setEditValue("");
+    setShowQuestionTypewriters(prev => {
+      const next = {
+        ...prev
+      };
+      delete next[questionKey];
+      return next;
+    });
   };
   const handleAddQuestion = (sectionId: string) => {
     if (!discussionGuide) return;
@@ -520,7 +691,31 @@ const StudyPanel = ({
       <div className="border-b border-border-light p-6 flex-shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
           <div className="group">
-            {showTitleTypewriter ? <TypewriterText text={discussionGuide.title} speed={30} className="text-lg font-semibold text-text-primary" enableControls={true} onComplete={() => setShowTitleTypewriter(false)} /> : <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>}
+            {editingGuideTitle ? <div className="space-y-2 max-w-xl">
+                <Input value={editGuideTitleValue} onChange={e => setEditGuideTitleValue(e.target.value)} autoFocus />
+                <div className="flex items-center gap-2">
+                  <Button size="sm" onClick={handleSaveGuideTitle}>
+                    <Check className="w-3 h-3 mr-1" />
+                    Kaydet
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => {
+                setEditingGuideTitle(false);
+                setEditGuideTitleValue("");
+              }}>
+                    <X className="w-3 h-3 mr-1" />
+                    İptal
+                  </Button>
+                </div>
+              </div> : showTitleTypewriter ? <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditGuideTitle(discussionGuide.title)}>
+                <TypewriterText text={discussionGuide.title} speed={30} className="text-lg font-semibold text-text-primary" enableControls={true} onComplete={() => setShowTitleTypewriter(false)} />
+              </button> : <div className="flex items-center gap-2">
+                <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditGuideTitle(discussionGuide.title)}>
+                  <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>
+                </button>
+                <Button size="sm" variant="ghost" onClick={() => handleEditGuideTitle(discussionGuide.title)} className="text-text-secondary hover:text-text-primary">
+                  <Edit3 className="w-3 h-3" />
+                </Button>
+              </div>}
             <p className="mt-2 text-sm font-medium text-text-secondary">
               Kullanıcılara sorulacak sorular
             </p>
@@ -538,14 +733,48 @@ const StudyPanel = ({
       <div className="flex-1 overflow-y-auto p-6 min-h-0">
         {currentStep === 'starting' ? renderStartingView() : currentStep === 'analyze' ? renderAnalysisView() : <div className="space-y-6">
             {/* Discussion Guide Sections */}
-            {discussionGuide.sections.map((section: any) => <Card key={section.id} className="p-6">
+            {discussionGuide.sections.map((section: any) => {
+            const isSectionEditing = editingSection === section.id || editingQuestion?.startsWith(`${section.id}-`);
+            const isDragged = draggedSectionId === section.id;
+            return <Card key={section.id} draggable={!isSectionEditing} onDragStart={event => handleSectionDragStart(event, section.id)} onDragEnd={handleSectionDragEnd} className={`p-6 transition-all ${dragOverSectionId === section.id ? 'border-brand-primary bg-brand-primary-light/20' : ''} ${isDragged ? 'opacity-60 scale-[0.99] shadow-lg' : ''} ${!isSectionEditing ? 'cursor-grab active:cursor-grabbing' : ''}`} onDragOver={event => handleSectionDragOver(event, section.id)} onDrop={event => handleSectionDrop(event, section.id)}>
                 <CardHeader className="p-0 mb-4">
-                  <CardTitle className="text-base font-semibold text-text-primary group">
-                    {showSectionTypewriters[section.id] ? <TypewriterText text={section.title} speed={25} delay={discussionGuide.sections.indexOf(section) * 500} enableControls={true} onComplete={() => setShowSectionTypewriters(prev => ({
-                ...prev,
-                [section.id]: false
-              }))} /> : section.title}
-                  </CardTitle>
+                  <div className="flex items-start justify-between gap-3">
+                    <CardTitle className="text-base font-semibold text-text-primary group flex-1 min-w-0">
+                      {editingSection === section.id ? <div className="space-y-2">
+                          <Input value={editSectionValue} onChange={e => setEditSectionValue(e.target.value)} autoFocus />
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" onClick={() => handleSaveSectionTitle(section.id)}>
+                              <Check className="w-3 h-3 mr-1" />
+                              Kaydet
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => {
+                        setEditingSection(null);
+                        setEditSectionValue("");
+                      }}>
+                              <X className="w-3 h-3 mr-1" />
+                              İptal
+                            </Button>
+                          </div>
+                        </div> : <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditSection(section.id, section.title)}>
+                          {showSectionTypewriters[section.id] ? <TypewriterText text={section.title} speed={25} delay={discussionGuide.sections.indexOf(section) * 500} enableControls={true} onComplete={() => setShowSectionTypewriters(prev => ({
+                      ...prev,
+                      [section.id]: false
+                    }))} /> : section.title}
+                        </button>}
+                    </CardTitle>
+
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" draggable={false} className="cursor-grab active:cursor-grabbing text-text-secondary hover:text-text-primary" aria-label="Bölümü sürükleyerek yeniden sırala">
+                        <GripVertical className="w-3 h-3" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleEditSection(section.id, section.title)} className="text-text-secondary hover:text-text-primary">
+                        <Edit3 className="w-3 h-3" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDeleteSection(section.id)} className="text-text-secondary hover:text-destructive">
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
                 </CardHeader>
                 
                 <CardContent className="p-0 space-y-3">
@@ -586,9 +815,14 @@ const StudyPanel = ({
                             </div>}
                         </div>
                         
-                        <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}>
-                          <Edit3 className="w-3 h-3" />
-                        </Button>
+                        <div className="flex items-center">
+                          <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}>
+                            <Edit3 className="w-3 h-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity text-text-secondary hover:text-destructive" onClick={() => handleDeleteQuestion(section.id, index)}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
                       </div>;
             })}
                   
@@ -610,7 +844,23 @@ const StudyPanel = ({
                     </Button>
                   </div>
                 </CardContent>
-              </Card>)}
+              </Card>;
+            })}
+
+            <Card className="border-dashed border-border-light bg-surface/50">
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Yeni bölüm ekle</p>
+                    <p className="text-xs text-text-secondary">Başlık ve soruları sonradan düzenleyebilirsin.</p>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={handleAddSection} className="w-full sm:w-auto">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Bölüm ekle
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Participants (when recruited) */}
             {participants.length > 0 && currentStep !== 'guide' && <Card className="p-6">

@@ -187,7 +187,7 @@ const Workspace = () => {
       sections: [
         {
           id: 'background',
-          title: 'Profesyonel Geçmiş',
+          title: 'Kullanım Bağlamı ve Mevcut Alışkanlıklar',
           questions: [
             'Rolünüz ve sorumluluklarınız hakkında bana bilgi verebilir misiniz?',
             'Bu alanda ne kadar süredir çalışıyorsunuz?',
@@ -196,7 +196,7 @@ const Workspace = () => {
         },
         {
           id: 'first-impressions',
-          title: 'İlk İzlenimler',
+          title: 'İlk Algı ve Mesaj',
           questions: [
             'Bu konudaki ilk tepkiniz nedir?',
             'Size en çok ne dikkat çekiyor?',
@@ -206,7 +206,7 @@ const Workspace = () => {
         },
         {
           id: 'detailed-exploration',
-          title: 'Detaylı Keşif',
+          title: 'Akışta Netlik ve Değer',
           questions: [
             'Buna normalde nasıl yaklaştığınızı anlatır mısınız?',
             'Burada sizin için değerli görünen unsurlar neler?',
@@ -217,7 +217,7 @@ const Workspace = () => {
         },
         {
           id: 'final-thoughts',
-          title: 'Son Düşünceler ve Öneriler',
+          title: 'İyileştirme Fırsatları',
           questions: [
             'Genel olarak bu deneyimi nasıl özetlersiniz?',
             'Elinizde olsa neyi değiştirirdiniz?',

@@ -39,6 +39,8 @@ const RESPONSE_FORMAT = {
             title: { type: "string" },
             sections: {
               type: "array",
+              minItems: 3,
+              maxItems: 4,
               items: {
                 type: "object",
                 properties: {
@@ -46,6 +48,8 @@ const RESPONSE_FORMAT = {
                   title: { type: "string" },
                   questions: {
                     type: "array",
+                    minItems: 2,
+                    maxItems: 4,
                     items: { type: "string" }
                   }
                 },
@@ -247,7 +251,10 @@ Yanit:
 - chatResponse alaninda ASLA genel kalip cumleler kullanma
 - Her zaman kullanicinin konusuna ozel, baglama uygun yanit ver
 - Arastirma sorulari acik uclu olmali (evet/hayir degil)
-- Section id'leri snake_case Ingilizce olmali`;
+- Section id'leri snake_case Ingilizce olmali
+- researchPlan.sections sayisi 3 veya 4 olmali, 5. bolum ASLA uretme
+- Section title'lari sabit ve jenerik kaliplar olmasin; her title o bolumun arastirma odagini net anlatsin
+- "Giris", "Ana Sorular", "Detayli Kesif", "Son Dusunceler" gibi genel title'lari tekrar etme`;
 
 const slugifySectionId = (value: string) =>
   value
@@ -255,6 +262,134 @@ const slugifySectionId = (value: string) =>
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 40) || "section";
+
+const normalizeForMatch = (value: string) =>
+  value
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ç/g, 'c')
+    .replace(/ğ/g, 'g')
+    .replace(/ı/g, 'i')
+    .replace(/ö/g, 'o')
+    .replace(/ş/g, 's')
+    .replace(/ü/g, 'u')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const cleanText = (value: string, fallback = "") => {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized || fallback;
+};
+
+const isGenericSectionTitle = (title: string) => {
+  const normalized = normalizeForMatch(title);
+
+  const genericPatterns = [
+    /^giris(?: ve isinma)?$/,
+    /^isinma$/,
+    /^ilk izlenimler$/,
+    /^detayli kesif$/,
+    /^ana sorular$/,
+    /^ana baslik$/,
+    /^background$/,
+    /^introduction$/,
+    /^overview$/,
+    /^closing$/,
+    /^final thoughts$/,
+    /^son dusunceler(?: ve oneriler)?$/,
+    /^kapanis$/,
+    /^oneriler$/,
+    /^summary$/,
+    /^wrap up$/,
+  ];
+
+  return genericPatterns.some((pattern) => pattern.test(normalized));
+};
+
+const inferSectionTitle = (questions: string[], index: number) => {
+  const corpus = normalizeForMatch(questions.join(' '));
+
+  if (/(ilk|ilk bakis|izlenim|dikkat|mesaj|ilk gordugunuzde|ilk gordugunde|anlad)/.test(corpus)) {
+    return 'Ilk Algi ve Mesaj';
+  }
+
+  if (/(gorev|akis|adim|ilerl|tamamla|nasil yap|nasil kullan|yolculuk|is akis)/.test(corpus)) {
+    return 'Akis ve Gorev Adimlari';
+  }
+
+  if (/(acik|net|anlas|guven|karar|beklenti|tercih)/.test(corpus)) {
+    return 'Karar Verme ve Anlasilirlik';
+  }
+
+  if (/(deger|fayda|motivasyon|neden tercih|neden kullan|ihtiyac|cozum)/.test(corpus)) {
+    return 'Deger ve Motivasyon';
+  }
+
+  if (/(karsilast|rakip|alternatif)/.test(corpus)) {
+    return 'Karsilastirma ve Tercih';
+  }
+
+  if (/(oner|degistir|gelistir|iyilestir|firsat)/.test(corpus)) {
+    return 'Iyilestirme Firsatlari';
+  }
+
+  const fallbackTitles = [
+    'Kullanim Baglami ve Beklentiler',
+    'Ilk Algi ve Anlama',
+    'Akis ve Karar Verme',
+    'Iyilestirme Firsatlari',
+  ];
+
+  return fallbackTitles[index] || `Arastirma Odagi ${index + 1}`;
+};
+
+const normalizeResearchPlan = (plan: any) => {
+  if (!plan || !Array.isArray(plan.sections)) {
+    return plan;
+  }
+
+  const usedTitles = new Set<string>();
+  const normalizedSections = plan.sections
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((section: any, index: number) => {
+      const questions = Array.isArray(section?.questions)
+        ? section.questions
+            .map((question: string) => cleanText(question))
+            .filter(Boolean)
+            .slice(0, 4)
+        : [];
+
+      const rawTitle = cleanText(section?.title);
+      const preferredTitle = rawTitle && !isGenericSectionTitle(rawTitle)
+        ? rawTitle
+        : inferSectionTitle(questions, index);
+
+      let title = preferredTitle;
+      let dedupeIndex = 2;
+      while (usedTitles.has(title)) {
+        title = `${preferredTitle} ${dedupeIndex}`;
+        dedupeIndex += 1;
+      }
+      usedTitles.add(title);
+
+      return {
+        id: slugifySectionId(cleanText(section?.id, title) || title),
+        title,
+        questions,
+      };
+    })
+    .filter((section: any) => section.questions.length > 0);
+
+  return {
+    ...plan,
+    title: cleanText(plan.title, 'Kullanici Arastirmasi'),
+    sections: normalizedSections,
+  };
+};
 
 const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
   const usability = researchContext?.usabilityTesting || {};
@@ -270,7 +405,7 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
   const sections = [
     {
       id: slugifySectionId("task_flow"),
-      title: "Gorev Akisi ve Beklentiler",
+      title: "Ilk Gorev Algi ve Beklentiler",
       questions: [
         `${screenNames} ekranlarina baktiginizda ilk olarak ne yapmaniz gerektigini nasil anliyorsunuz?`,
         `${primaryTask} gorevini tamamlarken hangi adim size en belirsiz veya zor gorunuyor?`,
@@ -279,7 +414,7 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
     },
     {
       id: slugifySectionId("clarity_and_trust"),
-      title: "Anlasilirlik ve Guven",
+      title: "Karar Verme ve Ekran Netligi",
       questions: [
         `Bu ekranlarda hangi bilgi ya da ifade size yeterince acik gelmiyor?`,
         `Karar vermeden once hangi noktada daha fazla guvence veya aciklama duymak istersiniz?`,
@@ -288,7 +423,7 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
     },
     {
       id: slugifySectionId("friction_and_improvements"),
-      title: "Surtunme Noktalari ve Iyilestirme",
+      title: "Surtunme ve Iyilestirme Firsatlari",
       questions: [
         `${riskAreas} basliginda sizi en cok endiselendiren an hangi ekran veya adim oluyor?`,
         `${successSignals} hedefine ulasmak icin bu deneyimde hangi degisiklikler en cok fark yaratir?`,
@@ -440,6 +575,10 @@ ${usableScreens || 'Screen bilgisi yok'}`;
     }
 
     const isResearchPlan = parsed.action === 'PLAN' && parsed.researchPlan !== null;
+
+    if (isResearchPlan) {
+      parsed.researchPlan = normalizeResearchPlan(parsed.researchPlan);
+    }
 
     console.log(`[Searcho] Action: ${parsed.action}, Plan: ${isResearchPlan}`);
     if (isResearchPlan) {
