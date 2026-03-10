@@ -8,7 +8,11 @@ interface AvatarSpeakerProps {
   onSpeakingComplete: () => void;
 }
 
-type OrbState = 'preparing' | 'speaking' | 'listening';
+type OrbState = 'preparing' | 'retrying' | 'speaking' | 'listening';
+
+const RETRY_DELAYS_MS = [250, 500, 1000, 1500];
+
+const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 export const AvatarSpeaker = ({
   questionText,
@@ -18,10 +22,10 @@ export const AvatarSpeaker = ({
 }: AvatarSpeakerProps) => {
   const [orbState, setOrbState] = useState<OrbState>('preparing');
   const [showListeningHint, setShowListeningHint] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
   const playbackTokenRef = useRef(0);
-  const hasPlayedProviderAudioRef = useRef(false);
   const onSpeakingStartRef = useRef(onSpeakingStart);
   const onSpeakingCompleteRef = useRef(onSpeakingComplete);
   const listeningHintTimerRef = useRef<number | null>(null);
@@ -33,6 +37,13 @@ export const AvatarSpeaker = ({
   useEffect(() => {
     onSpeakingCompleteRef.current = onSpeakingComplete;
   }, [onSpeakingComplete]);
+
+  const revokeObjectUrl = () => {
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+  };
 
   const stopPlayback = () => {
     if (listeningHintTimerRef.current) {
@@ -46,68 +57,15 @@ export const AvatarSpeaker = ({
       audioRef.current = null;
     }
 
-    if (utteranceRef.current && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      utteranceRef.current = null;
-    }
+    revokeObjectUrl();
   };
 
   const completeSpeaking = (token: number) => {
     if (playbackTokenRef.current !== token) return;
     setOrbState('listening');
     setShowListeningHint(false);
+    setRetryAttempt(0);
     onSpeakingCompleteRef.current();
-  };
-
-  const shouldUseBrowserFallback = (error?: unknown) => {
-    if (hasPlayedProviderAudioRef.current) {
-      return false;
-    }
-
-    const message = error instanceof Error ? error.message : String(error ?? '');
-    const normalizedMessage = message.toLowerCase();
-
-    return [
-      'functionsfetcherror',
-      'failed to send a request to the edge function',
-      'edge function returned a non-2xx status code',
-      'networkerror',
-      'load failed',
-      'failed to fetch',
-      '404',
-      '503',
-      '504',
-      'no audio content received',
-    ].some((pattern) => normalizedMessage.includes(pattern));
-  };
-
-  const speakWithBrowserFallback = (text: string, token: number) => {
-    if (!('speechSynthesis' in window)) {
-      completeSpeaking(token);
-      return;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'tr-TR';
-    utterance.rate = 0.98;
-    utterance.pitch = 1;
-    utterance.onstart = () => {
-      if (playbackTokenRef.current !== token) return;
-      setOrbState('speaking');
-      onSpeakingStartRef.current();
-    };
-    utterance.onend = () => {
-      utteranceRef.current = null;
-      completeSpeaking(token);
-    };
-    utterance.onerror = () => {
-      utteranceRef.current = null;
-      completeSpeaking(token);
-    };
-
-    utteranceRef.current = utterance;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
   };
 
   useEffect(() => {
@@ -117,53 +75,70 @@ export const AvatarSpeaker = ({
     playbackTokenRef.current = token;
     setOrbState('preparing');
     setShowListeningHint(false);
+    setRetryAttempt(0);
     stopPlayback();
 
-    let objectUrl: string | null = null;
     let cancelled = false;
 
     const speak = async () => {
-      try {
-        const audioBuffer = await textToSpeech(questionText);
-        if (cancelled || playbackTokenRef.current !== token) return;
+      let attempt = 0;
 
-        const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
-        objectUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(objectUrl);
-        audioRef.current = audio;
+      while (!cancelled && playbackTokenRef.current === token) {
+        try {
+          setRetryAttempt(attempt);
+          setOrbState(attempt === 0 ? 'preparing' : 'retrying');
 
-        audio.onplay = () => {
-          if (playbackTokenRef.current !== token) return;
-          hasPlayedProviderAudioRef.current = true;
-          setOrbState('speaking');
-          onSpeakingStartRef.current();
-        };
-        audio.onended = () => {
-          if (objectUrl) {
-            URL.revokeObjectURL(objectUrl);
-            objectUrl = null;
+          const audioBuffer = await textToSpeech(questionText);
+          if (cancelled || playbackTokenRef.current !== token) return;
+
+          const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+          objectUrlRef.current = URL.createObjectURL(audioBlob);
+
+          await new Promise<void>((resolve, reject) => {
+            const audio = new Audio(objectUrlRef.current!);
+            let playbackStarted = false;
+            audio.preload = 'auto';
+            audioRef.current = audio;
+
+            audio.onplay = () => {
+              if (playbackTokenRef.current !== token) return;
+              playbackStarted = true;
+              setOrbState('speaking');
+              onSpeakingStartRef.current();
+            };
+
+            audio.onended = () => {
+              audioRef.current = null;
+              revokeObjectUrl();
+              completeSpeaking(token);
+              resolve();
+            };
+
+            audio.onerror = () => {
+              audioRef.current = null;
+              revokeObjectUrl();
+              reject(new Error(playbackStarted ? 'ElevenLabs playback was interrupted' : 'ElevenLabs playback failed to start'));
+            };
+
+            audio.play().catch((error) => {
+              audioRef.current = null;
+              revokeObjectUrl();
+              reject(error);
+            });
+          });
+
+          return;
+        } catch (error) {
+          if (cancelled || playbackTokenRef.current !== token) {
+            return;
           }
-          audioRef.current = null;
-          completeSpeaking(token);
-        };
-        audio.onerror = () => {
-          if (objectUrl) {
-            URL.revokeObjectURL(objectUrl);
-            objectUrl = null;
-          }
-          audioRef.current = null;
-          console.error('Provider audio playback failed; skipping browser fallback for this question');
-          completeSpeaking(token);
-        };
 
-        await audio.play();
-      } catch (error) {
-        console.error('Turkish TTS playback failed:', error);
-        if (!cancelled && playbackTokenRef.current === token && shouldUseBrowserFallback(error)) {
-          console.warn('Using browser fallback as last resort for TTS startup failure');
-          speakWithBrowserFallback(questionText, token);
-        } else if (!cancelled && playbackTokenRef.current === token) {
-          completeSpeaking(token);
+          const delay = RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
+          console.error(`ElevenLabs playback attempt ${attempt + 1} failed:`, error);
+          setOrbState('retrying');
+          attempt += 1;
+          setRetryAttempt(attempt);
+          await wait(delay);
         }
       }
     };
@@ -173,9 +148,6 @@ export const AvatarSpeaker = ({
     return () => {
       cancelled = true;
       stopPlayback();
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
     };
   }, [questionText]);
 
@@ -203,12 +175,17 @@ export const AvatarSpeaker = ({
     };
   }, [orbState, isUserResponding]);
 
+  const isPreparing = orbState === 'preparing' || orbState === 'retrying';
   const isSpeaking = orbState === 'speaking';
-  const isPreparing = orbState === 'preparing';
   const statusLabel = orbState === 'speaking'
     ? 'Searcho konusuyor'
     : orbState === 'listening'
       ? 'Searcho dinliyor'
+      : 'Searcho sesi baglaniyor';
+  const helperText = orbState === 'retrying'
+    ? `ElevenLabs sesi baglaniyor. Deneme ${retryAttempt}.`
+    : showListeningHint
+      ? 'Hazir oldugunuzda yanit vermeye baslayin.'
       : '';
 
   return (
@@ -247,24 +224,18 @@ export const AvatarSpeaker = ({
         </div>
 
         <div className="space-y-3">
-          {statusLabel ? (
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-primary/70">
-              {statusLabel}
-            </p>
-          ) : null}
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-primary/70">
+            {statusLabel}
+          </p>
           <h3 className={`mx-auto max-w-xl text-xl font-semibold leading-relaxed md:text-2xl ${
             isPreparing ? 'text-slate-500' : 'text-foreground'
           }`}>
             {questionText}
           </h3>
           <div className="min-h-6">
-            <p
-              className={`text-sm text-muted-foreground transition-all duration-700 ease-out ${
-                showListeningHint ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-2 opacity-0'
-              }`}
-            >
-              Soruyu duyduysaniz yanit vermeye baslayabilirsiniz.
-            </p>
+            {helperText ? (
+              <p className="text-sm text-muted-foreground">{helperText}</p>
+            ) : null}
           </div>
         </div>
       </div>

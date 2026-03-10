@@ -1,11 +1,13 @@
 import { supabase } from "@/integrations/supabase/client";
 
-const MIN_SPEECH_LEVEL = 14;
-const MIN_SPEECH_FRAMES = 4;
-const MAX_WAIT_FOR_SPEECH_MS = 5000;
-const SILENCE_AFTER_SPEECH_MS = 1800;
-const MIN_RECORDING_MS = 1200;
-const MIN_AUDIO_BLOB_SIZE = 12000;
+const CALIBRATION_WINDOW_MS = 450;
+const MAX_WAIT_FOR_SPEECH_MS = 3000;
+const SILENCE_AFTER_SPEECH_MS = 1000;
+const MIN_RECORDING_MS = 750;
+const MIN_AUDIO_BLOB_SIZE = 6000;
+const MIN_SPEECH_FRAMES = 2;
+const ABSOLUTE_ENTER_THRESHOLD = 4.2;
+const ABSOLUTE_STAY_THRESHOLD = 2.8;
 const HALLUCINATION_PATTERNS = [
   /abone ol/i,
   /yorum yap/i,
@@ -18,51 +20,71 @@ const HALLUCINATION_PATTERNS = [
   /bildirim zil/i,
 ];
 
+export interface AudioTranscriberMetrics {
+  averageLevel: number;
+  calibrationLevel: number;
+  peakLevel: number;
+  recordingDurationMs: number;
+  speechDetected: boolean;
+  stopReason: 'manual' | 'speech-ended' | 'no-speech' | 'cancelled';
+}
+
 export class AudioTranscriber {
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
-  private silenceTimer: NodeJS.Timeout | null = null;
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private stream: MediaStream | null = null;
   private isRecording = false;
+  private ownsStream = false;
+  private discardRecording = false;
   private recordingStartedAt = 0;
   private speechDetected = false;
   private speechFrameCount = 0;
   private peakLevel = 0;
   private totalLevel = 0;
   private levelSampleCount = 0;
-  private stopReason: 'manual' | 'speech-ended' | 'no-speech' = 'manual';
+  private calibrationTotal = 0;
+  private calibrationSamples = 0;
+  private lastVoiceActivityAt = 0;
+  private analysisFrameId: number | null = null;
+  private stopReason: 'manual' | 'speech-ended' | 'no-speech' | 'cancelled' = 'manual';
 
   onTranscriptionUpdate: (text: string) => void = () => {};
   onSpeechDetected: () => void = () => {};
   onComplete: (text: string) => void = () => {};
   onError: (error: string) => void = () => {};
+  onDebugMetrics: (metrics: AudioTranscriberMetrics) => void = () => {};
 
-  async start() {
+  async start(stream?: MediaStream) {
     try {
-      // Get microphone access
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
+      if (stream) {
+        this.stream = stream;
+        this.ownsStream = false;
+      } else {
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        this.ownsStream = true;
+      }
 
-      // Set up audio analysis for silence detection
       this.audioContext = new AudioContext();
       const source = this.audioContext.createMediaStreamSource(this.stream);
       this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 512;
+      this.analyser.fftSize = 1024;
+      this.analyser.smoothingTimeConstant = 0.15;
       source.connect(this.analyser);
 
-      // Start recording
-      this.mediaRecorder = new MediaRecorder(this.stream, {
-        mimeType: 'audio/webm'
-      });
+      const preferredMimeType = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
 
+      this.mediaRecorder = new MediaRecorder(this.stream, { mimeType: preferredMimeType });
       this.audioChunks = [];
       this.recordingStartedAt = performance.now();
       this.speechDetected = false;
@@ -70,7 +92,11 @@ export class AudioTranscriber {
       this.peakLevel = 0;
       this.totalLevel = 0;
       this.levelSampleCount = 0;
+      this.calibrationTotal = 0;
+      this.calibrationSamples = 0;
+      this.lastVoiceActivityAt = this.recordingStartedAt;
       this.stopReason = 'manual';
+      this.discardRecording = false;
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -82,35 +108,81 @@ export class AudioTranscriber {
         await this.processAudio();
       };
 
-      this.mediaRecorder.start(100); // Collect data every 100ms
+      this.mediaRecorder.start(120);
       this.isRecording = true;
-
-      // Start silence detection
-      this.detectSilence();
+      this.detectSpeech();
     } catch (error) {
       console.error('Error starting transcriber:', error);
       this.onError(error instanceof Error ? error.message : 'Failed to start recording');
     }
   }
 
-  private detectSilence() {
+  stop() {
+    this.finish('manual');
+  }
+
+  cancel() {
+    this.discardRecording = true;
+    this.finish('cancelled');
+  }
+
+  private finish(reason: 'manual' | 'speech-ended' | 'no-speech' | 'cancelled') {
+    if (!this.isRecording) {
+      return;
+    }
+
+    this.isRecording = false;
+    this.stopReason = reason;
+
+    if (this.analysisFrameId !== null) {
+      window.cancelAnimationFrame(this.analysisFrameId);
+      this.analysisFrameId = null;
+    }
+
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+    }
+
+    if (this.audioContext) {
+      void this.audioContext.close();
+      this.audioContext = null;
+    }
+
+    if (this.ownsStream && this.stream) {
+      this.stream.getTracks().forEach((track) => track.stop());
+      this.stream = null;
+    }
+  }
+
+  private detectSpeech() {
     if (!this.analyser || !this.isRecording) return;
 
-    const bufferLength = this.analyser.frequencyBinCount;
+    const bufferLength = this.analyser.fftSize;
     const dataArray = new Uint8Array(bufferLength);
-    
-    const checkAudioLevel = () => {
+
+    const sample = () => {
       if (!this.analyser || !this.isRecording) return;
 
-      this.analyser.getByteFrequencyData(dataArray);
-      const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+      this.analyser.getByteTimeDomainData(dataArray);
       const elapsed = performance.now() - this.recordingStartedAt;
+      const level = this.calculateRmsLevel(dataArray);
 
-      this.totalLevel += average;
+      this.totalLevel += level;
       this.levelSampleCount += 1;
-      this.peakLevel = Math.max(this.peakLevel, average);
+      this.peakLevel = Math.max(this.peakLevel, level);
 
-      if (average >= MIN_SPEECH_LEVEL) {
+      if (elapsed <= CALIBRATION_WINDOW_MS) {
+        this.calibrationTotal += level;
+        this.calibrationSamples += 1;
+      }
+
+      const calibrationLevel = this.calibrationSamples > 0
+        ? this.calibrationTotal / this.calibrationSamples
+        : 0;
+      const enterThreshold = Math.max(ABSOLUTE_ENTER_THRESHOLD, calibrationLevel * 2.6 + 1.2);
+      const stayThreshold = Math.max(ABSOLUTE_STAY_THRESHOLD, calibrationLevel * 1.9 + 0.7);
+
+      if (level >= enterThreshold) {
         this.speechFrameCount += 1;
       } else {
         this.speechFrameCount = Math.max(0, this.speechFrameCount - 1);
@@ -118,71 +190,69 @@ export class AudioTranscriber {
 
       if (!this.speechDetected && this.speechFrameCount >= MIN_SPEECH_FRAMES) {
         this.speechDetected = true;
+        this.lastVoiceActivityAt = performance.now();
         this.onSpeechDetected();
       }
 
-      // If volume is below threshold after speech has started, start silence timer.
-      if (this.speechDetected && average < MIN_SPEECH_LEVEL) {
-        if (!this.silenceTimer) {
-          this.silenceTimer = setTimeout(() => {
-            this.stopReason = 'speech-ended';
-            this.stop();
-          }, SILENCE_AFTER_SPEECH_MS);
-        }
-      } else {
-        // Cancel silence timer if sound detected
-        if (this.silenceTimer) {
-          clearTimeout(this.silenceTimer);
-          this.silenceTimer = null;
-        }
+      if (this.speechDetected && level >= stayThreshold) {
+        this.lastVoiceActivityAt = performance.now();
       }
 
-      if (!this.speechDetected && elapsed >= MAX_WAIT_FOR_SPEECH_MS) {
-        this.stopReason = 'no-speech';
-        this.stop();
+      if (this.speechDetected && performance.now() - this.lastVoiceActivityAt >= SILENCE_AFTER_SPEECH_MS) {
+        this.finish('speech-ended');
         return;
       }
 
-      // Continue checking
+      if (!this.speechDetected && elapsed >= MAX_WAIT_FOR_SPEECH_MS) {
+        this.finish('no-speech');
+        return;
+      }
+
       if (this.isRecording) {
-        requestAnimationFrame(checkAudioLevel);
+        this.analysisFrameId = window.requestAnimationFrame(sample);
       }
     };
 
-    checkAudioLevel();
+    this.analysisFrameId = window.requestAnimationFrame(sample);
   }
 
-  stop() {
-    this.isRecording = false;
+  private calculateRmsLevel(dataArray: Uint8Array) {
+    let sumSquares = 0;
 
-    if (this.silenceTimer) {
-      clearTimeout(this.silenceTimer);
-      this.silenceTimer = null;
+    for (let i = 0; i < dataArray.length; i++) {
+      const normalizedSample = (dataArray[i] - 128) / 128;
+      sumSquares += normalizedSample * normalizedSample;
     }
 
-    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      this.mediaRecorder.stop();
-    }
+    return Math.sqrt(sumSquares / dataArray.length) * 100;
+  }
 
-    if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
-    }
-
-    if (this.audioContext) {
-      this.audioContext.close();
-    }
+  private emitMetrics(recordingDuration: number) {
+    this.onDebugMetrics({
+      averageLevel: this.levelSampleCount > 0 ? this.totalLevel / this.levelSampleCount : 0,
+      calibrationLevel: this.calibrationSamples > 0 ? this.calibrationTotal / this.calibrationSamples : 0,
+      peakLevel: this.peakLevel,
+      recordingDurationMs: recordingDuration,
+      speechDetected: this.speechDetected,
+      stopReason: this.stopReason,
+    });
   }
 
   private async processAudio() {
+    const recordingDuration = performance.now() - this.recordingStartedAt;
+    this.emitMetrics(recordingDuration);
+
+    if (this.discardRecording || this.stopReason === 'cancelled') {
+      return;
+    }
+
     if (this.audioChunks.length === 0) {
       this.onError('NO_SPEECH_DETECTED');
       return;
     }
 
     try {
-      // Combine chunks into single blob
       const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
-      const recordingDuration = performance.now() - this.recordingStartedAt;
       const averageLevel = this.levelSampleCount > 0 ? this.totalLevel / this.levelSampleCount : 0;
 
       if (
@@ -190,22 +260,19 @@ export class AudioTranscriber {
         !this.speechDetected ||
         recordingDuration < MIN_RECORDING_MS ||
         audioBlob.size < MIN_AUDIO_BLOB_SIZE ||
-        this.peakLevel < MIN_SPEECH_LEVEL ||
-        averageLevel < 4
+        this.peakLevel < ABSOLUTE_ENTER_THRESHOLD ||
+        averageLevel < 1.6
       ) {
         this.onError('NO_SPEECH_DETECTED');
         return;
       }
-      
-      // Convert to base64
-      const base64Audio = await this.blobToBase64(audioBlob);
 
-      // Send to speech-to-text edge function
+      const base64Audio = await this.blobToBase64(audioBlob);
       const { data, error } = await supabase.functions.invoke('speech-to-text', {
         body: {
           audio: base64Audio,
-          language: 'tr'
-        }
+          language: 'tr',
+        },
       });
 
       if (error) {
@@ -228,11 +295,7 @@ export class AudioTranscriber {
         return;
       }
 
-      if (transcript) {
-        this.onComplete(transcript);
-      } else {
-        this.onError('NO_SPEECH_DETECTED');
-      }
+      this.onComplete(transcript);
     } catch (error) {
       console.error('Error processing audio:', error);
       this.onError(error instanceof Error ? error.message : 'Failed to process audio');

@@ -1,18 +1,31 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Mic, MicOff, Volume2, VolumeX, PhoneOff, SkipForward } from 'lucide-react';
+import { Loader2, Mic, MicOff, PhoneOff, SkipForward } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { AudioTranscriber } from '@/utils/AudioTranscriber';
-import { interviewService, InterviewQuestion, InterviewProgress, setInterviewSessionToken } from '@/services/interviewService';
+import { AudioTranscriber, AudioTranscriberMetrics } from '@/utils/AudioTranscriber';
+import { interviewService, InterviewProgress, InterviewQuestion, setInterviewSessionToken } from '@/services/interviewService';
+import { prefetchTextToSpeech } from '@/services/textToSpeechService';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
 import { AvatarSpeaker } from './AvatarSpeaker';
 
 const RESPONSE_TIME_LIMIT_SECONDS = 120;
+const AUTO_SAVE_MIN_CHARACTERS = 8;
+const AUTO_SAVE_MIN_WORDS = 2;
+
+type ResponseRecordingResult = {
+  blob: Blob | null;
+  durationMs: number;
+};
+
+type PendingResponseMedia = ResponseRecordingResult & {
+  questionId: string;
+};
 
 interface SearchoAIProps {
   isActive: boolean;
+  cameraStream?: MediaStream | null;
   projectContext?: {
     description: string;
     discussionGuide?: any;
@@ -30,50 +43,71 @@ interface SearchoAIProps {
   onSessionEnd?: () => void;
   onQuestionChange?: (question: InterviewQuestion | null, progress: InterviewProgress) => void;
 }
+
+const isLiveTrack = (track?: MediaStreamTrack | null) => Boolean(track && track.readyState === 'live' && track.enabled !== false);
+
+const getRecordingMimeType = () => {
+  if (typeof MediaRecorder === 'undefined') return undefined;
+
+  const candidates = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+  ];
+
+  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
+};
+
+const shouldRequireTranscriptReview = (transcript: string) => {
+  const normalizedTranscript = transcript.trim();
+  const wordCount = normalizedTranscript.split(/\s+/).filter(Boolean).length;
+
+  return normalizedTranscript.length < AUTO_SAVE_MIN_CHARACTERS || wordCount < AUTO_SAVE_MIN_WORDS;
+};
+
 const SearchoAI = ({
   isActive,
+  cameraStream = null,
   projectContext,
   onSessionEnd,
-  onQuestionChange
+  onQuestionChange,
 }: SearchoAIProps) => {
-  const {
-    toast
-  } = useToast();
+  const { toast } = useToast();
 
-  // State management
   const [isListening, setIsListening] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
-
-  // Interview-specific state
   const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestion | null>(null);
   const [interviewProgress, setInterviewProgress] = useState<InterviewProgress>({
     completed: 0,
     total: 0,
     isComplete: false,
-    percentage: 0
+    percentage: 0,
   });
   const [questionsInitialized, setQuestionsInitialized] = useState(false);
   const [isWaitingForAnswer, setIsWaitingForAnswer] = useState(false);
   const [needsRetryRecording, setNeedsRetryRecording] = useState(false);
-  const [userTranscript, setUserTranscript] = useState<string>('');
+  const [userTranscript, setUserTranscript] = useState('');
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isReviewingTranscript, setIsReviewingTranscript] = useState(false);
   const [editableTranscript, setEditableTranscript] = useState('');
   const [responseTimeRemaining, setResponseTimeRemaining] = useState(RESPONSE_TIME_LIMIT_SECONDS);
   const [responseTimerExpired, setResponseTimerExpired] = useState(false);
   const [responseTimerActive, setResponseTimerActive] = useState(false);
-
-  // Preamble state
+  const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
+  const [isRecordingVideo, setIsRecordingVideo] = useState(false);
   const [isPreamblePhase, setIsPreamblePhase] = useState(true);
   const [showTurkishPreamble, setShowTurkishPreamble] = useState(true);
 
-  // Video recording
-  const [isRecordingVideo, setIsRecordingVideo] = useState(false);
-  const videoRecorderRef = useRef<MediaRecorder | null>(null);
-  const videoChunksRef = useRef<Blob[]>([]);
   const audioTranscriberRef = useRef<AudioTranscriber | null>(null);
-  const audioStreamRef = useRef<MediaStream | null>(null);
+  const microphoneStreamRef = useRef<MediaStream | null>(null);
+  const microphoneRequestRef = useRef<Promise<MediaStream> | null>(null);
+  const responseRecorderRef = useRef<MediaRecorder | null>(null);
+  const responseChunksRef = useRef<Blob[]>([]);
+  const responseRecordingTracksRef = useRef<MediaStreamTrack[]>([]);
+  const responseRecordingStartedAtRef = useRef(0);
+  const pendingResponseMediaRef = useRef<PendingResponseMedia | null>(null);
+  const analysisTriggeredRef = useRef(false);
 
   useEffect(() => {
     setInterviewSessionToken(projectContext?.sessionToken ?? null);
@@ -83,218 +117,232 @@ const SearchoAI = ({
     };
   }, [projectContext?.sessionToken]);
 
-  // Initialize questions when session starts
   useEffect(() => {
-    if (isActive && projectContext?.sessionId && projectContext?.projectId && projectContext?.discussionGuide && !questionsInitialized) {
-      initializeInterviewQuestions();
+    analysisTriggeredRef.current = false;
+  }, [projectContext?.sessionId]);
+
+  const cleanupResponseRecording = useCallback(() => {
+    responseRecordingTracksRef.current.forEach((track) => track.stop());
+    responseRecordingTracksRef.current = [];
+    responseChunksRef.current = [];
+    responseRecorderRef.current = null;
+    responseRecordingStartedAtRef.current = 0;
+    setIsRecordingVideo(false);
+  }, []);
+
+  const stopResponseRecording = useCallback((discard = false): Promise<ResponseRecordingResult> => {
+    const recorder = responseRecorderRef.current;
+    const startedAt = responseRecordingStartedAtRef.current;
+
+    if (!recorder || recorder.state === 'inactive') {
+      cleanupResponseRecording();
+      return Promise.resolve({ blob: null, durationMs: 0 });
     }
-  }, [isActive, projectContext, questionsInitialized]);
-  const initializeInterviewQuestions = async () => {
-    if (!projectContext?.sessionId || !projectContext?.projectId || !projectContext?.discussionGuide) {
-      console.error('Missing required data for interview initialization:', {
-        sessionId: projectContext?.sessionId,
-        projectId: projectContext?.projectId,
-        hasDiscussionGuide: !!projectContext?.discussionGuide
-      });
-      console.error('Missing required data');
+
+    return new Promise((resolve) => {
+      let settled = false;
+
+      const finalize = (blob: Blob | null) => {
+        if (settled) return;
+        settled = true;
+        const durationMs = startedAt ? Math.max(0, performance.now() - startedAt) : 0;
+        cleanupResponseRecording();
+        resolve({ blob, durationMs });
+      };
+
+      recorder.onstop = () => {
+        const blob = !discard && responseChunksRef.current.length > 0
+          ? new Blob(responseChunksRef.current, { type: recorder.mimeType || 'video/webm' })
+          : null;
+        finalize(blob);
+      };
+
+      recorder.onerror = () => finalize(null);
+
+      try {
+        recorder.stop();
+      } catch (error) {
+        console.error('Failed to stop response recorder:', error);
+        finalize(null);
+      }
+    });
+  }, [cleanupResponseRecording]);
+
+  const ensureMicrophoneStream = useCallback(async () => {
+    const existingTrack = microphoneStreamRef.current?.getAudioTracks().find((track) => isLiveTrack(track));
+    if (microphoneStreamRef.current && existingTrack) {
+      return microphoneStreamRef.current;
+    }
+
+    if (microphoneRequestRef.current) {
+      return await microphoneRequestRef.current;
+    }
+
+    microphoneRequestRef.current = navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    }).then((stream) => {
+      microphoneStreamRef.current = stream;
+      return stream;
+    }).finally(() => {
+      microphoneRequestRef.current = null;
+    });
+
+    return await microphoneRequestRef.current;
+  }, []);
+
+  const startResponseRecording = useCallback(async (questionId: string, microphoneStream: MediaStream) => {
+    const cameraTrack = cameraStream?.getVideoTracks().find((track) => isLiveTrack(track));
+    const microphoneTrack = microphoneStream.getAudioTracks().find((track) => isLiveTrack(track));
+
+    if (!cameraTrack || !microphoneTrack) {
+      cleanupResponseRecording();
       return;
     }
+
+    const tracks = [cameraTrack.clone(), microphoneTrack.clone()];
+    const recordingStream = new MediaStream(tracks);
+    const mimeType = getRecordingMimeType();
+
     try {
-      console.log('🎯 Initializing interview questions...');
+      const recorder = mimeType
+        ? new MediaRecorder(recordingStream, { mimeType, videoBitsPerSecond: 2_500_000 })
+        : new MediaRecorder(recordingStream, { videoBitsPerSecond: 2_500_000 });
+
+      responseChunksRef.current = [];
+      responseRecordingTracksRef.current = tracks;
+      responseRecordingStartedAtRef.current = performance.now();
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          responseChunksRef.current.push(event.data);
+        }
+      };
+      recorder.start(600);
+      responseRecorderRef.current = recorder;
+      setIsRecordingVideo(true);
+      console.log('Started async response recording for question:', questionId);
+    } catch (error) {
+      console.error('Failed to start response recording:', error);
+      tracks.forEach((track) => track.stop());
+      cleanupResponseRecording();
+    }
+  }, [cameraStream, cleanupResponseRecording]);
+
+  const discardPendingResponseMedia = useCallback(async () => {
+    pendingResponseMediaRef.current = null;
+    await stopResponseRecording(true);
+  }, [stopResponseRecording]);
+
+  const uploadResponseMedia = useCallback(async (responseId: string, questionId: string, media: PendingResponseMedia) => {
+    if (!projectContext?.sessionId || !media.blob) {
+      return;
+    }
+
+    try {
+      const fileName = `${projectContext.sessionId}/${questionId}_${responseId}_${Date.now()}.webm`;
+      const { error } = await supabase.storage.from('interview-videos').upload(fileName, media.blob, {
+        contentType: media.blob.type || 'video/webm',
+        upsert: false,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      const { data: { publicUrl } } = supabase.storage.from('interview-videos').getPublicUrl(fileName);
+      await interviewService.attachResponseMedia(projectContext.sessionId, responseId, {
+        videoUrl: publicUrl,
+        videoDuration: Math.round(media.durationMs),
+        audioDuration: Math.round(media.durationMs),
+        metadata: {
+          mediaUploadCompletedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('Background response media upload failed:', error);
+    }
+  }, [projectContext?.sessionId]);
+
+  const applyInterviewState = useCallback((nextQuestion: InterviewQuestion | null, progress: InterviewProgress) => {
+    setCurrentQuestion(nextQuestion);
+    setInterviewProgress(progress);
+    onQuestionChange?.(nextQuestion, progress);
+    setIsWaitingForAnswer(false);
+    setNeedsRetryRecording(false);
+    setResponseTimerActive(false);
+    setResponseTimerExpired(false);
+    setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
+    setUserTranscript('');
+    setEditableTranscript('');
+    setIsReviewingTranscript(false);
+
+    if (nextQuestion?.question_text) {
+      void prefetchTextToSpeech(nextQuestion.question_text);
+    }
+
+    if (progress.isComplete && !analysisTriggeredRef.current) {
+      analysisTriggeredRef.current = true;
+      setCurrentQuestion(null);
+      toast({
+        title: 'Görüşme Tamamlandı!',
+        description: 'Tüm sorular yanıtlandı.',
+      });
+
+      if (projectContext?.sessionId && projectContext?.projectId) {
+        void interviewService.analyzeInterview(projectContext.sessionId, projectContext.projectId)
+          .then(() => {
+            toast({ title: 'Analiz Tamamlandı' });
+          })
+          .catch((error) => {
+            console.error('Analysis failed:', error);
+          });
+      }
+    }
+  }, [onQuestionChange, projectContext?.projectId, projectContext?.sessionId, toast]);
+
+  const initializeInterviewQuestions = useCallback(async () => {
+    if (!projectContext?.sessionId || !projectContext?.projectId || !projectContext?.discussionGuide) {
+      console.error('Missing required data for interview initialization');
+      return;
+    }
+
+    try {
       await interviewService.initializeQuestions(projectContext.projectId, projectContext.sessionId, projectContext.discussionGuide);
       setQuestionsInitialized(true);
-      console.log('✅ Questions initialized successfully');
       toast({
-        title: "Görüşme Başlıyor",
-        description: "Karşılama ve tanıtım ile başlıyoruz..."
+        title: 'Görüşme Başlıyor',
+        description: 'Karşılama ve tanıtım ile başlıyoruz...',
       });
     } catch (error) {
-      console.error('❌ Failed to initialize questions:', error);
+      console.error('Failed to initialize questions:', error);
       toast({
-        title: "Hata",
-        description: "Görüşme soruları başlatılamadı",
-        variant: "destructive"
+        title: 'Hata',
+        description: 'Görüşme soruları başlatılamadı',
+        variant: 'destructive',
       });
     }
-  };
+  }, [projectContext?.discussionGuide, projectContext?.projectId, projectContext?.sessionId, toast]);
 
-  // Video recording functions
-  const startVideoRecording = useCallback(async (videoStream: MediaStream) => {
-    if (!videoStream) return;
-    try {
-      const mediaRecorder = new MediaRecorder(videoStream, {
-        mimeType: 'video/webm;codecs=vp8,opus',
-        videoBitsPerSecond: 2500000
-      });
-      videoChunksRef.current = [];
-      mediaRecorder.ondataavailable = event => {
-        if (event.data.size > 0) {
-          videoChunksRef.current.push(event.data);
-        }
-      };
-      mediaRecorder.start(1000);
-      videoRecorderRef.current = mediaRecorder;
-      setIsRecordingVideo(true);
-      console.log('📹 Video recording started');
-    } catch (error) {
-      console.error('Failed to start video recording:', error);
+  useEffect(() => {
+    if (isActive && projectContext?.sessionId && projectContext?.projectId && projectContext?.discussionGuide && !questionsInitialized) {
+      void initializeInterviewQuestions();
     }
-  }, []);
-  const stopVideoRecording = useCallback((): Promise<Blob | null> => {
-    return new Promise(resolve => {
-      if (!videoRecorderRef.current || videoRecorderRef.current.state === 'inactive') {
-        resolve(null);
-        return;
-      }
-      videoRecorderRef.current.onstop = () => {
-        const videoBlob = new Blob(videoChunksRef.current, {
-          type: 'video/webm'
-        });
-        console.log('📹 Video recording stopped, size:', videoBlob.size);
-        setIsRecordingVideo(false);
-        resolve(videoBlob);
-      };
-      videoRecorderRef.current.stop();
-    });
-  }, []);
-  const uploadVideo = useCallback(async (videoBlob: Blob, sessionId: string, questionId: string): Promise<{
-    url: string;
-    duration: number;
-  } | null> => {
-    try {
-      const fileName = `${sessionId}/${questionId}_${Date.now()}.webm`;
-      const {
-        data,
-        error
-      } = await supabase.storage.from('interview-videos').upload(fileName, videoBlob, {
-        contentType: 'video/webm',
-        upsert: false
-      });
-      if (error) throw error;
-      const {
-        data: {
-          publicUrl
-        }
-      } = supabase.storage.from('interview-videos').getPublicUrl(fileName);
+  }, [initializeInterviewQuestions, isActive, projectContext?.discussionGuide, projectContext?.projectId, projectContext?.sessionId, questionsInitialized]);
 
-      // Calculate video duration (approximate based on size)
-      const duration = Math.floor(videoBlob.size / 2500000 * 8000);
-      console.log('✅ Video uploaded:', publicUrl);
-      return {
-        url: publicUrl,
-        duration
-      };
-    } catch (error) {
-      console.error('Failed to upload video:', error);
-      return null;
-    }
-  }, []);
-
-  // Function to transition from preamble to questions
-  const startActualQuestions = useCallback(async () => {
-    console.log('Transitioning from preamble to questions...');
-    setIsPreamblePhase(false);
-    setShowTurkishPreamble(false);
-    await getNextQuestion();
-    toast({
-      title: "Sorulara Geçiliyor",
-      description: "Şimdi yapılandırılmış görüşme sorularına başlıyoruz."
-    });
-  }, []);
-  const getNextQuestion = useCallback(async () => {
-    if (!projectContext?.sessionId) return;
-    setUserTranscript('');
-    setIsTranscribing(false);
-    setNeedsRetryRecording(false);
-    try {
-      console.log('🎯 Getting next question...');
-      const data = await interviewService.getNextQuestion(projectContext.sessionId);
-      setCurrentQuestion(data.nextQuestion);
-      setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
-      setResponseTimerExpired(false);
-      setInterviewProgress(data.progress);
-      onQuestionChange?.(data.nextQuestion, data.progress);
-      setIsWaitingForAnswer(false);
-      if (data.progress.isComplete) {
-        console.log('🎉 Interview completed!');
-        if (isRecordingVideo) {
-          await stopVideoRecording();
-        }
-        toast({
-          title: "Görüşme Tamamlandı!",
-          description: "Tüm sorular yanıtlandı"
-        });
-        if (projectContext.projectId) {
-          setTimeout(async () => {
-            try {
-              await interviewService.analyzeInterview(projectContext.sessionId!, projectContext.projectId!);
-              toast({
-                title: "Analiz Tamamlandı"
-              });
-            } catch (error) {
-              console.error('Analysis failed:', error);
-            }
-          }, 2000);
-        }
-      } else if (data.nextQuestion && audioStreamRef.current) {
-        await startVideoRecording(audioStreamRef.current);
-      }
-    } catch (error) {
-      console.error('❌ Failed to get next question:', error);
-      toast({
-        title: "Hata",
-        description: "Sonraki soru alınamadı",
-        variant: "destructive"
-      });
-    }
-  }, [projectContext, isRecordingVideo, stopVideoRecording, startVideoRecording, onQuestionChange]);
-  const saveResponse = useCallback(async (transcription: string) => {
-    if (!projectContext?.sessionId || !currentQuestion) {
-      throw new Error('Session or question not available');
-    }
-    try {
-      console.log('💾 saveResponse called for question:', currentQuestion.id);
-      let videoUrl = null;
-      let videoDuration = null;
-      if (isRecordingVideo) {
-        const videoBlob = await stopVideoRecording();
-        if (videoBlob && projectContext.sessionId) {
-          const uploadResult = await uploadVideo(videoBlob, projectContext.sessionId, currentQuestion.id);
-          if (uploadResult) {
-            videoUrl = uploadResult.url;
-            videoDuration = uploadResult.duration;
-          }
-        }
-      }
-      await interviewService.saveResponse(projectContext.sessionId, {
-        questionId: currentQuestion.id,
-        participantId: projectContext.participantId,
-        transcription,
-        responseText: transcription,
-        isComplete: true,
-        videoUrl,
-        videoDuration,
-        metadata: {
-          timestamp: new Date().toISOString(),
-          questionText: currentQuestion.question_text
-        }
-      });
-      console.log('✅ Response saved to database');
-    } catch (error) {
-      console.error('❌ Failed to save response:', error);
-      throw error; // Re-throw so caller knows it failed
-    }
-  }, [projectContext, currentQuestion, isRecordingVideo, stopVideoRecording, uploadVideo]);
-
-  // Initialize session timer
   useEffect(() => {
     if (isActive && !sessionStartTime) {
       setSessionStartTime(new Date());
     }
-    const timer = setInterval(() => {
+
+    const timer = window.setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
-    return () => clearInterval(timer);
+
+    return () => window.clearInterval(timer);
   }, [isActive, sessionStartTime]);
 
   useEffect(() => {
@@ -305,7 +353,7 @@ const SearchoAI = ({
   }, [currentQuestion?.id]);
 
   useEffect(() => {
-    if (!currentQuestion || !responseTimerActive || isReviewingTranscript) return;
+    if (!currentQuestion || !responseTimerActive || isReviewingTranscript || isSubmittingResponse) return;
     if (responseTimeRemaining <= 0) return;
 
     const timer = window.setInterval(() => {
@@ -313,7 +361,17 @@ const SearchoAI = ({
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [currentQuestion, responseTimerActive, isReviewingTranscript, responseTimeRemaining]);
+  }, [currentQuestion, isReviewingTranscript, isSubmittingResponse, responseTimeRemaining, responseTimerActive]);
+
+  const finishCurrentAnswer = useCallback(() => {
+    if (!audioTranscriberRef.current) {
+      return;
+    }
+
+    setIsListening(false);
+    setResponseTimerActive(false);
+    audioTranscriberRef.current.stop();
+  }, []);
 
   useEffect(() => {
     if (!currentQuestion || responseTimeRemaining > 0 || responseTimerExpired || !responseTimerActive) return;
@@ -321,146 +379,212 @@ const SearchoAI = ({
     setResponseTimerExpired(true);
     setResponseTimerActive(false);
     toast({
-      title: "Sure doldu",
-      description: "Yanitinizi simdi gozden gecirebilirsiniz.",
+      title: 'Süre doldu',
+      description: 'Kaydı tamamlayıp yanıtı şimdi işleyeceğiz.',
     });
+    finishCurrentAnswer();
+  }, [currentQuestion, finishCurrentAnswer, responseTimeRemaining, responseTimerActive, responseTimerExpired, toast]);
+
+  const getNextQuestion = useCallback(async () => {
+    if (!projectContext?.sessionId) return;
+
+    setUserTranscript('');
+    setEditableTranscript('');
+    setIsReviewingTranscript(false);
+    setNeedsRetryRecording(false);
+
+    try {
+      const data = await interviewService.getNextQuestion(projectContext.sessionId);
+      applyInterviewState(data.nextQuestion, data.progress);
+    } catch (error) {
+      console.error('Failed to get next question:', error);
+      toast({
+        title: 'Hata',
+        description: 'Sonraki soru alınamadı',
+        variant: 'destructive',
+      });
+    }
+  }, [applyInterviewState, projectContext?.sessionId, toast]);
+
+  const startActualQuestions = useCallback(async () => {
+    setIsPreamblePhase(false);
+    setShowTurkishPreamble(false);
+    await getNextQuestion();
+    toast({
+      title: 'Sorulara Geçiliyor',
+      description: 'Şimdi yapılandırılmış görüşme sorularına başlıyoruz.',
+    });
+  }, [getNextQuestion, toast]);
+
+  const submitCurrentResponse = useCallback(async (transcription: string) => {
+    if (!projectContext?.sessionId || !currentQuestion) {
+      throw new Error('Session or question not available');
+    }
+
+    const normalizedTranscript = transcription.trim();
+    const activeQuestion = currentQuestion;
+    const pendingMedia = pendingResponseMediaRef.current?.questionId === activeQuestion.id
+      ? pendingResponseMediaRef.current
+      : null;
+    let mediaToPersist: PendingResponseMedia | null = pendingMedia;
+
+    setIsSubmittingResponse(true);
+    setIsReviewingTranscript(false);
+    setIsWaitingForAnswer(false);
+    setNeedsRetryRecording(false);
+    setResponseTimerActive(false);
+
+    try {
+      if (!mediaToPersist) {
+        const recording = await stopResponseRecording(false);
+        mediaToPersist = { ...recording, questionId: activeQuestion.id };
+      }
+
+      pendingResponseMediaRef.current = null;
+
+      const data = await interviewService.submitResponse(projectContext.sessionId, {
+        questionId: activeQuestion.id,
+        participantId: projectContext.participantId,
+        transcription: normalizedTranscript,
+        responseText: normalizedTranscript,
+        audioDuration: Math.round(mediaToPersist.durationMs),
+        metadata: {
+          timestamp: new Date().toISOString(),
+          questionText: activeQuestion.question_text,
+          autoSaved: true,
+        },
+      });
+
+      applyInterviewState(data.nextQuestion, data.progress);
+
+      if (mediaToPersist.blob && data.response?.id) {
+        void uploadResponseMedia(data.response.id, activeQuestion.id, mediaToPersist);
+      }
+    } catch (error) {
+      console.error('Failed to submit response:', error);
+      pendingResponseMediaRef.current = mediaToPersist;
+      setEditableTranscript(normalizedTranscript);
+      setUserTranscript(normalizedTranscript);
+      setIsReviewingTranscript(true);
+      toast({
+        title: 'Hata',
+        description: 'Yanıt kaydedilemedi. Düzeltip tekrar deneyin.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmittingResponse(false);
+    }
+  }, [applyInterviewState, currentQuestion, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, toast, uploadResponseMedia]);
+
+  const startListening = useCallback(async () => {
+    if (!currentQuestion?.id || isSubmittingResponse) {
+      return;
+    }
 
     if (audioTranscriberRef.current) {
-      audioTranscriberRef.current.stop();
+      audioTranscriberRef.current.cancel();
+      audioTranscriberRef.current = null;
     }
-  }, [currentQuestion, responseTimeRemaining, responseTimerExpired, isWaitingForAnswer, toast]);
 
-  // Start listening for user response
-  const startListening = async () => {
-    if (audioTranscriberRef.current) {
-      audioTranscriberRef.current.stop();
-    }
+    await discardPendingResponseMedia();
+
     setNeedsRetryRecording(false);
     setUserTranscript('');
+    setEditableTranscript('');
+    setIsReviewingTranscript(false);
     setIsTranscribing(true);
     setIsListening(true);
+    setIsWaitingForAnswer(true);
     setResponseTimerExpired(false);
     setResponseTimerActive(false);
 
-    // Start video recording if we have a stream
-    if (audioStreamRef.current) {
-      await startVideoRecording(audioStreamRef.current);
-    }
-    const transcriber = new AudioTranscriber();
-    transcriber.onTranscriptionUpdate = (text: string) => {
-      setUserTranscript(text);
-    };
-    transcriber.onSpeechDetected = () => {
-      setResponseTimerActive(true);
-    };
-    transcriber.onComplete = async (finalText: string) => {
-      console.log('Transcription complete:', finalText);
-      setUserTranscript(finalText);
-      setEditableTranscript(finalText);
-      setIsTranscribing(false);
-      setIsListening(false);
-      setIsWaitingForAnswer(false);
-      setNeedsRetryRecording(false);
-      setIsReviewingTranscript(true);
-      setResponseTimerActive(false);
-      // Don't auto-save - wait for user confirmation
-    };
-    transcriber.onError = (error: string) => {
-      console.error('Transcription error:', error);
-      setIsTranscribing(false);
-      setIsListening(false);
-      setResponseTimerActive(false);
+    try {
+      const microphoneStream = await ensureMicrophoneStream();
+      await startResponseRecording(currentQuestion.id, microphoneStream);
 
-      if (error === 'NO_SPEECH_DETECTED') {
-        if (isRecordingVideo) {
-          void stopVideoRecording();
+      const transcriber = new AudioTranscriber();
+      transcriber.onSpeechDetected = () => {
+        setResponseTimerActive(true);
+      };
+      transcriber.onDebugMetrics = (metrics: AudioTranscriberMetrics) => {
+        if (import.meta.env.DEV) {
+          console.debug('Audio transcriber metrics:', metrics);
         }
-        setUserTranscript('');
-        setEditableTranscript('');
-        setIsReviewingTranscript(false);
+      };
+      transcriber.onComplete = async (finalText: string) => {
+        audioTranscriberRef.current = null;
+        setIsListening(false);
+        setIsTranscribing(false);
+        setIsWaitingForAnswer(false);
+        setResponseTimerActive(false);
+        setNeedsRetryRecording(false);
+
+        const normalizedTranscript = finalText.trim();
+        setUserTranscript(normalizedTranscript);
+
+        const recording = await stopResponseRecording(false);
+        pendingResponseMediaRef.current = { ...recording, questionId: currentQuestion.id };
+
+        if (shouldRequireTranscriptReview(normalizedTranscript)) {
+          setEditableTranscript(normalizedTranscript);
+          setIsReviewingTranscript(true);
+          toast({
+            title: 'Yanıtı gözden geçirin',
+            description: 'Transkript kısa görünüyor. İsterseniz düzenleyip kaydedin.',
+          });
+          return;
+        }
+
+        await submitCurrentResponse(normalizedTranscript);
+      };
+      transcriber.onError = async (error: string) => {
+        audioTranscriberRef.current = null;
+        setIsTranscribing(false);
+        setIsListening(false);
+        setResponseTimerActive(false);
+
+        await discardPendingResponseMedia();
+
+        if (error === 'NO_SPEECH_DETECTED') {
+          setUserTranscript('');
+          setEditableTranscript('');
+          setIsReviewingTranscript(false);
+          setIsWaitingForAnswer(true);
+          setNeedsRetryRecording(true);
+          setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
+          toast({
+            title: 'Ses algılanmadı',
+            description: 'Lütfen yanıtınızı net bir şekilde sesli olarak verin.',
+          });
+          return;
+        }
+
+        toast({
+          title: 'Hata',
+          description: 'Ses kaydı başarısız oldu. Tekrar deneyin.',
+          variant: 'destructive',
+        });
         setIsWaitingForAnswer(true);
         setNeedsRetryRecording(true);
-        setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
-        toast({
-          title: "Ses algilanmadi",
-          description: "Lutfen yanitinizi net bir sekilde sesli olarak verin.",
-        });
-        return;
-      }
+      };
 
-      if (isRecordingVideo) {
-        void stopVideoRecording();
-      }
-
-      toast({
-        title: "Hata",
-        description: "Ses kaydı başarısız",
-        variant: "destructive"
-      });
-    };
-    audioTranscriberRef.current = transcriber;
-    await transcriber.start();
-  };
-  const toggleMicrophone = () => {
-    if (isListening) {
-      setIsListening(false);
-       setResponseTimerActive(false);
-      if (audioTranscriberRef.current) {
-        audioTranscriberRef.current.stop();
-        audioTranscriberRef.current = null;
-      }
-    } else {
-      startListening();
-    }
-  };
-
-  // Confirm and save the edited transcription
-  const confirmAndSaveResponse = async () => {
-    if (!editableTranscript.trim()) {
-      toast({
-        title: "Hata",
-        description: "Yanıt boş olamaz",
-        variant: "destructive"
-      });
-      return;
-    }
-    try {
-      console.log('💾 Saving response:', editableTranscript.substring(0, 50) + '...');
-      setIsReviewingTranscript(false);
-
-      // Save the response and wait for it to complete
-      await saveResponse(editableTranscript);
-      console.log('✅ Response saved successfully');
-
-      // Mark question as complete
-      if (projectContext?.sessionId && currentQuestion?.id) {
-        await interviewService.completeQuestion(projectContext.sessionId, currentQuestion.id);
-        console.log('✅ Question marked as complete');
-      }
-
-      // Clear the transcripts
-      setUserTranscript('');
-      setEditableTranscript('');
-
-      // Wait a moment before getting next question
-      await new Promise(resolve => setTimeout(resolve, 500));
-      console.log('📥 Fetching next question...');
-      await getNextQuestion();
-      console.log('✅ Next question loaded');
+      audioTranscriberRef.current = transcriber;
+      await transcriber.start(microphoneStream);
     } catch (error) {
-      console.error('❌ Error in confirmAndSaveResponse:', error);
-      // Reset review state so user can try again
-      setIsReviewingTranscript(true);
+      console.error('Failed to start listening:', error);
+      setIsListening(false);
+      setIsTranscribing(false);
+      setIsWaitingForAnswer(true);
+      setNeedsRetryRecording(true);
       toast({
-        title: "Hata",
-        description: "Yanıt kaydedilemedi. Lütfen tekrar deneyin.",
-        variant: "destructive"
+        title: 'Mikrofon Hatası',
+        description: 'Mikrofon başlatılamadı. Lütfen tekrar deneyin.',
+        variant: 'destructive',
       });
     }
-  };
+  }, [currentQuestion, discardPendingResponseMedia, ensureMicrophoneStream, isSubmittingResponse, startResponseRecording, stopResponseRecording, submitCurrentResponse, toast]);
 
-  // Re-record the answer
-  const reRecordAnswer = async () => {
+  const reRecordAnswer = useCallback(async () => {
     setIsReviewingTranscript(false);
     setUserTranscript('');
     setEditableTranscript('');
@@ -469,37 +593,76 @@ const SearchoAI = ({
     setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
     setResponseTimerExpired(false);
     setResponseTimerActive(false);
-
-    // Automatically start listening just like the initial flow
     await startListening();
-  };
+  }, [startListening]);
 
-  // Skip the current question
-  const skipQuestion = async () => {
-    try {
-      setIsReviewingTranscript(false);
-      setUserTranscript('');
-      setEditableTranscript('');
-      setNeedsRetryRecording(false);
+  const confirmAndSaveResponse = useCallback(async () => {
+    if (!editableTranscript.trim()) {
       toast({
-        title: "Soru Atlandı",
-        description: "Sonraki soruya geçiliyor..."
+        title: 'Hata',
+        description: 'Yanıt boş olamaz',
+        variant: 'destructive',
       });
+      return;
+    }
 
-      // Mark current question as complete even though we're skipping
-      if (projectContext?.sessionId && currentQuestion?.id) {
-        await interviewService.completeQuestion(projectContext.sessionId, currentQuestion.id);
-        console.log('✅ Question skipped and marked as complete');
+    await submitCurrentResponse(editableTranscript);
+  }, [editableTranscript, submitCurrentResponse, toast]);
+
+  const skipQuestion = useCallback(async () => {
+    if (!projectContext?.sessionId || !currentQuestion) {
+      return;
+    }
+
+    try {
+      if (audioTranscriberRef.current) {
+        audioTranscriberRef.current.cancel();
+        audioTranscriberRef.current = null;
       }
 
-      // Move to next question without saving
-      setTimeout(async () => {
-        await getNextQuestion();
-      }, 500);
+      await discardPendingResponseMedia();
+      const data = await interviewService.skipQuestion(projectContext.sessionId, currentQuestion.id, {
+        questionText: currentQuestion.question_text,
+      });
+
+      toast({
+        title: 'Soru Atlandı',
+        description: 'Sonraki soruya geçiliyor...',
+      });
+      applyInterviewState(data.nextQuestion, data.progress);
     } catch (error) {
       console.error('Error skipping question:', error);
+      toast({
+        title: 'Hata',
+        description: 'Soru atlanamadı. Lütfen tekrar deneyin.',
+        variant: 'destructive',
+      });
     }
-  };
+  }, [applyInterviewState, currentQuestion, discardPendingResponseMedia, projectContext?.sessionId, toast]);
+
+  const toggleMicrophone = useCallback(() => {
+    if (isListening || isTranscribing) {
+      finishCurrentAnswer();
+      return;
+    }
+
+    void startListening();
+  }, [finishCurrentAnswer, isListening, isTranscribing, startListening]);
+
+  useEffect(() => {
+    return () => {
+      if (audioTranscriberRef.current) {
+        audioTranscriberRef.current.cancel();
+        audioTranscriberRef.current = null;
+      }
+
+      void stopResponseRecording(true);
+      pendingResponseMediaRef.current = null;
+      microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
+      microphoneStreamRef.current = null;
+    };
+  }, [stopResponseRecording]);
+
   const getSessionDuration = () => {
     if (!sessionStartTime) return '00:00';
     const duration = Math.floor((currentTime.getTime() - sessionStartTime.getTime()) / 1000);
@@ -522,185 +685,219 @@ const SearchoAI = ({
 
   if (!isActive) return null;
 
-  // Show Turkish preamble if in preamble phase
   if (showTurkishPreamble && isPreamblePhase) {
     return <TurkishPreambleDisplay projectContext={projectContext} onComplete={startActualQuestions} onSkip={startActualQuestions} />;
   }
-  return <div className="min-h-full flex flex-col bg-background">
-      {showTurkishPreamble && isPreamblePhase && <TurkishPreambleDisplay projectContext={projectContext} onComplete={startActualQuestions} onSkip={startActualQuestions} />}
 
-      {!showTurkishPreamble && <>
-          {/* Main Content Area */}
+  return (
+    <div className="min-h-full flex flex-col bg-background">
+      {!showTurkishPreamble && (
+        <>
           <div className="flex-1 flex flex-col items-center px-6 py-12">
             <div className="w-full max-w-4xl space-y-8">
-                {/* Progress Indicator */}
-                <div className="text-center">
-                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-muted text-sm">
-                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    Soru {interviewProgress.completed + 1} / {interviewProgress.total}
-                  </div>
+              <div className="text-center">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-muted text-sm">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  Soru {Math.min(interviewProgress.completed + 1, Math.max(interviewProgress.total, 1))} / {Math.max(interviewProgress.total, 1)}
                 </div>
+              </div>
 
-                {/* Current Question Card */}
-                {currentQuestion && !isPreamblePhase && <div className="space-y-6">
-                    {/* Avatar Display */}
-                    <div className="flex justify-center">
-                      <AvatarSpeaker questionText={currentQuestion.question_text} isUserResponding={isListening || isTranscribing || isReviewingTranscript || Boolean(userTranscript)} onSpeakingStart={() => {
-                setIsWaitingForAnswer(false);
-              }} onSpeakingComplete={async () => {
-                setIsWaitingForAnswer(true);
-                // Get audio stream for video recording
-                if (!audioStreamRef.current) {
-                  try {
-                    audioStreamRef.current = await navigator.mediaDevices.getUserMedia({
-                      audio: true
-                    });
-                  } catch (error) {
-                    console.error('Failed to get audio stream:', error);
-                  }
-                }
-                // Automatically start listening after avatar finishes
-                await startListening();
-              }} />
+              {currentQuestion && !isPreamblePhase ? (
+                <div className="space-y-6">
+                  <div className="flex justify-center">
+                    <AvatarSpeaker
+                      key={currentQuestion.id}
+                      questionText={currentQuestion.question_text}
+                      isUserResponding={isListening || isTranscribing || isReviewingTranscript || isSubmittingResponse || Boolean(userTranscript)}
+                      onSpeakingStart={() => {
+                        setIsWaitingForAnswer(false);
+                        void ensureMicrophoneStream();
+                      }}
+                      onSpeakingComplete={() => {
+                        void startListening();
+                      }}
+                    />
+                  </div>
+
+                  <div className="bg-card rounded-xl p-6 shadow border">
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-semibold text-primary uppercase tracking-wide">
+                          Soru {interviewProgress.completed + 1} / {interviewProgress.total}
+                        </span>
+                        <span className="text-sm font-medium text-muted-foreground">
+                          {Math.round(interviewProgress.percentage)}% Tamamlandı
+                        </span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-500 ease-out"
+                          style={{ width: `${interviewProgress.percentage}%` }}
+                        />
+                      </div>
                     </div>
 
-                    {/* Progress Bar */}
-                    <div className="bg-card rounded-xl p-6 shadow border">
-                      <div className="mb-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-sm font-semibold text-primary uppercase tracking-wide">
-                            Soru {interviewProgress.completed + 1} / {interviewProgress.total}
-                          </span>
-                          <span className="text-sm font-medium text-muted-foreground">
-                            {Math.round(interviewProgress.percentage)}% Tamamlandı
-                          </span>
-                        </div>
-                        <div className="h-2 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-primary transition-all duration-500 ease-out" style={{
-                    width: `${interviewProgress.percentage}%`
-                  }} />
-                        </div>
-                      </div>
-                      
-                      {/* Question Section Badge */}
-                      {currentQuestion.section && <span className="inline-block px-3 py-1 text-xs font-medium text-primary bg-primary/10 rounded-full">
-                          {currentQuestion.section}
-                        </span>}
-                      
-                      {/* Question Text */}
-                      <div className="space-y-2">
-                        <h3 className="text-xl font-semibold text-foreground leading-relaxed">
-                          {currentQuestion.question_text}
-                        </h3>
-                      </div>
+                    {currentQuestion.section ? (
+                      <span className="inline-block px-3 py-1 text-xs font-medium text-primary bg-primary/10 rounded-full">
+                        {currentQuestion.section}
+                      </span>
+                    ) : null}
 
-                      <div className="mt-5 rounded-2xl border border-border/70 bg-muted/30 px-4 py-4">
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                              Yanit suresi
-                            </p>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              2 dk içerisinde cevaplayabilirsiniz.
-                            </p>
-                          </div>
-                          <div className={`text-2xl font-semibold tabular-nums ${responseTimerTone}`}>
-                            {getResponseTimerLabel()}
-                          </div>
+                    <div className="space-y-2 mt-4">
+                      <h3 className="text-xl font-semibold text-foreground leading-relaxed">
+                        {currentQuestion.question_text}
+                      </h3>
+                    </div>
+
+                    <div className="mt-5 rounded-2xl border border-border/70 bg-muted/30 px-4 py-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                            Yanit suresi
+                          </p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            2 dk içerisinde cevaplayabilirsiniz.
+                          </p>
+                        </div>
+                        <div className={`text-2xl font-semibold tabular-nums ${responseTimerTone}`}>
+                          {getResponseTimerLabel()}
                         </div>
                       </div>
-                      
-                      {/* Live Recording Section - Always Visible */}
-                      <div className="mt-6 min-h-[120px]">
-                        {isTranscribing ? <div className="bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-950/30 dark:to-pink-950/30 rounded-2xl p-6 border-2 border-red-300 dark:border-red-700 shadow-lg">
-                            <div className="flex items-center gap-3 mb-3">
-                              <div className="relative">
-                                <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
-                                <div className="absolute inset-0 w-4 h-4 bg-red-500 rounded-full animate-ping"></div>
-                              </div>
-                              <span className="text-sm font-bold text-red-700 dark:text-red-300 uppercase tracking-wide">
-                                🎙️ KAYIT YAPILIYOR
-                              </span>
+                    </div>
+
+                    <div className="mt-6 min-h-[120px]">
+                      {isSubmittingResponse ? (
+                        <div className="rounded-2xl border-2 border-blue-300 bg-blue-50 p-6 shadow-lg">
+                          <div className="flex items-center gap-3 mb-3">
+                            <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                            <span className="text-sm font-bold uppercase tracking-wide text-blue-700">
+                              Yanıt kaydediliyor
+                            </span>
+                          </div>
+                          <div className="rounded-xl bg-white/80 p-4 text-base text-slate-700">
+                            {userTranscript || 'Yanıtınız güvenli şekilde kaydediliyor...'}
+                          </div>
+                        </div>
+                      ) : isTranscribing ? (
+                        <div className="bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl p-6 border-2 border-red-300 shadow-lg">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="relative">
+                              <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse" />
+                              <div className="absolute inset-0 w-4 h-4 bg-red-500 rounded-full animate-ping" />
                             </div>
-                            <div className="bg-white/80 dark:bg-black/40 rounded-xl p-4 min-h-[60px]">
-                              <p className="text-lg font-medium text-gray-900 dark:text-gray-100 leading-relaxed">
-                                {userTranscript || 'Konuşmanız yazıya dönüştürülüyor...'}
-                              </p>
-                            </div>
-                          </div> : isReviewingTranscript ? <div className="bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-950/30 dark:to-amber-950/30 rounded-2xl p-6 border-2 border-yellow-400 dark:border-yellow-600 shadow-lg">
-                            <div className="flex items-center justify-between mb-3">
-                              <span className="text-sm font-bold text-yellow-800 dark:text-yellow-300 uppercase tracking-wide">
-                                ✏️ YANITI KONTROL EDİN
-                              </span>
-                              <span className="text-xs text-yellow-700 dark:text-yellow-400">
-                                Düzenleyebilir veya kaydedebilirsiniz
-                              </span>
-                            </div>
-                            
-                            {/* Editable Textarea */}
-                            <Textarea value={editableTranscript} onChange={e => setEditableTranscript(e.target.value)} className="w-full min-h-[100px] text-lg font-medium leading-relaxed resize-none" placeholder="Yanıtınızı buraya yazın..." />
-                            
-                            {/* Action Buttons */}
-                            <div className="flex gap-3 mt-4">
-                              <Button onClick={confirmAndSaveResponse} className="flex-1 bg-green-600 hover:bg-green-700 text-white" size="lg">
-                                ✓ Onayla ve Kaydet
+                            <span className="text-sm font-bold text-red-700 uppercase tracking-wide">
+                              KAYIT YAPILIYOR
+                            </span>
+                          </div>
+                          <div className="bg-white/80 rounded-xl p-4 min-h-[60px]">
+                            <p className="text-lg font-medium text-gray-900 leading-relaxed">
+                              {userTranscript || 'Konuşmanız işleniyor...'}
+                            </p>
+                          </div>
+                          <div className="mt-4 flex gap-3">
+                            <Button onClick={finishCurrentAnswer} className="bg-brand-primary text-white hover:bg-brand-primary-hover" size="lg">
+                              Yanıtı Bitir
+                            </Button>
+                            <Button onClick={skipQuestion} variant="outline" size="lg">
+                              <SkipForward className="h-4 w-4 mr-2" />
+                              Atla
+                            </Button>
+                          </div>
+                        </div>
+                      ) : isReviewingTranscript ? (
+                        <div className="bg-gradient-to-r from-yellow-50 to-amber-50 rounded-2xl p-6 border-2 border-yellow-400 shadow-lg">
+                          <div className="flex items-center justify-between mb-3 gap-4">
+                            <span className="text-sm font-bold text-yellow-800 uppercase tracking-wide">
+                              Yanıtı kontrol edin
+                            </span>
+                            <span className="text-xs text-yellow-700">
+                              Kısa transkriptler için manuel onay gerekiyor.
+                            </span>
+                          </div>
+                          <Textarea
+                            value={editableTranscript}
+                            onChange={(event) => setEditableTranscript(event.target.value)}
+                            className="w-full min-h-[100px] text-lg font-medium leading-relaxed resize-none"
+                            placeholder="Yanıtınızı buraya yazın..."
+                          />
+                          <div className="flex flex-wrap gap-3 mt-4">
+                            <Button onClick={() => void confirmAndSaveResponse()} className="bg-green-600 hover:bg-green-700 text-white" size="lg">
+                              Onayla ve Kaydet
+                            </Button>
+                            <Button onClick={() => void reRecordAnswer()} variant="outline" size="lg">
+                              Tekrar Kaydet
+                            </Button>
+                            <Button onClick={() => void skipQuestion()} variant="outline" size="lg">
+                              <SkipForward className="h-4 w-4 mr-2" />
+                              Atla
+                            </Button>
+                          </div>
+                        </div>
+                      ) : isWaitingForAnswer ? (
+                        <div className="bg-gradient-to-r from-gray-50 to-slate-50 rounded-2xl p-6 border-2 border-dashed border-gray-300">
+                          <div className="flex flex-col items-center justify-center gap-3 min-h-[80px]">
+                            <Mic className="h-8 w-8 text-gray-400 animate-pulse" />
+                            <p className="text-base text-gray-600 font-medium text-center">
+                              Lütfen yanıtınızı sesli olarak verin...
+                            </p>
+                            <div className="flex flex-wrap items-center justify-center gap-3">
+                              <Button onClick={finishCurrentAnswer} size="lg" className="bg-brand-primary text-white hover:bg-brand-primary-hover" disabled={!isListening && !isTranscribing}>
+                                Yanıtı Bitir
                               </Button>
-                              <Button onClick={reRecordAnswer} variant="outline" size="lg">
-                                🎙️ Tekrar Kaydet
-                              </Button>
-                              <Button onClick={skipQuestion} variant="outline" size="lg">
-                                ⏭️ Atla
-                              </Button>
-                            </div>
-                          </div> : userTranscript ? <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-2xl p-6 border-2 border-green-300 dark:border-green-700 shadow-lg">
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className="text-sm font-bold text-green-700 dark:text-green-300 uppercase tracking-wide">
-                                ✓ YANIT ALINDI
-                              </span>
-                            </div>
-                            <div className="bg-white/80 dark:bg-black/40 rounded-xl p-4">
-                              <p className="text-lg font-medium text-gray-900 dark:text-gray-100 leading-relaxed">
-                                "{userTranscript}"
-                              </p>
-                            </div>
-                          </div> : isWaitingForAnswer ? <div className="bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-900/30 dark:to-slate-900/30 rounded-2xl p-6 border-2 border-dashed border-gray-300 dark:border-gray-700">
-                            <div className="flex flex-col items-center justify-center gap-3 min-h-[80px]">
-                              <Mic className="h-8 w-8 text-gray-400 dark:text-gray-600 animate-pulse" />
-                              <p className="text-base text-gray-600 dark:text-gray-400 font-medium text-center">
-                                Lütfen yanıtınızı sesli olarak verin...
-                              </p>
                               {needsRetryRecording ? (
-                                <Button
-                                  onClick={reRecordAnswer}
-                                  size="lg"
-                                  className="mt-2 bg-brand-primary text-white hover:bg-brand-primary-hover"
-                                >
-                                  Tekrar kaydet
+                                <Button onClick={() => void reRecordAnswer()} size="lg" variant="outline">
+                                  Tekrar Kaydet
                                 </Button>
                               ) : null}
+                              <Button onClick={() => void skipQuestion()} variant="outline" size="lg">
+                                <SkipForward className="h-4 w-4 mr-2" />
+                                Atla
+                              </Button>
                             </div>
-                          </div> : null}
-                      </div>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
-                  </div>}
-
-              </div>
+                  </div>
+                </div>
+              ) : interviewProgress.isComplete ? (
+                <div className="rounded-3xl border border-border bg-card p-10 text-center shadow">
+                  <h3 className="text-2xl font-semibold text-foreground">Görüşme tamamlandı</h3>
+                  <p className="mt-3 text-muted-foreground">
+                    Analiz arka planda hazırlanıyor. Oturumu kapatabilirsiniz.
+                  </p>
+                </div>
+              ) : null}
+            </div>
           </div>
 
-          {/* Footer Controls Bar */}
           <div className="border-t border-border bg-card/50 backdrop-blur-sm">
-            <div className="max-w-4xl mx-auto px-6 py-6 flex items-center justify-between">
+            <div className="max-w-4xl mx-auto px-6 py-6 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <Button onClick={toggleMicrophone} variant={isListening ? "default" : "outline"} size="lg" className={`gap-2 ${isListening ? 'ring-2 ring-green-500 ring-offset-2' : ''}`} disabled={isReviewingTranscript}>
-                  {isListening ? <>
+                <Button
+                  onClick={toggleMicrophone}
+                  variant={isListening || isTranscribing ? 'default' : 'outline'}
+                  size="lg"
+                  className={`gap-2 ${isListening || isTranscribing ? 'ring-2 ring-green-500 ring-offset-2' : ''}`}
+                  disabled={isReviewingTranscript || isSubmittingResponse || !currentQuestion}
+                >
+                  {isListening || isTranscribing ? (
+                    <>
                       <Mic className="h-5 w-5" />
-                      <span className="hidden sm:inline">Kaydediliyor</span>
-                    </> : <>
+                      <span className="hidden sm:inline">Yanıtı Bitir</span>
+                    </>
+                  ) : (
+                    <>
                       <MicOff className="h-5 w-5" />
                       <span className="hidden sm:inline">Mikrofon</span>
-                    </>}
+                    </>
+                  )}
                 </Button>
-                
+                {isRecordingVideo ? (
+                  <span className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                    Video kaydı alınıyor
+                  </span>
+                ) : null}
               </div>
 
               <div className="text-sm text-muted-foreground font-mono">
@@ -714,12 +911,17 @@ const SearchoAI = ({
             </div>
           </div>
 
-          {/* Debug Info */}
-          {import.meta.env.DEV && <div className="bg-slate-900 text-white p-4 text-xs font-mono">
+          {import.meta.env.DEV ? (
+            <div className="bg-slate-900 text-white p-4 text-xs font-mono">
               <div>Listening: {isListening ? '✅' : '❌'}</div>
               <div>Transcribing: {isTranscribing ? '✅' : '❌'}</div>
-            </div>}
-        </>}
-    </div>;
+              <div>Submitting: {isSubmittingResponse ? '✅' : '❌'}</div>
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
 };
+
 export default SearchoAI;

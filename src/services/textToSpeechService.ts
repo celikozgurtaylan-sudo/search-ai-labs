@@ -6,86 +6,122 @@ export interface TTSSentence {
   audioData?: string;
 }
 
-/**
- * Split text into sentences for sequential TTS playback
- */
+const MAX_CACHE_ENTRIES = 16;
+const audioCache = new Map<string, ArrayBuffer>();
+const inFlightRequests = new Map<string, Promise<ArrayBuffer>>();
+
+const cloneBuffer = (buffer: ArrayBuffer) => buffer.slice(0);
+
+const rememberAudio = (text: string, audioBuffer: ArrayBuffer) => {
+  if (audioCache.has(text)) {
+    audioCache.delete(text);
+  }
+
+  audioCache.set(text, audioBuffer);
+
+  while (audioCache.size > MAX_CACHE_ENTRIES) {
+    const oldestKey = audioCache.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    audioCache.delete(oldestKey);
+  }
+};
+
+const decodeAudio = (audioContent: string) => {
+  const binaryString = atob(audioContent);
+  const bytes = new Uint8Array(binaryString.length);
+
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  return bytes.buffer;
+};
+
+const loadTextToSpeech = async (text: string): Promise<ArrayBuffer> => {
+  const normalizedText = text.trim();
+  if (!normalizedText) {
+    throw new Error('Cannot synthesize empty text');
+  }
+
+  const cachedAudio = audioCache.get(normalizedText);
+  if (cachedAudio) {
+    return cloneBuffer(cachedAudio);
+  }
+
+  const existingRequest = inFlightRequests.get(normalizedText);
+  if (existingRequest) {
+    return cloneBuffer(await existingRequest);
+  }
+
+  const request = (async () => {
+    const { data, error } = await supabase.functions.invoke('turkish-tts', {
+      body: { text: normalizedText },
+    });
+
+    if (error) {
+      throw new Error(`Turkish TTS request failed: ${error.message}`);
+    }
+
+    if (!data?.audioContent) {
+      throw new Error('No audio content received');
+    }
+
+    if (data?.source && data.source !== 'elevenlabs') {
+      throw new Error(`Unexpected TTS provider: ${data.source}`);
+    }
+
+    const audioBuffer = decodeAudio(data.audioContent);
+    rememberAudio(normalizedText, audioBuffer);
+    return audioBuffer;
+  })();
+
+  inFlightRequests.set(normalizedText, request);
+
+  try {
+    return cloneBuffer(await request);
+  } finally {
+    inFlightRequests.delete(normalizedText);
+  }
+};
+
 export const splitIntoSentences = (text: string): TTSSentence[] => {
-  // Split by periods, question marks, and exclamation points, keeping punctuation
   const parts = text.split(/([.!?]+)/);
   const sentences: TTSSentence[] = [];
-  
+
   for (let i = 0; i < parts.length; i += 2) {
     const sentence = parts[i]?.trim();
     const punctuation = parts[i + 1] || '';
-    
-    if (sentence && sentence.length > 0) {
+
+    if (sentence) {
       sentences.push({
         text: sentence + punctuation,
         index: sentences.length,
       });
     }
   }
-  
+
   return sentences;
 };
 
-/**
- * Convert text to speech using the Turkish-first edge function pipeline.
- */
 export const textToSpeech = async (text: string): Promise<ArrayBuffer> => {
-  const decodeAudio = (audioContent: string) => {
-    const binaryString = atob(audioContent);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
+  return await loadTextToSpeech(text);
+};
 
-    return bytes.buffer;
-  };
-
-  const invokeTTS = async (functionName: 'turkish-tts' | 'text-to-speech') => {
-    const { data, error } = await supabase.functions.invoke(functionName, {
-      body: { text },
-    });
-
-    if (error) throw error;
-
-    if (!data?.audioContent) {
-      throw new Error('No audio content received');
-    }
-
-    return decodeAudio(data.audioContent);
-  };
-
+export const prefetchTextToSpeech = async (text: string) => {
   try {
-    return await invokeTTS('turkish-tts');
-  } catch (primaryError) {
-    const errorMessage = primaryError instanceof Error ? primaryError.message : String(primaryError);
-    const shouldTryLegacyFallback =
-      errorMessage.includes('Edge Function returned a non-2xx status code') ||
-      errorMessage.includes('Failed to send a request to the Edge Function') ||
-      errorMessage.includes('FunctionsFetchError') ||
-      errorMessage.includes('404');
-
-    if (!shouldTryLegacyFallback) {
-      console.error('Primary Turkish TTS failed after provider fallback chain:', primaryError);
-      throw primaryError;
-    }
-
-    console.warn('Primary Turkish TTS invocation failed, falling back to legacy TTS endpoint:', primaryError);
-
-    try {
-      return await invokeTTS('text-to-speech');
-    } catch (fallbackError) {
-      console.error('TTS error:', fallbackError);
-      throw fallbackError;
-    }
+    await loadTextToSpeech(text);
+  } catch (error) {
+    console.warn('Failed to prefetch ElevenLabs audio:', error);
   }
 };
 
-/**
- * Play audio from ArrayBuffer
- */
+export const clearTextToSpeechCache = () => {
+  audioCache.clear();
+  inFlightRequests.clear();
+};
+
 export const playAudio = async (
   audioBuffer: ArrayBuffer,
   audioContext: AudioContext
@@ -96,7 +132,7 @@ export const playAudio = async (
       const source = audioContext.createBufferSource();
       source.buffer = decodedData;
       source.connect(audioContext.destination);
-      
+
       source.onended = () => resolve();
       source.start(0);
     } catch (error) {
@@ -105,16 +141,13 @@ export const playAudio = async (
   });
 };
 
-/**
- * Speak sentences sequentially with auto-advance
- */
 export class SequentialTTS {
   private sentences: TTSSentence[] = [];
-  private currentIndex: number = 0;
+  private currentIndex = 0;
   private audioContext: AudioContext | null = null;
-  private isPlaying: boolean = false;
-  private isPaused: boolean = false;
-  
+  private isPlaying = false;
+  private isPaused = false;
+
   onSentenceStart?: (sentence: TTSSentence) => void;
   onSentenceEnd?: (sentence: TTSSentence) => void;
   onComplete?: () => void;
@@ -126,27 +159,25 @@ export class SequentialTTS {
 
   async start() {
     if (this.isPlaying) return;
-    
+
     this.isPlaying = true;
     this.isPaused = false;
     this.currentIndex = 0;
-    
-    // Initialize AudioContext
+
     if (!this.audioContext) {
       this.audioContext = new AudioContext();
     }
-    
-    // Resume if suspended
+
     if (this.audioContext.state === 'suspended') {
       await this.audioContext.resume();
     }
-    
+
     await this.playNextSentence();
   }
 
   private async playNextSentence() {
     if (this.isPaused || !this.isPlaying) return;
-    
+
     if (this.currentIndex >= this.sentences.length) {
       this.isPlaying = false;
       this.onComplete?.();
@@ -158,15 +189,13 @@ export class SequentialTTS {
 
     try {
       const audioBuffer = await textToSpeech(sentence.text);
-      
+
       if (this.isPaused || !this.isPlaying) return;
-      
+
       await playAudio(audioBuffer, this.audioContext!);
-      
+
       this.onSentenceEnd?.(sentence);
-      this.currentIndex++;
-      
-      // Auto-advance to next sentence
+      this.currentIndex += 1;
       await this.playNextSentence();
     } catch (error) {
       console.error('Error playing sentence:', error);
@@ -182,7 +211,7 @@ export class SequentialTTS {
   resume() {
     if (!this.isPaused) return;
     this.isPaused = false;
-    this.playNextSentence();
+    void this.playNextSentence();
   }
 
   stop() {

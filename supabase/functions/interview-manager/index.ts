@@ -12,7 +12,19 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
 
-// Validate that the provided session token matches the sessionId
+type ResponsePayload = {
+  questionId: string;
+  participantId?: string;
+  transcription?: string;
+  responseText?: string;
+  videoUrl?: string;
+  videoDuration?: number;
+  audioDuration?: number;
+  confidenceScore?: number;
+  isComplete?: boolean;
+  metadata?: Record<string, unknown>;
+};
+
 async function validateSessionToken(sessionId: string, sessionToken: string): Promise<boolean> {
   const { data, error } = await supabase
     .from('study_sessions')
@@ -21,10 +33,110 @@ async function validateSessionToken(sessionId: string, sessionToken: string): Pr
     .eq('session_token', sessionToken)
     .maybeSingle();
 
-  if (error || !data) {
-    return false;
+  return !error && Boolean(data);
+}
+
+async function findLatestResponse(sessionId: string, questionId: string) {
+  const { data, error } = await supabase
+    .from('interview_responses')
+    .select('*')
+    .eq('session_id', sessionId)
+    .eq('question_id', questionId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to find existing response: ${error.message}`);
   }
-  return true;
+
+  return data;
+}
+
+async function saveOrUpdateResponse(sessionId: string, responseData: ResponsePayload) {
+  const existingResponse = await findLatestResponse(sessionId, responseData.questionId);
+  const payload = {
+    session_id: sessionId,
+    question_id: responseData.questionId,
+    participant_id: responseData.participantId ?? existingResponse?.participant_id ?? null,
+    transcription: responseData.transcription ?? existingResponse?.transcription ?? null,
+    response_text: responseData.responseText ?? existingResponse?.response_text ?? null,
+    video_url: responseData.videoUrl ?? existingResponse?.video_url ?? null,
+    video_duration_ms: responseData.videoDuration ?? existingResponse?.video_duration_ms ?? null,
+    audio_duration_ms: responseData.audioDuration ?? existingResponse?.audio_duration_ms ?? null,
+    confidence_score: responseData.confidenceScore ?? existingResponse?.confidence_score ?? null,
+    is_complete: responseData.isComplete ?? existingResponse?.is_complete ?? false,
+    metadata: {
+      ...(existingResponse?.metadata ?? {}),
+      ...(responseData.metadata ?? {}),
+    },
+  };
+
+  if (existingResponse?.id) {
+    const { data, error } = await supabase
+      .from('interview_responses')
+      .update(payload)
+      .eq('id', existingResponse.id)
+      .eq('session_id', sessionId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update response: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  const { data, error } = await supabase
+    .from('interview_responses')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to save response: ${error.message}`);
+  }
+
+  return data;
+}
+
+async function buildInterviewState(sessionId: string) {
+  const { data: questions, error } = await supabase
+    .from('interview_questions')
+    .select(`
+      *,
+      interview_responses!left(id, is_complete)
+    `)
+    .eq('session_id', sessionId)
+    .order('question_order', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to get questions: ${error.message}`);
+  }
+
+  const nextQuestion = questions?.find((question) =>
+    !question.interview_responses ||
+    question.interview_responses.length === 0 ||
+    !question.interview_responses.some((response: { is_complete?: boolean | null }) => response.is_complete)
+  ) ?? null;
+
+  const totalQuestions = questions?.length || 0;
+  const completedQuestions = questions?.filter((question) =>
+    question.interview_responses &&
+    question.interview_responses.length > 0 &&
+    question.interview_responses.some((response: { is_complete?: boolean | null }) => response.is_complete)
+  ).length || 0;
+
+  return {
+    nextQuestion,
+    progress: {
+      completed: completedQuestions,
+      total: totalQuestions,
+      isComplete: totalQuestions > 0 && completedQuestions === totalQuestions,
+      percentage: totalQuestions > 0 ? (completedQuestions / totalQuestions) * 100 : 0,
+    },
+  };
 }
 
 serve(async (req) => {
@@ -34,11 +146,8 @@ serve(async (req) => {
 
   try {
     const { action, sessionId, projectId, questionData, responseData } = await req.json();
-
-    // Extract session token from header
     const sessionToken = req.headers.get('x-session-token');
 
-    // All actions require a valid session token
     if (!sessionToken) {
       return new Response(
         JSON.stringify({ error: 'Missing session token' }),
@@ -64,19 +173,20 @@ serve(async (req) => {
     switch (action) {
       case 'initialize_questions':
         return await initializeQuestions(projectId, sessionId, questionData);
-      
       case 'get_next_question':
         return await getNextQuestion(sessionId);
-      
       case 'save_response':
         return await saveResponse(sessionId, responseData);
-      
       case 'complete_question':
         return await completeQuestion(sessionId, responseData.questionId);
-      
       case 'get_interview_progress':
         return await getInterviewProgress(sessionId);
-      
+      case 'submit_response':
+        return await submitResponse(sessionId, responseData);
+      case 'skip_question':
+        return await skipQuestion(sessionId, responseData.questionId, responseData.metadata ?? {});
+      case 'attach_response_media':
+        return await attachResponseMedia(sessionId, responseData.responseId, responseData);
       default:
         throw new Error('Invalid action');
     }
@@ -84,9 +194,9 @@ serve(async (req) => {
     console.error('Interview manager error:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     );
   }
@@ -94,47 +204,46 @@ serve(async (req) => {
 
 async function initializeQuestions(projectId: string, sessionId: string, discussionGuide: any) {
   console.log('Initializing questions for session:', sessionId);
-  
+
   const { data: existingQuestions, error: checkError } = await supabase
     .from('interview_questions')
     .select('id')
     .eq('session_id', sessionId)
     .limit(1);
-  
+
   if (checkError) {
     console.error('Error checking existing questions:', checkError);
   }
-  
+
   if (existingQuestions && existingQuestions.length > 0) {
-    console.log('Questions already initialized for session, skipping duplicate insertion');
     const { data: allQuestions } = await supabase
       .from('interview_questions')
       .select('*')
       .eq('session_id', sessionId)
       .order('question_order');
-    
+
     return new Response(
       JSON.stringify({ success: true, questions: allQuestions, skipped: true }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
-  
-  const questions: any[] = [];
+
+  const questions: Array<Record<string, unknown>> = [];
   let order = 1;
-  
-  if (discussionGuide.sections) {
+
+  if (discussionGuide?.sections) {
     for (const section of discussionGuide.sections) {
-      if (section.questions) {
-        for (const question of section.questions) {
-          questions.push({
-            project_id: projectId,
-            session_id: sessionId,
-            question_text: question,
-            question_order: order++,
-            section: section.title,
-            question_type: 'open_ended'
-          });
-        }
+      if (!section?.questions) continue;
+
+      for (const question of section.questions) {
+        questions.push({
+          project_id: projectId,
+          session_id: sessionId,
+          question_text: question,
+          question_order: order++,
+          section: section.title,
+          question_type: 'open_ended',
+        });
       }
     }
   }
@@ -156,70 +265,114 @@ async function initializeQuestions(projectId: string, sessionId: string, discuss
 
 async function getNextQuestion(sessionId: string) {
   console.log('Getting next question for session:', sessionId);
-  
-  const { data: questions, error } = await supabase
-    .from('interview_questions')
-    .select(`
-      *,
-      interview_responses!left(id, is_complete)
-    `)
-    .eq('session_id', sessionId)
-    .order('question_order', { ascending: true });
-
-  if (error) {
-    throw new Error(`Failed to get questions: ${error.message}`);
-  }
-
-  const nextQuestion = questions?.find(q => 
-    !q.interview_responses || 
-    q.interview_responses.length === 0 || 
-    !q.interview_responses.some((r: any) => r.is_complete)
-  );
-
-  const totalQuestions = questions?.length || 0;
-  const completedQuestions = questions?.filter(q => 
-    q.interview_responses && 
-    q.interview_responses.length > 0 && 
-    q.interview_responses.some((r: any) => r.is_complete)
-  ).length || 0;
+  const state = await buildInterviewState(sessionId);
 
   return new Response(
-    JSON.stringify({ 
-      nextQuestion,
-      progress: {
-        completed: completedQuestions,
-        total: totalQuestions,
-        isComplete: completedQuestions === totalQuestions,
-        percentage: totalQuestions > 0 ? (completedQuestions / totalQuestions) * 100 : 0
-      }
-    }),
+    JSON.stringify(state),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );
 }
 
-async function saveResponse(sessionId: string, responseData: any) {
+async function saveResponse(sessionId: string, responseData: ResponsePayload) {
   console.log('Saving response for session:', sessionId);
-  
+  const response = await saveOrUpdateResponse(sessionId, responseData);
+
+  return new Response(
+    JSON.stringify({ success: true, response }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+async function completeQuestion(sessionId: string, questionId: string) {
+  console.log('Completing question:', questionId);
+  const response = await saveOrUpdateResponse(sessionId, {
+    questionId,
+    isComplete: true,
+    metadata: {
+      completedAt: new Date().toISOString(),
+    },
+  });
+
+  return new Response(
+    JSON.stringify({ success: true, response }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+async function submitResponse(sessionId: string, responseData: ResponsePayload) {
+  console.log('Submitting response for session:', sessionId, 'question:', responseData.questionId);
+  const response = await saveOrUpdateResponse(sessionId, {
+    ...responseData,
+    isComplete: true,
+    metadata: {
+      submittedAt: new Date().toISOString(),
+      ...(responseData.metadata ?? {}),
+    },
+  });
+  const state = await buildInterviewState(sessionId);
+
+  return new Response(
+    JSON.stringify({ success: true, response, ...state }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+async function skipQuestion(sessionId: string, questionId: string, metadata: Record<string, unknown>) {
+  console.log('Skipping question:', questionId);
+  const response = await saveOrUpdateResponse(sessionId, {
+    questionId,
+    transcription: '',
+    responseText: '',
+    isComplete: true,
+    metadata: {
+      skipped: true,
+      skippedAt: new Date().toISOString(),
+      ...metadata,
+    },
+  });
+  const state = await buildInterviewState(sessionId);
+
+  return new Response(
+    JSON.stringify({ success: true, response, ...state }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+async function attachResponseMedia(sessionId: string, responseId: string, responseData: ResponsePayload & { responseId?: string }) {
+  if (!responseId) {
+    throw new Error('Missing responseId');
+  }
+
+  const existingResponse = await supabase
+    .from('interview_responses')
+    .select('metadata')
+    .eq('id', responseId)
+    .eq('session_id', sessionId)
+    .maybeSingle();
+
+  if (existingResponse.error) {
+    throw new Error(`Failed to load response metadata: ${existingResponse.error.message}`);
+  }
+
   const { data, error } = await supabase
     .from('interview_responses')
-    .insert({
-      session_id: sessionId,
-      question_id: responseData.questionId,
-      participant_id: responseData.participantId,
-      transcription: responseData.transcription,
-      response_text: responseData.responseText,
-      video_url: responseData.videoUrl,
-      video_duration_ms: responseData.videoDuration,
-      audio_duration_ms: responseData.audioDuration,
-      confidence_score: responseData.confidenceScore,
-      is_complete: responseData.isComplete || false,
-      metadata: responseData.metadata || {}
+    .update({
+      video_url: responseData.videoUrl ?? null,
+      video_duration_ms: responseData.videoDuration ?? null,
+      audio_duration_ms: responseData.audioDuration ?? null,
+      metadata: {
+        ...(existingResponse.data?.metadata ?? {}),
+        mediaAttachedAt: new Date().toISOString(),
+        ...(responseData.metadata ?? {}),
+      },
     })
+    .eq('id', responseId)
+    .eq('session_id', sessionId)
     .select()
     .single();
 
   if (error) {
-    throw new Error(`Failed to save response: ${error.message}`);
+    throw new Error(`Failed to attach response media: ${error.message}`);
   }
 
   return new Response(
@@ -228,29 +381,9 @@ async function saveResponse(sessionId: string, responseData: any) {
   );
 }
 
-async function completeQuestion(sessionId: string, questionId: string) {
-  console.log('Completing question:', questionId);
-  
-  const { data, error } = await supabase
-    .from('interview_responses')
-    .update({ is_complete: true })
-    .eq('session_id', sessionId)
-    .eq('question_id', questionId)
-    .select();
-
-  if (error) {
-    throw new Error(`Failed to complete question: ${error.message}`);
-  }
-
-  return new Response(
-    JSON.stringify({ success: true, data }),
-    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
-}
-
 async function getInterviewProgress(sessionId: string) {
   console.log('Getting interview progress for session:', sessionId);
-  
+
   const { data: questions, error } = await supabase
     .from('interview_questions')
     .select(`
@@ -265,21 +398,21 @@ async function getInterviewProgress(sessionId: string) {
   }
 
   const totalQuestions = questions?.length || 0;
-  const completedQuestions = questions?.filter(q => 
-    q.interview_responses && 
-    q.interview_responses.length > 0 && 
-    q.interview_responses.some((r: any) => r.is_complete)
+  const completedQuestions = questions?.filter((question) =>
+    question.interview_responses &&
+    question.interview_responses.length > 0 &&
+    question.interview_responses.some((response: { is_complete?: boolean | null }) => response.is_complete)
   ).length || 0;
 
   return new Response(
-    JSON.stringify({ 
+    JSON.stringify({
       questions,
       progress: {
         completed: completedQuestions,
         total: totalQuestions,
-        isComplete: completedQuestions === totalQuestions,
-        percentage: totalQuestions > 0 ? (completedQuestions / totalQuestions) * 100 : 0
-      }
+        isComplete: totalQuestions > 0 && completedQuestions === totalQuestions,
+        percentage: totalQuestions > 0 ? (completedQuestions / totalQuestions) * 100 : 0,
+      },
     }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );

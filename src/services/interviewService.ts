@@ -28,6 +28,8 @@ export interface InterviewResponse {
   metadata: any
   created_at: string
   updated_at: string
+  video_url?: string | null
+  video_duration_ms?: number | null
 }
 
 export interface InterviewProgress {
@@ -37,7 +39,13 @@ export interface InterviewProgress {
   percentage: number
 }
 
-// Mock state for design mode (in-memory, not database)
+interface SubmitInterviewResponseResult {
+  success: boolean
+  response: InterviewResponse
+  nextQuestion: InterviewQuestion | null
+  progress: InterviewProgress
+}
+
 let mockQuestions: InterviewQuestion[] = [];
 let mockCurrentQuestionIndex = 0;
 
@@ -48,7 +56,7 @@ const isDesignMode = (id: string) => {
 const createMockQuestions = (discussionGuide: any, projectId: string, sessionId: string): InterviewQuestion[] => {
   const questions: InterviewQuestion[] = [];
   let order = 0;
-  
+
   discussionGuide.sections.forEach((section: any) => {
     section.questions.forEach((questionText: string) => {
       questions.push({
@@ -67,11 +75,42 @@ const createMockQuestions = (discussionGuide: any, projectId: string, sessionId:
       order++;
     });
   });
-  
+
   return questions;
 };
 
-// Store session token for authenticated edge function calls
+const getMockInterviewState = () => {
+  const nextQuestion = mockQuestions[mockCurrentQuestionIndex] || null;
+  const progress: InterviewProgress = {
+    completed: mockCurrentQuestionIndex,
+    total: mockQuestions.length,
+    isComplete: mockCurrentQuestionIndex >= mockQuestions.length,
+    percentage: mockQuestions.length > 0
+      ? Math.round((mockCurrentQuestionIndex / mockQuestions.length) * 100)
+      : 0
+  };
+
+  return { nextQuestion, progress };
+};
+
+const advanceMockInterview = (): SubmitInterviewResponseResult => {
+  mockCurrentQuestionIndex += 1;
+  const state = getMockInterviewState();
+
+  return {
+    success: true,
+    response: {
+      id: `mock-response-${mockCurrentQuestionIndex}`,
+      session_id: 'mock-session-id',
+      question_id: `mock-question-${Math.max(0, mockCurrentQuestionIndex - 1)}`,
+      is_complete: true,
+      analyzed: false,
+      metadata: {}
+    },
+    ...state
+  };
+};
+
 let _sessionToken: string | null = null;
 
 export const setInterviewSessionToken = (token: string | null) => {
@@ -85,7 +124,7 @@ const invokeWithSessionToken = async (functionName: string, body: any) => {
   if (_sessionToken) {
     headers['x-session-token'] = _sessionToken;
   }
-  
+
   const { data, error } = await supabase.functions.invoke(functionName, {
     body,
     headers,
@@ -100,14 +139,12 @@ const invokeWithSessionToken = async (functionName: string, body: any) => {
 
 export const interviewService = {
   async initializeQuestions(projectId: string, sessionId: string, discussionGuide: any) {
-    // Design mode: Create mock questions in memory
     if (isDesignMode(projectId) || isDesignMode(sessionId)) {
-      console.log('🎨 Design mode: Creating mock questions locally', discussionGuide);
       mockQuestions = createMockQuestions(discussionGuide, projectId, sessionId);
       mockCurrentQuestionIndex = 0;
       return { success: true, count: mockQuestions.length };
     }
-    
+
     return await invokeWithSessionToken('interview-manager', {
       action: 'initialize_questions',
       projectId,
@@ -117,23 +154,10 @@ export const interviewService = {
   },
 
   async getNextQuestion(sessionId: string) {
-    // Design mode: Return next mock question
     if (isDesignMode(sessionId)) {
-      console.log('🎨 Design mode: Getting mock question', mockCurrentQuestionIndex, '/', mockQuestions.length);
-      
-      const nextQuestion = mockQuestions[mockCurrentQuestionIndex] || null;
-      const progress: InterviewProgress = {
-        completed: mockCurrentQuestionIndex,
-        total: mockQuestions.length,
-        isComplete: mockCurrentQuestionIndex >= mockQuestions.length,
-        percentage: mockQuestions.length > 0 
-          ? Math.round((mockCurrentQuestionIndex / mockQuestions.length) * 100)
-          : 0
-      };
-      
-      return { nextQuestion, progress };
+      return getMockInterviewState();
     }
-    
+
     return await invokeWithSessionToken('interview-manager', {
       action: 'get_next_question',
       sessionId
@@ -152,12 +176,10 @@ export const interviewService = {
     isComplete?: boolean
     metadata?: any
   }) {
-    // Design mode: Just log to console
     if (isDesignMode(sessionId)) {
-      console.log('🎨 Design mode: Saving mock response', responseData);
       return { success: true };
     }
-    
+
     return await invokeWithSessionToken('interview-manager', {
       action: 'save_response',
       sessionId,
@@ -165,14 +187,66 @@ export const interviewService = {
     });
   },
 
-  async completeQuestion(sessionId: string, questionId: string) {
-    // Design mode: Just increment index
+  async submitResponse(sessionId: string, responseData: {
+    questionId: string
+    participantId?: string
+    transcription?: string
+    responseText?: string
+    audioDuration?: number
+    confidenceScore?: number
+    metadata?: any
+  }): Promise<SubmitInterviewResponseResult> {
     if (isDesignMode(sessionId)) {
-      console.log('🎨 Design mode: Completing mock question', questionId);
-      mockCurrentQuestionIndex++;
+      return advanceMockInterview();
+    }
+
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'submit_response',
+      sessionId,
+      responseData
+    });
+  },
+
+  async skipQuestion(sessionId: string, questionId: string, metadata?: any): Promise<SubmitInterviewResponseResult> {
+    if (isDesignMode(sessionId)) {
+      return advanceMockInterview();
+    }
+
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'skip_question',
+      sessionId,
+      responseData: {
+        questionId,
+        metadata,
+      }
+    });
+  },
+
+  async attachResponseMedia(sessionId: string, responseId: string, responseData: {
+    videoUrl?: string
+    videoDuration?: number
+    audioDuration?: number
+    metadata?: any
+  }) {
+    if (isDesignMode(sessionId)) {
       return { success: true };
     }
-    
+
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'attach_response_media',
+      sessionId,
+      responseData: {
+        responseId,
+        ...responseData,
+      }
+    });
+  },
+
+  async completeQuestion(sessionId: string, questionId: string) {
+    if (isDesignMode(sessionId)) {
+      return { success: true };
+    }
+
     return await invokeWithSessionToken('interview-manager', {
       action: 'complete_question',
       sessionId,
@@ -181,22 +255,10 @@ export const interviewService = {
   },
 
   async getInterviewProgress(sessionId: string): Promise<{ questions: InterviewQuestion[], progress: InterviewProgress }> {
-    // Design mode: Return mock progress
     if (isDesignMode(sessionId)) {
-      console.log('🎨 Design mode: Getting mock progress', mockCurrentQuestionIndex, '/', mockQuestions.length);
-      
-      const progress: InterviewProgress = {
-        completed: mockCurrentQuestionIndex,
-        total: mockQuestions.length,
-        isComplete: mockCurrentQuestionIndex >= mockQuestions.length,
-        percentage: mockQuestions.length > 0 
-          ? Math.round((mockCurrentQuestionIndex / mockQuestions.length) * 100)
-          : 0
-      };
-      
-      return { questions: mockQuestions, progress };
+      return { questions: mockQuestions, progress: getMockInterviewState().progress };
     }
-    
+
     return await invokeWithSessionToken('interview-manager', {
       action: 'get_interview_progress',
       sessionId
@@ -204,12 +266,10 @@ export const interviewService = {
   },
 
   async analyzeInterview(sessionId: string, projectId: string) {
-    // Design mode: Just log to console
     if (isDesignMode(sessionId) || isDesignMode(projectId)) {
-      console.log('🎨 Design mode: Skipping interview analysis');
       return { success: true, message: 'Design mode - analysis skipped' };
     }
-    
+
     return await invokeWithSessionToken('interview-analysis', {
       sessionId,
       projectId

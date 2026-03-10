@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Mail, Users, Send, Link2, Copy, Trash2, RefreshCw, Clock, CheckCircle, XCircle } from "lucide-react";
 import { participantService, StudyParticipant } from "@/services/participantService";
@@ -163,10 +162,24 @@ const InvitationPanel = ({
     }
   };
 
-  const handleCopyInvitationLink = (token: string) => {
-    const link = `https://beta.searcho.online/join/research/${token}`;
+  const getInvitationBaseUrl = (useCurrentOrigin = false) => {
+    if (useCurrentOrigin && typeof window !== 'undefined') {
+      return window.location.origin.replace(/\/$/, "");
+    }
+
+    const configuredUrl = import.meta.env.VITE_PUBLIC_APP_URL?.trim();
+    return (configuredUrl || "https://beta.searcho.online").replace(/\/$/, "");
+  };
+
+  const handleCopyInvitationLink = (token: string, useCurrentOrigin = false) => {
+    const link = `${getInvitationBaseUrl(useCurrentOrigin)}/join/research/${token}`;
     navigator.clipboard.writeText(link);
-    toast.success("Katılımcı davet linki kopyalandı");
+    toast.success(useCurrentOrigin ? "Test davet linki kopyalandı" : "Katılımcı davet linki kopyalandı");
+  };
+
+  const handleOpenTestLink = (token: string) => {
+    const link = `${getInvitationBaseUrl(true)}/join/research/${token}`;
+    window.open(link, "_blank", "noopener,noreferrer");
   };
 
   const getStatusBadge = (status: StudyParticipant['status']) => {
@@ -325,6 +338,25 @@ const InvitationPanel = ({
                           >
                             <Copy className="w-4 h-4" />
                           </Button>
+
+                          {import.meta.env.DEV && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleCopyInvitationLink(participant.invitation_token, true)}
+                              >
+                                <Link2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenTestLink(participant.invitation_token)}
+                              >
+                                <Send className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
                           
                           <Button
                             variant="outline"

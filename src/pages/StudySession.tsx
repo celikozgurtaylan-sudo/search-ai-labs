@@ -7,7 +7,7 @@ import SearchoAI from "@/components/SearchoAI";
 import { FloatingVideo } from "@/components/FloatingVideo";
 import { participantService } from "@/services/participantService";
 import { projectService } from "@/services/projectService";
-import { interviewService, InterviewProgress, InterviewQuestion, setInterviewSessionToken } from "@/services/interviewService";
+import { InterviewProgress, InterviewQuestion, setInterviewSessionToken } from "@/services/interviewService";
 import { CheckCircle, AlertCircle, Loader2, ExternalLink, Image as ImageIcon, Camera } from "lucide-react";
 
 type CameraValidationState = 'idle' | 'requesting' | 'verifying' | 'preview' | 'stream' | 'failed';
@@ -530,14 +530,6 @@ const StudySession = () => {
 
           setProjectData(project);
 
-          if (project.analysis?.discussionGuide) {
-            await interviewService.initializeQuestions(
-              project.id!,
-              cachedSession.id!,
-              project.analysis.discussionGuide
-            );
-          }
-
           setSessionStatus('active');
           return;
         }
@@ -565,16 +557,6 @@ const StudySession = () => {
 
       console.log('Project loaded:', project);
       setProjectData(project);
-      
-      // Initialize interview questions
-      if (project.analysis?.discussionGuide) {
-        console.log('Initializing questions...');
-        await interviewService.initializeQuestions(
-          project.id!,
-          session.id!,
-          project.analysis.discussionGuide
-        );
-      }
       
       setSessionStatus('active');
     } catch (error) {
@@ -889,6 +871,7 @@ const StudySession = () => {
               <div className="min-w-0">
                 <SearchoAI
                   isActive={sessionStatus === 'active' && cameraGateCompleted}
+                  cameraStream={cameraStream}
                   projectContext={{
                     description: projectData.description || '',
                     discussionGuide: projectData.analysis?.discussionGuide || null,
