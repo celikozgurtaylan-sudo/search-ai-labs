@@ -1,9 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Mic, MicOff, PhoneOff, SkipForward } from 'lucide-react';
+import { CheckCircle2, Loader2, Mic, MicOff, PhoneOff, SkipForward, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { AudioTranscriber, AudioTranscriberMetrics } from '@/utils/AudioTranscriber';
 import { interviewService, InterviewProgress, InterviewQuestion, setInterviewSessionToken } from '@/services/interviewService';
 import { prefetchTextToSpeech } from '@/services/textToSpeechService';
@@ -40,7 +50,8 @@ interface SearchoAIProps {
       source?: string;
     }>;
   };
-  onSessionEnd?: () => void;
+  onSessionEnd?: (reason?: 'manual' | 'completed') => void;
+  onPreambleStateChange?: (isActive: boolean) => void;
   onQuestionChange?: (question: InterviewQuestion | null, progress: InterviewProgress) => void;
 }
 
@@ -70,6 +81,7 @@ const SearchoAI = ({
   cameraStream = null,
   projectContext,
   onSessionEnd,
+  onPreambleStateChange,
   onQuestionChange,
 }: SearchoAIProps) => {
   const { toast } = useToast();
@@ -98,6 +110,7 @@ const SearchoAI = ({
   const [isRecordingVideo, setIsRecordingVideo] = useState(false);
   const [isPreamblePhase, setIsPreamblePhase] = useState(true);
   const [showTurkishPreamble, setShowTurkishPreamble] = useState(true);
+  const [showEndSessionConfirmation, setShowEndSessionConfirmation] = useState(false);
 
   const audioTranscriberRef = useRef<AudioTranscriber | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
@@ -120,6 +133,10 @@ const SearchoAI = ({
   useEffect(() => {
     analysisTriggeredRef.current = false;
   }, [projectContext?.sessionId]);
+
+  useEffect(() => {
+    onPreambleStateChange?.(showTurkishPreamble && isPreamblePhase);
+  }, [isPreamblePhase, onPreambleStateChange, showTurkishPreamble]);
 
   const cleanupResponseRecording = useCallback(() => {
     responseRecordingTracksRef.current.forEach((track) => track.stop());
@@ -525,17 +542,14 @@ const SearchoAI = ({
         const recording = await stopResponseRecording(false);
         pendingResponseMediaRef.current = { ...recording, questionId: currentQuestion.id };
 
-        if (shouldRequireTranscriptReview(normalizedTranscript)) {
-          setEditableTranscript(normalizedTranscript);
-          setIsReviewingTranscript(true);
-          toast({
-            title: 'Yanıtı gözden geçirin',
-            description: 'Transkript kısa görünüyor. İsterseniz düzenleyip kaydedin.',
-          });
-          return;
-        }
-
-        await submitCurrentResponse(normalizedTranscript);
+        setEditableTranscript(normalizedTranscript);
+        setIsReviewingTranscript(true);
+        toast({
+          title: 'Yanıtı gözden geçirin',
+          description: shouldRequireTranscriptReview(normalizedTranscript)
+            ? 'Transkript kısa görünüyor. Düzenleyip kaydetmeniz önerilir.'
+            : 'Kaydetmeden önce yanıtınızı düzenleyebilir veya olduğu gibi onaylayabilirsiniz.',
+        });
       };
       transcriber.onError = async (error: string) => {
         audioTranscriberRef.current = null;
@@ -693,8 +707,8 @@ const SearchoAI = ({
     <div className="min-h-full flex flex-col bg-background">
       {!showTurkishPreamble && (
         <>
-          <div className="flex-1 flex flex-col items-center px-6 py-12">
-            <div className="w-full max-w-4xl space-y-8">
+          <div className="flex-1 flex flex-col items-center px-0 py-0">
+            <div className="w-full max-w-4xl space-y-6">
               <div className="text-center">
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-muted text-sm">
                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -811,7 +825,7 @@ const SearchoAI = ({
                               Yanıtı kontrol edin
                             </span>
                             <span className="text-xs text-yellow-700">
-                              Kısa transkriptler için manuel onay gerekiyor.
+                              Devam etmeden once yanitinizi duzenleyebilir veya dogrudan kaydedebilirsiniz.
                             </span>
                           </div>
                           <Textarea
@@ -861,11 +875,30 @@ const SearchoAI = ({
                   </div>
                 </div>
               ) : interviewProgress.isComplete ? (
-                <div className="rounded-3xl border border-border bg-card p-10 text-center shadow">
-                  <h3 className="text-2xl font-semibold text-foreground">Görüşme tamamlandı</h3>
-                  <p className="mt-3 text-muted-foreground">
-                    Analiz arka planda hazırlanıyor. Oturumu kapatabilirsiniz.
-                  </p>
+                <div className="relative overflow-hidden rounded-3xl border border-emerald-200 bg-[radial-gradient(circle_at_top,_rgba(52,211,153,0.18),_transparent_40%),linear-gradient(180deg,_#ffffff_0%,_#f0fdf4_100%)] p-10 text-center shadow-[0_24px_70px_rgba(16,185,129,0.12)]">
+                  <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.55),transparent)] opacity-80" />
+                  <div className="relative flex flex-col items-center gap-5">
+                    <div className="relative flex h-24 w-24 items-center justify-center">
+                      <div className="absolute h-24 w-24 rounded-full bg-emerald-200/60 animate-ping" />
+                      <div className="absolute h-20 w-20 rounded-full bg-emerald-100" />
+                      <div className="relative rounded-full bg-emerald-500 p-4 text-white shadow-lg">
+                        <CheckCircle2 className="h-10 w-10" />
+                      </div>
+                    </div>
+                    <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700">
+                      <Sparkles className="h-4 w-4" />
+                      Oturum basariyla tamamlandi
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-semibold text-foreground">Görüşme tamamlandı</h3>
+                      <p className="mt-3 text-muted-foreground">
+                        Analiz arka planda hazırlanıyor. İsterseniz şimdi oturumu kapatabilirsiniz.
+                      </p>
+                    </div>
+                    <Button onClick={() => onSessionEnd?.('completed')} size="lg" className="bg-emerald-600 text-white hover:bg-emerald-700">
+                      Oturumu Tamamla
+                    </Button>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -904,12 +937,47 @@ const SearchoAI = ({
                 {getSessionDuration()}
               </div>
 
-              <Button onClick={() => onSessionEnd?.()} variant="destructive" size="lg" className="gap-2">
+              <Button
+                onClick={() => {
+                  if (interviewProgress.isComplete) {
+                    onSessionEnd?.('completed');
+                    return;
+                  }
+
+                  setShowEndSessionConfirmation(true);
+                }}
+                variant="destructive"
+                size="lg"
+                className="gap-2"
+              >
                 <PhoneOff className="h-5 w-5" />
-                Oturumu Bitir
+                {interviewProgress.isComplete ? 'Oturumu Tamamla' : 'Oturumu Bitir'}
               </Button>
             </div>
           </div>
+
+          <AlertDialog open={showEndSessionConfirmation} onOpenChange={setShowEndSessionConfirmation}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Oturumu erken bitirmek istiyor musunuz?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Görüşme henüz tamamlanmadı. Şimdi bitirirseniz kalan sorular yanıtlanmamış olacak.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Vazgeç</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    setShowEndSessionConfirmation(false);
+                    onSessionEnd?.('manual');
+                  }}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Oturumu Bitir
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {import.meta.env.DEV ? (
             <div className="bg-slate-900 text-white p-4 text-xs font-mono">

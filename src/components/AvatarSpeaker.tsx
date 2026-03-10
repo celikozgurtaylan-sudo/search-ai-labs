@@ -8,11 +8,21 @@ interface AvatarSpeakerProps {
   onSpeakingComplete: () => void;
 }
 
-type OrbState = 'preparing' | 'retrying' | 'speaking' | 'listening';
+type OrbState = 'preparing' | 'retrying' | 'blocked' | 'error' | 'speaking' | 'listening';
 
 const RETRY_DELAYS_MS = [250, 500, 1000, 1500];
+const MAX_AUTO_RETRIES = 3;
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const isAutoplayBlockedError = (error: unknown) => {
+  if (error instanceof DOMException && error.name === 'NotAllowedError') {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return message.includes('notallowederror') || message.includes('user gesture') || message.includes('interaction');
+};
 
 export const AvatarSpeaker = ({
   questionText,
@@ -23,6 +33,9 @@ export const AvatarSpeaker = ({
   const [orbState, setOrbState] = useState<OrbState>('preparing');
   const [showListeningHint, setShowListeningHint] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
+  const [manualStartRequired, setManualStartRequired] = useState(false);
+  const [lastErrorMessage, setLastErrorMessage] = useState('');
+  const [retryNonce, setRetryNonce] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const playbackTokenRef = useRef(0);
@@ -65,6 +78,8 @@ export const AvatarSpeaker = ({
     setOrbState('listening');
     setShowListeningHint(false);
     setRetryAttempt(0);
+    setManualStartRequired(false);
+    setLastErrorMessage('');
     onSpeakingCompleteRef.current();
   };
 
@@ -76,6 +91,8 @@ export const AvatarSpeaker = ({
     setOrbState('preparing');
     setShowListeningHint(false);
     setRetryAttempt(0);
+    setManualStartRequired(false);
+    setLastErrorMessage('');
     stopPlayback();
 
     let cancelled = false;
@@ -94,7 +111,7 @@ export const AvatarSpeaker = ({
           const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
           objectUrlRef.current = URL.createObjectURL(audioBlob);
 
-          await new Promise<void>((resolve, reject) => {
+          const playbackResult = await new Promise<'played' | 'blocked'>((resolve, reject) => {
             const audio = new Audio(objectUrlRef.current!);
             let playbackStarted = false;
             audio.preload = 'auto';
@@ -104,6 +121,8 @@ export const AvatarSpeaker = ({
               if (playbackTokenRef.current !== token) return;
               playbackStarted = true;
               setOrbState('speaking');
+              setManualStartRequired(false);
+              setLastErrorMessage('');
               onSpeakingStartRef.current();
             };
 
@@ -111,7 +130,7 @@ export const AvatarSpeaker = ({
               audioRef.current = null;
               revokeObjectUrl();
               completeSpeaking(token);
-              resolve();
+              resolve('played');
             };
 
             audio.onerror = () => {
@@ -121,11 +140,23 @@ export const AvatarSpeaker = ({
             };
 
             audio.play().catch((error) => {
+              if (isAutoplayBlockedError(error)) {
+                setOrbState('blocked');
+                setManualStartRequired(true);
+                setLastErrorMessage('Tarayici otomatik sesi engelledi. Soruyu manuel olarak baslatin.');
+                resolve('blocked');
+                return;
+              }
+
               audioRef.current = null;
               revokeObjectUrl();
               reject(error);
             });
           });
+
+          if (playbackResult === 'blocked') {
+            return;
+          }
 
           return;
         } catch (error) {
@@ -133,8 +164,16 @@ export const AvatarSpeaker = ({
             return;
           }
 
-          const delay = RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
+          const errorMessage = error instanceof Error ? error.message : 'ElevenLabs sesi su anda baglanamiyor.';
+          setLastErrorMessage(errorMessage);
           console.error(`ElevenLabs playback attempt ${attempt + 1} failed:`, error);
+
+          if (attempt >= MAX_AUTO_RETRIES - 1) {
+            setOrbState('error');
+            return;
+          }
+
+          const delay = RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
           setOrbState('retrying');
           attempt += 1;
           setRetryAttempt(attempt);
@@ -149,7 +188,7 @@ export const AvatarSpeaker = ({
       cancelled = true;
       stopPlayback();
     };
-  }, [questionText]);
+  }, [questionText, retryNonce]);
 
   useEffect(() => {
     if (listeningHintTimerRef.current) {
@@ -175,15 +214,46 @@ export const AvatarSpeaker = ({
     };
   }, [orbState, isUserResponding]);
 
+  const handleManualPlay = async () => {
+    const audio = audioRef.current;
+    if (!audio) {
+      setRetryNonce((current) => current + 1);
+      return;
+    }
+
+    setManualStartRequired(false);
+    setLastErrorMessage('');
+
+    try {
+      await audio.play();
+    } catch (error) {
+      setManualStartRequired(true);
+      setOrbState('blocked');
+      setLastErrorMessage('Ses halen baslatilamadi. Lutfen tekrar deneyin.');
+    }
+  };
+
+  const handleRetry = () => {
+    setRetryNonce((current) => current + 1);
+  };
+
   const isPreparing = orbState === 'preparing' || orbState === 'retrying';
   const isSpeaking = orbState === 'speaking';
   const statusLabel = orbState === 'speaking'
     ? 'Searcho konusuyor'
-    : orbState === 'listening'
-      ? 'Searcho dinliyor'
-      : 'Searcho sesi baglaniyor';
-  const helperText = orbState === 'retrying'
-    ? `ElevenLabs sesi baglaniyor. Deneme ${retryAttempt}.`
+    : orbState === 'blocked'
+      ? 'Searcho sesi bekliyor'
+      : orbState === 'error'
+        ? 'Searcho sesi baglanamadi'
+      : orbState === 'listening'
+        ? 'Searcho dinliyor'
+        : 'Searcho sesi baglaniyor';
+  const helperText = manualStartRequired
+    ? lastErrorMessage
+    : orbState === 'error'
+      ? (lastErrorMessage || 'ElevenLabs sesine ulasilamadi. Tekrar deneyin.')
+    : orbState === 'retrying'
+      ? `ElevenLabs sesi baglaniyor. Deneme ${retryAttempt}.`
     : showListeningHint
       ? 'Hazir oldugunuzda yanit vermeye baslayin.'
       : '';
@@ -237,6 +307,27 @@ export const AvatarSpeaker = ({
               <p className="text-sm text-muted-foreground">{helperText}</p>
             ) : null}
           </div>
+          {manualStartRequired ? (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => void handleManualPlay()}
+                className="rounded-full border border-brand-primary/30 bg-white px-4 py-2 text-sm font-medium text-brand-primary shadow-sm hover:border-brand-primary/50"
+              >
+                Soruyu Sesli Baslat
+              </button>
+            </div>
+          ) : orbState === 'error' ? (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="rounded-full border border-brand-primary/30 bg-white px-4 py-2 text-sm font-medium text-brand-primary shadow-sm hover:border-brand-primary/50"
+              >
+                Tekrar Dene
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -110,6 +110,8 @@ const StudySession = () => {
     isComplete: false,
     percentage: 0
   });
+  const [sessionCompletionReason, setSessionCompletionReason] = useState<'manual' | 'completed' | null>(null);
+  const [isOnboardingActive, setIsOnboardingActive] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
@@ -694,12 +696,14 @@ const StudySession = () => {
     }
   };
 
-  const handleCompleteSession = () => {
+  const handleCompleteSession = (reason: 'manual' | 'completed' = 'manual') => {
     localStorage.removeItem('participant-session');
+    setSessionCompletionReason(reason);
     setSessionStatus('completed');
   };
 
   const designScreens: Array<{ name?: string; url: string; source?: string }> = projectData?.analysis?.designScreens || [];
+  const showDesignPanels = !isOnboardingActive && designScreens.length > 0;
   const questionsPerScreen = designScreens.length > 0 && currentInterviewProgress.total > 0
     ? Math.max(1, Math.ceil(currentInterviewProgress.total / designScreens.length))
     : 1;
@@ -748,14 +752,23 @@ const StudySession = () => {
   if (sessionStatus === 'completed') {
     return (
       <div className="min-h-screen bg-canvas flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
+        <Card className={`w-full max-w-md overflow-hidden ${sessionCompletionReason === 'completed' ? 'border-emerald-200 bg-[radial-gradient(circle_at_top,_rgba(52,211,153,0.18),_transparent_42%),linear-gradient(180deg,_#ffffff_0%,_#f0fdf4_100%)] shadow-[0_24px_70px_rgba(16,185,129,0.16)]' : ''}`}>
           <CardContent className="pt-6 text-center">
-            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+            {sessionCompletionReason === 'completed' ? (
+              <div className="relative">
+                <div className="absolute left-1/2 top-8 h-20 w-20 -translate-x-1/2 rounded-full bg-emerald-200/70 animate-ping" />
+                <CheckCircle className="relative w-16 h-16 text-emerald-500 mx-auto mb-4" />
+              </div>
+            ) : (
+              <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+            )}
             <h2 className="text-2xl font-bold text-text-primary mb-2">
-              Oturum Tamamlandı
+              {sessionCompletionReason === 'completed' ? 'Görüşme Başarıyla Tamamlandı' : 'Oturum Tamamlandı'}
             </h2>
             <p className="text-text-secondary mb-6">
-              Katılımınız için teşekkür ederiz. Bu pencereyi kapatabilirsiniz.
+              {sessionCompletionReason === 'completed'
+                ? 'Tüm sorular tamamlandı. Katılımınız için teşekkür ederiz.'
+                : 'Oturum erken sonlandırıldı. Bu pencereyi kapatabilirsiniz.'}
             </p>
           </CardContent>
         </Card>
@@ -781,8 +794,8 @@ const StudySession = () => {
 
       {/* Main Content */}
       <div className="min-h-screen">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-6">
-          {designScreens.length > 0 && (
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 pt-2 pb-6 md:px-6">
+          {showDesignPanels && (
             <div className="shrink-0 rounded-[28px] border border-border-light bg-white/96 p-4 backdrop-blur">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
@@ -816,8 +829,8 @@ const StudySession = () => {
             </div>
           )}
 
-          <div className={`grid gap-6 ${designScreens.length > 0 ? "xl:grid-cols-[minmax(320px,0.92fr)_minmax(0,1.08fr)]" : ""}`}>
-            {designScreens.length > 0 && activeScreen && (
+          <div className={`grid gap-4 ${showDesignPanels ? "xl:grid-cols-[minmax(320px,0.92fr)_minmax(0,1.08fr)]" : ""}`}>
+            {showDesignPanels && activeScreen && (
               <div className="xl:sticky xl:top-6 xl:self-start">
                 <div className="overflow-hidden rounded-[32px] border border-border-light bg-white shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
                   <div className="border-b border-border-light bg-[linear-gradient(180deg,rgba(124,77,255,0.06),rgba(255,255,255,0.96))] px-5 py-4">
@@ -883,6 +896,7 @@ const StudySession = () => {
                     designScreens
                   }}
                   onSessionEnd={handleCompleteSession}
+                  onPreambleStateChange={setIsOnboardingActive}
                   onQuestionChange={(question, progress) => {
                     setCurrentInterviewQuestion(question);
                     setCurrentInterviewProgress(progress);

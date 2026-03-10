@@ -4,7 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 const elevenlabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
 const DEFAULT_VOICE = '9BWtsMINqrJLrRacOk9x';
 const ELEVENLABS_MODEL = 'eleven_multilingual_v2';
-const ELEVENLABS_TIMEOUT_MS = 4000;
+const ELEVENLABS_TIMEOUT_MS = 12000;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
