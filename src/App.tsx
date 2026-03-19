@@ -13,6 +13,7 @@ import NotFound from "./pages/NotFound";
 import ParticipantLanding from "./pages/ParticipantLanding";
 import StudySession from "./pages/StudySession";
 import ResearcherSession from "./pages/ResearcherSession";
+import FigmaScreenShareMock from "./pages/FigmaScreenShareMock";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,7 @@ const App = () => (
             <Route path="/join/research/:token" element={<ParticipantLanding />} />
             <Route path="/study-session/:sessionToken" element={<StudySession />} />
             <Route path="/workspace/session/:token" element={<ResearcherSession />} />
+            <Route path="/mock/figma-screen-share" element={<FigmaScreenShareMock />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
