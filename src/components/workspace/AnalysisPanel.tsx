@@ -1184,7 +1184,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
           </Card>
 
           {/* Development Mode - Show raw data */}
-          {process.env.NODE_ENV === 'development' && (
+          {import.meta.env.DEV && (
             <Card>
               <CardHeader>
                 <CardTitle>Raw Analysis Data (Dev Only)</CardTitle>

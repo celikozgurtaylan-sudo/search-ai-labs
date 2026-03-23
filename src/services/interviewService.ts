@@ -105,7 +105,9 @@ const advanceMockInterview = (): SubmitInterviewResponseResult => {
       question_id: `mock-question-${Math.max(0, mockCurrentQuestionIndex - 1)}`,
       is_complete: true,
       analyzed: false,
-      metadata: {}
+      metadata: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     },
     ...state
   };
