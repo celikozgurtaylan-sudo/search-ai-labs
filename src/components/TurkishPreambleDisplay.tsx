@@ -40,7 +40,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({ project
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   
   const { toast } = useToast();
