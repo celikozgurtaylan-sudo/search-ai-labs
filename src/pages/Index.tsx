@@ -124,12 +124,12 @@ const Index = () => {
   }, [currentPlaceholder]);
 
   const getNextScreenNumber = (drafts: DesignScreenDraft[]) => {
-    const screenNumbers = drafts
-      .map((draft) => {
-        const match = draft.name.match(new RegExp(`^${SCREEN_NAME_PREFIX}\\s+(\\d+)$`));
-        return match ? Number(match[1]) : 0;
-      })
-      .filter((value) => Number.isFinite(value));
+    const screenNumbers = drafts.
+    map((draft) => {
+      const match = draft.name.match(new RegExp(`^${SCREEN_NAME_PREFIX}\\s+(\\d+)$`));
+      return match ? Number(match[1]) : 0;
+    }).
+    filter((value) => Number.isFinite(value));
 
     return screenNumbers.length > 0 ? Math.max(...screenNumbers) + 1 : 1;
   };
@@ -184,14 +184,14 @@ const Index = () => {
 
   const renameScreenDraft = (draftId: string, nextName: string) => {
     setScreenDrafts((prev) =>
-      prev.map((draft) =>
-        draft.id === draftId
-          ? {
-              ...draft,
-              name: nextName
-            }
-          : draft
-      )
+    prev.map((draft) =>
+    draft.id === draftId ?
+    {
+      ...draft,
+      name: nextName
+    } :
+    draft
+    )
     );
   };
 
@@ -397,9 +397,9 @@ const Index = () => {
               <SearchoMark className="w-8 h-8 shrink-0" />
               <span className="text-xl font-semibold text-text-primary">Searcho</span>
               <Badge
-                variant="secondary"
-                className="absolute -top-2 left-full ml-1 text-xs px-1.5 py-0.5 bg-brand-primary-light text-brand-primary shadow-sm transition-transform duration-300 ease-out hover:rotate-[20deg] hover:-translate-y-0.5 hover:scale-105 hover:bg-brand-primary-light hover:text-brand-primary"
-              >
+              variant="secondary"
+              className="absolute -top-2 left-full ml-1 text-xs px-1.5 py-0.5 bg-brand-primary-light text-brand-primary shadow-sm transition-transform duration-300 ease-out hover:rotate-[20deg] hover:-translate-y-0.5 hover:scale-105 hover:bg-brand-primary-light hover:text-brand-primary">
+              
                 Beta
               </Badge>
             </div>
@@ -516,14 +516,14 @@ const Index = () => {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <ImagePlus className="w-4 h-4 text-brand-primary" />
-                  <p className="text-sm font-medium text-text-primary">Figma ekranları ve prototip bağlamı</p>
+                  <p className="text-sm font-medium text-text-primary">Figma ekranlarını yapıştırın
+
+                </p>
                 </div>
-                {hasScreenContext &&
-              <Badge className="bg-brand-primary-light text-brand-primary border-0">
+                {hasScreenContext && <Badge className="bg-brand-primary-light text-brand-primary border-0">
                     <Sparkles className="w-3 h-3 mr-1" />
                     Usability Mode
-                  </Badge>
-              }
+                  </Badge>}
               </div>
 
               <p className="text-xs text-text-secondary">
@@ -552,15 +552,15 @@ const Index = () => {
             <div className="space-y-2">
                   <p className="text-xs text-text-secondary">Yüklenecek ekranlar</p>
                   <div className="grid gap-3 md:grid-cols-2">
-                    {screenDrafts.map((draft) => (
-                      <div key={draft.id} className="group relative rounded-xl border border-border-light bg-white p-3">
+                    {screenDrafts.map((draft) =>
+                <div key={draft.id} className="group relative rounded-xl border border-border-light bg-white p-3">
                         <div className="absolute right-2 top-2">
                           <button
-                            type="button"
-                            onClick={() => removeScreenDraft(draft.id)}
-                            className="flex h-6 w-6 items-center justify-center rounded-full bg-black/75 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                            aria-label="Remove screen"
-                          >
+                      type="button"
+                      onClick={() => removeScreenDraft(draft.id)}
+                      className="flex h-6 w-6 items-center justify-center rounded-full bg-black/75 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                      aria-label="Remove screen">
+                      
                             <X className="w-3 h-3" />
                           </button>
                         </div>
@@ -574,12 +574,12 @@ const Index = () => {
                                 Ekran başlığı
                               </Label>
                               <Input
-                                id={`screen-name-${draft.id}`}
-                                value={draft.name}
-                                onChange={(e) => renameScreenDraft(draft.id, e.target.value)}
-                                placeholder="Ekran başlığı"
-                                className="h-9"
-                              />
+                          id={`screen-name-${draft.id}`}
+                          value={draft.name}
+                          onChange={(e) => renameScreenDraft(draft.id, e.target.value)}
+                          placeholder="Ekran başlığı"
+                          className="h-9" />
+                        
                             </div>
 
                             <p className="text-[11px] leading-5 text-text-muted">
@@ -588,7 +588,7 @@ const Index = () => {
                           </div>
                         </div>
                       </div>
-                ))}
+                )}
                   </div>
                 </div>
             }
