@@ -29,7 +29,7 @@ const TurkishPreambleDisplay: React.FC<TurkishPreambleDisplayProps> = ({ project
   const [isPlaying, setIsPlaying] = useState(false);
   const [canSkip, setCanSkip] = useState(false);
   const [preambleCompleted, setPreambleCompleted] = useState(false);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Recording states
   const [isRecording, setIsRecording] = useState(false);
