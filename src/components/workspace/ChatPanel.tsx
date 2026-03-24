@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { Send } from "lucide-react";
+import { Send, User } from "lucide-react";
 import { supabase } from '@/integrations/supabase/client';
-import userAvatar from "@/assets/user-avatar.jpg";
 import { SearchoMark } from "@/components/icons/SearchoMark";
 
 interface ChatMessage {
@@ -436,12 +435,8 @@ Plan:
                     </p>
                   </div>
                   
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-surface text-text-secondary">
-                    <img 
-                      src={userAvatar} 
-                      alt="User avatar" 
-                      className="w-full h-full object-cover rounded-full"
-                    />
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center border border-border-light bg-surface text-text-secondary">
+                    <User className="w-4 h-4" aria-hidden="true" />
                   </div>
                 </div>
               ) : (
