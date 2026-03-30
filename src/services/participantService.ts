@@ -215,5 +215,45 @@ export const participantService = {
     }
 
     return (data || []) as StudySession[];
+  },
+
+  async updateSession(id: string, updates: Partial<Omit<StudySession, 'id' | 'created_at' | 'updated_at'>>): Promise<StudySession> {
+    const { data, error } = await supabase
+      .from('study_sessions')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update session: ${error.message}`);
+    }
+
+    return data as StudySession;
+  },
+
+  async deleteSession(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('study_sessions')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      throw new Error(`Failed to delete session: ${error.message}`);
+    }
+  },
+
+  async getSession(id: string): Promise<StudySession | null> {
+    const { data, error } = await supabase
+      .from('study_sessions')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to fetch session: ${error.message}`);
+    }
+
+    return data as StudySession | null;
   }
 };
