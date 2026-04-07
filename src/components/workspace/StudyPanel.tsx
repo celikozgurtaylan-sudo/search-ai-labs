@@ -9,7 +9,7 @@ import { Plus, Edit3, Check, X, FileText, Download, Share, CheckCircle2, Clock, 
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import TypewriterText from "@/components/ui/typewriter-text";
-import { getCurrentDemoUser } from "@/lib/demoAuth";
+
 interface StudyPanelProps {
   discussionGuide: any;
   participants: any[]; // Will work with both old and new participant structures
@@ -380,35 +380,30 @@ const StudyPanel = ({
 
       let questions: string[] = [];
 
-      if (getCurrentDemoUser()) {
-        questions = createDemoQuestions(sectionTitle, existingQuestions);
-      } else {
-        const { data, error } = await supabase.functions.invoke('generate-questions', {
-          body: {
-            sectionTitle,
-            sectionId,
-            projectDescription,
-            existingQuestions,
-            validateProject: false
-          }
-        });
-
-        if (error) {
-          console.error('Supabase function error:', error);
-          alert(`Sorular oluşturulurken hata oluştu: ${error.message}`);
-          throw error;
+      const { data, error } = await supabase.functions.invoke('generate-questions', {
+        body: {
+          sectionTitle,
+          sectionId,
+          projectDescription,
+          existingQuestions,
+          validateProject: false
         }
+      });
 
-        console.log('Generated questions response:', data);
-
-        // Check if validation failed
-        if (data?.needsElaboration) {
-          alert(`Lütfen daha detaylı bir araştırma projesi açıklaması yapın. ${data.reason || ''}`);
-          return;
-        }
-
-        questions = data?.questions || [];
+      if (error) {
+        console.error('Supabase function error:', error);
+        alert(`Sorular oluşturulurken hata oluştu: ${error.message}`);
+        throw error;
       }
+
+      console.log('Generated questions response:', data);
+
+      if (data?.needsElaboration) {
+        alert(`Lütfen daha detaylı bir araştırma projesi açıklaması yapın. ${data.reason || ''}`);
+        return;
+      }
+
+      questions = data?.questions || [];
       
       if (questions.length === 0) {
         alert('Soru oluşturulamadı. Lütfen tekrar deneyin.');

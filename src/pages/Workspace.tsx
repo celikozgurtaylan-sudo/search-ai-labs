@@ -18,7 +18,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { projectService } from "@/services/projectService";
 import { participantService } from "@/services/participantService";
 import { useToast } from "@/hooks/use-toast";
-import { isDemoProjectId } from "@/lib/demoData";
+
 
 interface ProjectData {
   id?: string;
@@ -262,11 +262,6 @@ const Workspace = () => {
     if (!projectData?.id) return;
     
     try {
-      if (isDemoProjectId(projectData.id)) {
-        setSessionIds([]);
-        return;
-      }
-
       const sessions = await participantService.getProjectSessions(projectData.id);
       
       const sessionIdArray = sessions?.map(s => s.id) || [];

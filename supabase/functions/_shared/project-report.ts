@@ -631,7 +631,7 @@ export async function generateAndPersistProjectReport(
           skippedResponseCount: question.skippedResponseCount,
           coverageRate: question.coverageRate,
         })),
-        participantSummaries: participantBreakdownBase.map((participant) => ({
+        participantSummaries: participantBreakdownBase.map((participant: any) => ({
           sessionRef: participant.sessionRef,
           participantLabel: participant.participantLabel,
           answeredResponseCount: participant.answeredResponseCount,
@@ -655,7 +655,7 @@ export async function generateAndPersistProjectReport(
 
   const quoteIdSet = new Set(quoteCatalog.map((quote) => quote.quoteId));
   const questionRefSet = new Set(questionBreakdownBase.map((question) => question.questionRef));
-  const sessionRefSet = new Set(participantBreakdownBase.map((participant) => participant.sessionRef));
+  const sessionRefSet = new Set<string>(participantBreakdownBase.map((participant: any) => participant.sessionRef));
 
   const rawFindings = asArray<Record<string, unknown>>(llmResult?.findings);
   const findings = rawFindings
@@ -706,7 +706,7 @@ export async function generateAndPersistProjectReport(
     })
     .filter((recommendation) => recommendation.description.length > 0 && recommendation.quoteIds.length > 0);
 
-  const participantSummaries = new Map(
+  const participantSummaries = new Map<string, { summary: string; quoteIds: string[] }>(
     asArray<Record<string, unknown>>(llmResult?.participantSummaries)
       .map((entry) => [
         asString(entry.sessionRef),
@@ -714,11 +714,11 @@ export async function generateAndPersistProjectReport(
           summary: asString(entry.summary),
           quoteIds: sanitizeIdList(entry.quoteIds, quoteIdSet),
         },
-      ])
+      ] as [string, { summary: string; quoteIds: string[] }])
       .filter(([sessionRef]) => sessionRef.length > 0),
   );
 
-  const questionInsights = new Map(
+  const questionInsights = new Map<string, { summary: string; quoteIds: string[] }>(
     asArray<Record<string, unknown>>(llmResult?.questionInsights)
       .map((entry) => [
         asString(entry.questionRef),
@@ -726,7 +726,7 @@ export async function generateAndPersistProjectReport(
           summary: asString(entry.summary),
           quoteIds: sanitizeIdList(entry.quoteIds, quoteIdSet),
         },
-      ])
+      ] as [string, { summary: string; quoteIds: string[] }])
       .filter(([questionRef]) => questionRef.length > 0),
   );
 
@@ -739,7 +739,7 @@ export async function generateAndPersistProjectReport(
     };
   });
 
-  const participantBreakdown = participantBreakdownBase.map((participant) => {
+  const participantBreakdown = participantBreakdownBase.map((participant: any) => {
     const summary = participantSummaries.get(participant.sessionRef);
     return {
       ...participant,
