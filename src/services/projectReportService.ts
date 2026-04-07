@@ -1,4 +1,3 @@
-import { isDemoProjectId } from "@/lib/demoData";
 import { supabase } from "@/integrations/supabase/client";
 import { projectService } from "@/services/projectService";
 import type { ProjectInterviewReport, ProjectReportSnapshot } from "@/types/projectReport";
@@ -35,10 +34,6 @@ export const projectReportService = {
     projectId: string,
     options: { force?: boolean; sessionId?: string } = {},
   ): Promise<ProjectInterviewReport | null> {
-    if (isDemoProjectId(projectId)) {
-      return null;
-    }
-
     const { data, error } = await supabase.functions.invoke("interview-analysis", {
       body: {
         projectId,
