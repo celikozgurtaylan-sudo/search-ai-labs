@@ -9,6 +9,7 @@ import { Plus, Edit3, Check, X, FileText, Download, Share, CheckCircle2, Clock, 
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import TypewriterText from "@/components/ui/typewriter-text";
+import { getCurrentDemoUser } from "@/lib/demoAuth";
 interface StudyPanelProps {
   discussionGuide: any;
   participants: any[]; // Will work with both old and new participant structures
@@ -52,6 +53,44 @@ const StudyPanel = ({
   }>({});
   const [loadingMessages] = useState(["AI soruları oluşturuluyor...", "Katılımcı deneyimini analiz ediyor...", "En iyi soruları seçiyor...", "Araştırma planını optimize ediyor..."]);
   const [currentLoadingIndex, setCurrentLoadingIndex] = useState(0);
+
+  const createDemoQuestions = (sectionTitle: string, existingQuestions: string[]) => {
+    const normalizedTitle = sectionTitle.toLocaleLowerCase('tr-TR');
+
+    let candidates = [
+      "Bu bölüm sizin için neyi daha görünür veya daha net hale getirmeli?",
+      "Buradaki bilgi akışını kendi cümlelerinizle nasıl anlatırsınız?",
+      "Bu aşamada aklınıza gelen ilk soru veya tereddüt ne olurdu?",
+    ];
+
+    if (normalizedTitle.includes('ilk') || normalizedTitle.includes('izlenim')) {
+      candidates = [
+        "Bu bölüme ilk baktığınızda dikkatinizi en çok ne çekiyor?",
+        "İlk bakışta burada size ne anlatılmak istendiğini nasıl yorumladınız?",
+        "Bu ilk görünümde size net gelen ve belirsiz kalan noktalar neler?",
+      ];
+    } else if (normalizedTitle.includes('değer') || normalizedTitle.includes('akı')) {
+      candidates = [
+        "Bu adımın size hangi faydayı sunduğunu nasıl anlarsınız?",
+        "Bu akışta devam etmek istemenizi sağlayan unsur ne olurdu?",
+        "Burada eksik olduğunu düşündüğünüz bilgi veya yönlendirme var mı?",
+      ];
+    } else if (normalizedTitle.includes('iyileştirme') || normalizedTitle.includes('son')) {
+      candidates = [
+        "Bu deneyimi geliştirmek için ilk hangi noktadan başlardınız?",
+        "Bu bölümde tek bir şeyi değiştirebilseydiniz neyi değiştirirdiniz?",
+        "Buradaki deneyimi bir ekip arkadaşınıza nasıl özetlerdiniz?",
+      ];
+    }
+
+    const normalizedExistingQuestions = new Set(
+      existingQuestions.map((question: string) => question.trim().toLocaleLowerCase('tr-TR')),
+    );
+
+    return candidates
+      .filter((question) => !normalizedExistingQuestions.has(question.trim().toLocaleLowerCase('tr-TR')))
+      .slice(0, 3);
+  };
   const handleEditGuideTitle = (currentValue: string) => {
     setEditingGuideTitle(true);
     setEditGuideTitleValue(currentValue);
@@ -339,31 +378,37 @@ const StudyPanel = ({
 
       console.log('Generating questions for:', { sectionTitle, sectionId, projectDescription });
 
-      const { data, error } = await supabase.functions.invoke('generate-questions', {
-        body: {
-          sectionTitle,
-          sectionId,
-          projectDescription,
-          existingQuestions,
-          validateProject: false
+      let questions: string[] = [];
+
+      if (getCurrentDemoUser()) {
+        questions = createDemoQuestions(sectionTitle, existingQuestions);
+      } else {
+        const { data, error } = await supabase.functions.invoke('generate-questions', {
+          body: {
+            sectionTitle,
+            sectionId,
+            projectDescription,
+            existingQuestions,
+            validateProject: false
+          }
+        });
+
+        if (error) {
+          console.error('Supabase function error:', error);
+          alert(`Sorular oluşturulurken hata oluştu: ${error.message}`);
+          throw error;
         }
-      });
 
-      if (error) {
-        console.error('Supabase function error:', error);
-        alert(`Sorular oluşturulurken hata oluştu: ${error.message}`);
-        throw error;
+        console.log('Generated questions response:', data);
+
+        // Check if validation failed
+        if (data?.needsElaboration) {
+          alert(`Lütfen daha detaylı bir araştırma projesi açıklaması yapın. ${data.reason || ''}`);
+          return;
+        }
+
+        questions = data?.questions || [];
       }
-
-      console.log('Generated questions response:', data);
-
-      // Check if validation failed
-      if (data?.needsElaboration) {
-        alert(`Lütfen daha detaylı bir araştırma projesi açıklaması yapın. ${data.reason || ''}`);
-        return;
-      }
-
-      const questions = data?.questions || [];
       
       if (questions.length === 0) {
         alert('Soru oluşturulamadı. Lütfen tekrar deneyin.');

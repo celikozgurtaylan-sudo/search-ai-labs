@@ -1,6 +1,10 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  generateAndPersistProjectReport,
+  setProjectReportStatus,
+} from "../_shared/project-report.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -137,6 +141,86 @@ async function buildInterviewState(sessionId: string) {
       percentage: totalQuestions > 0 ? (completedQuestions / totalQuestions) * 100 : 0,
     },
   };
+}
+
+async function finalizeCompletedSession(sessionId: string, state: Awaited<ReturnType<typeof buildInterviewState>>) {
+  if (!state.progress.isComplete) return;
+
+  const { data: session, error: sessionError } = await supabase
+    .from('study_sessions')
+    .select('id, project_id, participant_id, status, ended_at, metadata')
+    .eq('id', sessionId)
+    .maybeSingle();
+
+  if (sessionError) {
+    throw new Error(`Failed to finalize session: ${sessionError.message}`);
+  }
+
+  if (!session) return;
+
+  const endedAt = session.ended_at ?? new Date().toISOString();
+
+  if (session.status !== 'completed' || !session.ended_at) {
+    const { error: updateSessionError } = await supabase
+      .from('study_sessions')
+      .update({
+        status: 'completed',
+        ended_at: endedAt,
+        metadata: {
+          ...(session.metadata ?? {}),
+          completedAt: endedAt,
+        },
+      })
+      .eq('id', sessionId);
+
+    if (updateSessionError) {
+      throw new Error(`Failed to update session completion: ${updateSessionError.message}`);
+    }
+  }
+
+  if (session.participant_id) {
+    const { error: participantError } = await supabase
+      .from('study_participants')
+      .update({
+        status: 'completed',
+        completed_at: endedAt,
+      })
+      .eq('id', session.participant_id)
+      .neq('status', 'declined');
+
+    if (participantError) {
+      throw new Error(`Failed to update participant completion: ${participantError.message}`);
+    }
+  }
+
+  await setProjectReportStatus(supabase, session.project_id, 'generating', {
+    trigger: 'session-completed',
+    triggerSessionId: sessionId,
+  });
+
+  const backgroundTask = generateAndPersistProjectReport(supabase, session.project_id, {
+    trigger: 'session-completed',
+    triggerSessionId: sessionId,
+  }).catch(async (error) => {
+    console.error('Background report generation failed:', error);
+    try {
+      await setProjectReportStatus(supabase, session.project_id, 'failed', {
+        trigger: 'session-completed',
+        triggerSessionId: sessionId,
+        failureMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+    } catch (statusError) {
+      console.error('Failed to persist report failure state:', statusError);
+    }
+  });
+
+  const edgeRuntime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
+  if (edgeRuntime?.waitUntil) {
+    edgeRuntime.waitUntil(backgroundTask);
+    return;
+  }
+
+  await backgroundTask;
 }
 
 serve(async (req) => {
@@ -292,9 +376,11 @@ async function completeQuestion(sessionId: string, questionId: string) {
       completedAt: new Date().toISOString(),
     },
   });
+  const state = await buildInterviewState(sessionId);
+  await finalizeCompletedSession(sessionId, state);
 
   return new Response(
-    JSON.stringify({ success: true, response }),
+    JSON.stringify({ success: true, response, ...state }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );
 }
@@ -310,6 +396,7 @@ async function submitResponse(sessionId: string, responseData: ResponsePayload) 
     },
   });
   const state = await buildInterviewState(sessionId);
+  await finalizeCompletedSession(sessionId, state);
 
   return new Response(
     JSON.stringify({ success: true, response, ...state }),
@@ -331,6 +418,7 @@ async function skipQuestion(sessionId: string, questionId: string, metadata: Rec
     },
   });
   const state = await buildInterviewState(sessionId);
+  await finalizeCompletedSession(sessionId, state);
 
   return new Response(
     JSON.stringify({ success: true, response, ...state }),

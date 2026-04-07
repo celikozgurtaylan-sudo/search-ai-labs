@@ -1,4 +1,18 @@
 import { supabase } from '@/integrations/supabase/client';
+import {
+  createDemoParticipantRecord,
+  createDemoSessionRecord,
+  deleteDemoParticipantRecord,
+  getDemoParticipantByToken,
+  getDemoParticipantsForProject,
+  getDemoSessionsForProject,
+  getDemoSessionByToken,
+  isDemoInvitationToken,
+  isDemoProjectId,
+  isDemoSessionToken,
+  updateDemoParticipantByToken,
+  updateDemoParticipantRecord,
+} from '@/lib/demoData';
 
 export interface StudyParticipant {
   id?: string;
@@ -33,6 +47,10 @@ export interface StudySession {
 
 export const participantService = {
   async createParticipant(participant: Omit<StudyParticipant, 'id' | 'created_at' | 'updated_at'>): Promise<StudyParticipant> {
+    if (isDemoProjectId(participant.project_id)) {
+      return createDemoParticipantRecord(participant);
+    }
+
     const { data, error } = await supabase
       .from('study_participants')
       .insert(participant)
@@ -47,6 +65,12 @@ export const participantService = {
   },
 
   async getProjectParticipants(projectId: string): Promise<StudyParticipant[]> {
+    if (isDemoProjectId(projectId)) {
+      return getDemoParticipantsForProject(projectId).sort((left, right) =>
+        right.created_at.localeCompare(left.created_at),
+      );
+    }
+
     const { data, error } = await supabase
       .from('study_participants')
       .select('*')
@@ -69,6 +93,14 @@ export const participantService = {
       updates.completed_at = new Date().toISOString();
     }
 
+    if (id.startsWith('mock-participant-')) {
+      const updatedParticipant = updateDemoParticipantRecord(id, updates);
+      if (!updatedParticipant) {
+        throw new Error('Failed to update participant: Participant not found');
+      }
+      return updatedParticipant;
+    }
+
     const { data, error } = await supabase
       .from('study_participants')
       .update(updates)
@@ -84,6 +116,11 @@ export const participantService = {
   },
 
   async deleteParticipant(id: string): Promise<void> {
+    if (id.startsWith('mock-participant-')) {
+      deleteDemoParticipantRecord(id);
+      return;
+    }
+
     const { error } = await supabase
       .from('study_participants')
       .delete()
@@ -95,6 +132,10 @@ export const participantService = {
   },
 
   async getParticipantByToken(token: string): Promise<StudyParticipant | null> {
+    if (isDemoInvitationToken(token)) {
+      return getDemoParticipantByToken(token);
+    }
+
     console.log('Looking for participant with token:', token);
     console.log('Current time:', new Date().toISOString());
     
@@ -125,6 +166,22 @@ export const participantService = {
 
   // Token-based status update using RPC function
   async updateParticipantStatusByToken(token: string, status: StudyParticipant['status']): Promise<StudyParticipant> {
+    if (isDemoInvitationToken(token)) {
+      const updates: Partial<StudyParticipant> = { status };
+      if (status === 'joined') {
+        updates.joined_at = new Date().toISOString();
+      } else if (status === 'completed') {
+        updates.completed_at = new Date().toISOString();
+      }
+
+      const participant = updateDemoParticipantByToken(token, updates);
+      if (!participant) {
+        throw new Error('Failed to update participant status: Participant not found');
+      }
+
+      return participant;
+    }
+
     const { data, error } = await supabase
       .rpc('update_participant_status_by_token', { 
         token_input: token, 
@@ -150,6 +207,10 @@ export const participantService = {
 
   // Session management
   async createSession(session: Omit<StudySession, 'id' | 'created_at' | 'updated_at'>): Promise<StudySession> {
+    if (isDemoProjectId(session.project_id)) {
+      return createDemoSessionRecord(session);
+    }
+
     const { data, error } = await supabase
       .from('study_sessions')
       .insert(session)
@@ -164,6 +225,21 @@ export const participantService = {
   },
 
   async createSessionForParticipant(projectId: string, participantId: string, invitationToken: string): Promise<StudySession> {
+    if (isDemoProjectId(projectId) || isDemoInvitationToken(invitationToken)) {
+      return createDemoSessionRecord({
+        project_id: projectId,
+        participant_id: participantId,
+        status: 'active',
+        scheduled_at: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        notes: undefined,
+        metadata: {
+          invitationToken,
+          isDemoSession: true,
+        },
+      });
+    }
+
     const sessionToken = this.generateSessionToken();
 
     // Use RPC function to bypass RLS for anonymous participants
@@ -189,6 +265,10 @@ export const participantService = {
   },
 
   async getSessionByToken(token: string): Promise<StudySession | null> {
+    if (isDemoSessionToken(token)) {
+      return getDemoSessionByToken(token);
+    }
+
     const { data, error } = await supabase
       .from('study_sessions')
       .select('*')
@@ -204,6 +284,12 @@ export const participantService = {
   },
 
   async getProjectSessions(projectId: string): Promise<StudySession[]> {
+    if (isDemoProjectId(projectId)) {
+      return getDemoSessionsForProject(projectId).sort((left, right) =>
+        right.created_at.localeCompare(left.created_at),
+      );
+    }
+
     const { data, error } = await supabase
       .from('study_sessions')
       .select('*')

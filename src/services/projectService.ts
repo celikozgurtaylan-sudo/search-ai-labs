@@ -1,4 +1,15 @@
 import { supabase } from '@/integrations/supabase/client';
+import {
+  createDemoProjectRecord,
+  deleteDemoProjectRecord,
+  getDemoProjectById,
+  getDemoProjectForSessionToken,
+  getDemoProjectsForUser,
+  isDemoProjectId,
+  isDemoSessionToken,
+  updateDemoProjectRecord,
+} from '@/lib/demoData';
+import { getCurrentDemoUser } from '@/lib/demoAuth';
 
 export interface Project {
   id?: string;
@@ -14,6 +25,15 @@ export interface Project {
 
 export const projectService = {
   async createProject(project: Omit<Project, 'id' | 'user_id' | 'created_at' | 'updated_at'>): Promise<Project> {
+    const demoUser = getCurrentDemoUser();
+    if (demoUser) {
+      return createDemoProjectRecord(demoUser.id, {
+        title: project.title,
+        description: project.description,
+        analysis: project.analysis,
+      });
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
@@ -39,6 +59,14 @@ export const projectService = {
   },
 
   async getUserProjects(includeArchived: boolean = false): Promise<Project[]> {
+    const demoUser = getCurrentDemoUser();
+    if (demoUser) {
+      const projects = getDemoProjectsForUser(demoUser.id);
+      return projects
+        .filter((project) => (includeArchived ? true : !project.archived))
+        .sort((left, right) => right.created_at.localeCompare(left.created_at));
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
@@ -64,6 +92,13 @@ export const projectService = {
   },
 
   async getArchivedProjects(): Promise<Project[]> {
+    const demoUser = getCurrentDemoUser();
+    if (demoUser) {
+      return getDemoProjectsForUser(demoUser.id)
+        .filter((project) => project.archived)
+        .sort((left, right) => (right.archived_at || '').localeCompare(left.archived_at || ''));
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
@@ -85,9 +120,15 @@ export const projectService = {
   },
 
   async getProject(id: string): Promise<Project | null> {
+    if (isDemoProjectId(id)) {
+      return getDemoProjectById(id);
+    }
+
+    const demoUser = getCurrentDemoUser();
     const { data: { user } } = await supabase.auth.getUser();
+    const activeUser = demoUser ?? user;
     
-    if (!user) {
+    if (!activeUser) {
       throw new Error('User must be authenticated to view project');
     }
 
@@ -95,7 +136,7 @@ export const projectService = {
       .from('projects')
       .select('*')
       .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('user_id', activeUser.id)
       .maybeSingle();
 
     if (error) {
@@ -106,6 +147,14 @@ export const projectService = {
   },
 
   async updateProject(id: string, updates: Partial<Omit<Project, 'id' | 'user_id' | 'created_at' | 'updated_at'>>): Promise<Project> {
+    if (isDemoProjectId(id)) {
+      const updatedProject = updateDemoProjectRecord(id, updates);
+      if (!updatedProject) {
+        throw new Error('Failed to update project: Project not found');
+      }
+      return updatedProject;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
@@ -128,6 +177,17 @@ export const projectService = {
   },
 
   async archiveProject(id: string): Promise<void> {
+    if (isDemoProjectId(id)) {
+      const updatedProject = updateDemoProjectRecord(id, {
+        archived: true,
+        archived_at: new Date().toISOString(),
+      });
+      if (!updatedProject) {
+        throw new Error('Failed to archive project: Project not found');
+      }
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
@@ -149,6 +209,17 @@ export const projectService = {
   },
 
   async unarchiveProject(id: string): Promise<void> {
+    if (isDemoProjectId(id)) {
+      const updatedProject = updateDemoProjectRecord(id, {
+        archived: false,
+        archived_at: null,
+      });
+      if (!updatedProject) {
+        throw new Error('Failed to unarchive project: Project not found');
+      }
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
@@ -170,6 +241,11 @@ export const projectService = {
   },
 
   async deleteProject(id: string): Promise<void> {
+    if (isDemoProjectId(id)) {
+      deleteDemoProjectRecord(id);
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
@@ -188,6 +264,10 @@ export const projectService = {
   },
 
   async getProjectBySessionToken(sessionToken: string): Promise<Project | null> {
+    if (isDemoSessionToken(sessionToken)) {
+      return getDemoProjectForSessionToken(sessionToken);
+    }
+
     const { data, error } = await supabase
       .rpc('get_project_for_session', { session_token_input: sessionToken })
       .maybeSingle();

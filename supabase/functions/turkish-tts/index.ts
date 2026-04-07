@@ -6,6 +6,18 @@ const DEFAULT_VOICE = '9BWtsMINqrJLrRacOk9x';
 const ELEVENLABS_MODEL = 'eleven_multilingual_v2';
 const ELEVENLABS_TIMEOUT_MS = 12000;
 
+class TTSError extends Error {
+  status: number;
+  code: string;
+
+  constructor(message: string, status = 500, code = 'tts_error') {
+    super(message);
+    this.name = 'TTSError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -26,7 +38,7 @@ const toBase64Audio = (arrayBuffer: ArrayBuffer) => {
 
 async function generateWithElevenLabs(text: string) {
   if (!elevenlabsApiKey) {
-    throw new Error('ElevenLabs API key not configured');
+    throw new TTSError('ElevenLabs API key not configured', 500, 'missing_elevenlabs_key');
   }
 
   const controller = new AbortController();
@@ -55,13 +67,22 @@ async function generateWithElevenLabs(text: string) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`ElevenLabs error ${response.status}: ${errorText}`);
+      const upstreamStatus = response.status >= 500 ? 502 : response.status;
+      throw new TTSError(
+        `ElevenLabs error ${response.status}: ${errorText}`,
+        upstreamStatus,
+        'elevenlabs_request_failed',
+      );
     }
 
     return toBase64Audio(await response.arrayBuffer());
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error(`ElevenLabs request timed out after ${ELEVENLABS_TIMEOUT_MS}ms`);
+      throw new TTSError(
+        `ElevenLabs request timed out after ${ELEVENLABS_TIMEOUT_MS}ms`,
+        504,
+        'elevenlabs_timeout',
+      );
     }
 
     throw error;
@@ -100,10 +121,17 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error('Turkish TTS error:', error);
+    const status = error instanceof TTSError ? error.status : 500;
+    const code = error instanceof TTSError ? error.code : 'unknown_tts_error';
+
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      JSON.stringify({
+        error: error instanceof Error ? error.message : 'Unknown error',
+        code,
+        provider: 'elevenlabs',
+      }),
       {
-        status: 500,
+        status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       },
     );

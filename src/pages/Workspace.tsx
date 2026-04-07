@@ -16,8 +16,9 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 import { projectService } from "@/services/projectService";
+import { participantService } from "@/services/participantService";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { isDemoProjectId } from "@/lib/demoData";
 
 interface ProjectData {
   id?: string;
@@ -249,21 +250,12 @@ const Workspace = () => {
     if (!projectData?.id) return;
     
     try {
-      const { data: sessions, error } = await supabase
-        .from('study_sessions')
-        .select('id')
-        .eq('project_id', projectData.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Failed to fetch sessions:', error);
-        toast({
-          title: "Hata",
-          description: "Oturum verileri alınamadı",
-          variant: "destructive",
-        });
+      if (isDemoProjectId(projectData.id)) {
+        setSessionIds([]);
         return;
       }
+
+      const sessions = await participantService.getProjectSessions(projectData.id);
       
       const sessionIdArray = sessions?.map(s => s.id) || [];
       console.log('Fetched session IDs:', sessionIdArray);

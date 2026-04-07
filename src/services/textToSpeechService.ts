@@ -39,6 +39,43 @@ const decodeAudio = (audioContent: string) => {
   return bytes.buffer;
 };
 
+const readFunctionErrorMessage = async (response?: Response) => {
+  if (!response) return null;
+
+  try {
+    const contentType = response.headers.get("Content-Type")?.split(";")[0].trim();
+    const responseClone = response.clone();
+
+    if (contentType === "application/json") {
+      const payload = await responseClone.json();
+      if (typeof payload?.error === "string" && payload.error.trim()) {
+        const codeSuffix = typeof payload?.code === "string" ? ` [${payload.code}]` : "";
+        return `${payload.error}${codeSuffix}`;
+      }
+    }
+
+    const responseText = await responseClone.text();
+    return responseText.trim() || null;
+  } catch {
+    return null;
+  }
+};
+
+const formatFunctionError = async (error: unknown, response?: Response) => {
+  const fallbackMessage = error instanceof Error ? error.message : "Unknown TTS error";
+  const detailedMessage = await readFunctionErrorMessage(response);
+
+  if (detailedMessage) {
+    return `Turkish TTS request failed (${response?.status ?? "unknown"}): ${detailedMessage}`;
+  }
+
+  if (response?.status) {
+    return `Turkish TTS request failed (${response.status}): ${fallbackMessage}`;
+  }
+
+  return `Turkish TTS request failed: ${fallbackMessage}`;
+};
+
 const loadTextToSpeech = async (text: string): Promise<ArrayBuffer> => {
   const normalizedText = text.trim();
   if (!normalizedText) {
@@ -56,12 +93,12 @@ const loadTextToSpeech = async (text: string): Promise<ArrayBuffer> => {
   }
 
   const request = (async () => {
-    const { data, error } = await supabase.functions.invoke('turkish-tts', {
+    const { data, error, response } = await supabase.functions.invoke('turkish-tts', {
       body: { text: normalizedText },
     });
 
     if (error) {
-      throw new Error(`Turkish TTS request failed: ${error.message}`);
+      throw new Error(await formatFunctionError(error, response));
     }
 
     if (!data?.audioContent) {

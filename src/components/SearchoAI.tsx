@@ -308,16 +308,10 @@ const SearchoAI = ({
         title: 'Görüşme Tamamlandı!',
         description: 'Tüm sorular yanıtlandı.',
       });
-
-      if (projectContext?.sessionId && projectContext?.projectId) {
-        void interviewService.analyzeInterview(projectContext.sessionId, projectContext.projectId)
-          .then(() => {
-            toast({ title: 'Analiz Tamamlandı' });
-          })
-          .catch((error) => {
-            console.error('Analysis failed:', error);
-          });
-      }
+      toast({
+        title: 'Analiz Hazırlanıyor',
+        description: 'Araştırma raporu arka planda güncellenecek.',
+      });
     }
   }, [onQuestionChange, projectContext?.projectId, projectContext?.sessionId, toast]);
 

@@ -2,6 +2,12 @@ import React from 'react';
 import type { ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  clearStoredDemoSession,
+  getStoredDemoSession,
+  isDemoIdentifier,
+  signInDemoAccount,
+} from '@/lib/demoAuth';
 
 interface AuthContextType {
   user: User | null;
@@ -37,6 +43,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = React.useState<User | null>(null);
   const [session, setSession] = React.useState<Session | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [usingDemoAuth, setUsingDemoAuth] = React.useState(() => Boolean(getStoredDemoSession()));
 
   const normalizeAuthError = (err: unknown) => {
     // supabase-js usually returns `{ error }`, but network/CORS issues can throw.
@@ -56,6 +63,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   React.useEffect(() => {
+    if (usingDemoAuth) {
+      const demoSession = getStoredDemoSession();
+      setSession(demoSession);
+      setUser(demoSession?.user ?? null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
@@ -73,9 +90,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [usingDemoAuth]);
 
   const signIn = async (email: string, password: string) => {
+    if (isDemoIdentifier(email)) {
+      const demoSession = signInDemoAccount(email, password);
+      if (!demoSession) {
+        return { error: { message: 'Invalid demo account or password.' } };
+      }
+
+      setUsingDemoAuth(true);
+      setSession(demoSession);
+      setUser(demoSession.user);
+      setLoading(false);
+      return { error: null };
+    }
+
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -108,6 +138,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const signOut = async () => {
+    if (usingDemoAuth) {
+      clearStoredDemoSession();
+      setUsingDemoAuth(false);
+      setSession(null);
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
     await supabase.auth.signOut();
   };
 

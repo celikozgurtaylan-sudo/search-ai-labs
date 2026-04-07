@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+
 const Auth = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -144,13 +145,18 @@ const Auth = () => {
                 
                 <form onSubmit={handleSignIn} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="signin-email">Email</Label>
-                    <Input id="signin-email" type="email" placeholder="Enter your email" value={email} onChange={e => setEmail(e.target.value)} required />
+                    <Label htmlFor="signin-email">Email or Demo Account</Label>
+                    <Input id="signin-email" type="text" placeholder="Enter your email or demo1 / demo2" value={email} onChange={e => setEmail(e.target.value)} required />
                   </div>
                   
                   <div className="space-y-2">
                     <Label htmlFor="signin-password">Password</Label>
                     <Input id="signin-password" type="password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} required />
+                  </div>
+
+                  <div className="rounded-lg border border-border-subtle bg-background-secondary/60 px-3 py-2 text-sm text-text-secondary">
+                    Demo logins: <span className="font-medium text-text-primary">demo1</span> or <span className="font-medium text-text-primary">demo2</span>
+                    {" "}or <span className="font-medium text-text-primary">Alican.Kangotan@fibabanka.com.tr</span> with password <span className="font-medium text-text-primary">123456</span>
                   </div>
                   
                   <Button type="submit" className="w-full" disabled={loading}>
