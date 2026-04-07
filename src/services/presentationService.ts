@@ -70,7 +70,7 @@ const addMetricCard = (
   slide: pptxgen.Slide,
   input: { x: number; title: string; value: string; helper: string },
 ) => {
-  slide.addShape(pptx.ShapeType.roundRect, {
+  slide.addShape("roundRect" as any, {
     x: input.x,
     y: 1.45,
     w: 2.95,
@@ -114,7 +114,7 @@ const addEvidenceBlock = (
   slide: pptxgen.Slide,
   input: { x: number; y: number; w: number; title: string; body: string; quote?: string; footer?: string },
 ) => {
-  slide.addShape(pptx.ShapeType.roundRect, {
+  slide.addShape("roundRect" as any, {
     x: input.x,
     y: input.y,
     w: input.w,
@@ -146,7 +146,7 @@ const addEvidenceBlock = (
   });
 
   if (input.quote) {
-    slide.addShape(pptx.ShapeType.roundRect, {
+    slide.addShape("roundRect" as any, {
       x: input.x + 0.18,
       y: input.y + 1.24,
       w: input.w - 0.36,
@@ -183,7 +183,7 @@ const addPriorityBadge = (slide: pptxgen.Slide, x: number, y: number, priority: 
   const color = priority === "high" ? COLORS.high : priority === "medium" ? COLORS.medium : COLORS.low;
   const label = priority === "high" ? "Yüksek" : priority === "medium" ? "Orta" : "Düşük";
 
-  slide.addShape(pptx.ShapeType.roundRect, {
+  slide.addShape("roundRect" as any, {
     x,
     y,
     w: 1.0,
@@ -266,7 +266,7 @@ const addOverviewSlide = (pptx: pptxgen, report: ProjectInterviewReport, project
     h: 0.8,
     fontSize: 16,
     color: COLORS.text,
-    valign: "mid",
+    valign: "middle",
   });
 
   slide.addText(
