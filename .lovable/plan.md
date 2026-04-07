@@ -1,52 +1,52 @@
 
 
-# Update FRONTEND_URL to beta.searcho.online
+## Remove Hardcoded Credentials & Demo Auth Bypass
 
-## Problem
-The invitation email links should use `beta.searcho.online` as the domain, not `searcho.lovable.app`.
+### Problem
+Hardcoded usernames, emails (including a real corporate email), and passwords are shipped in client-side code. A fake auth system bypasses Supabase entirely.
 
-## Solution
-Update the `FRONTEND_URL` secret and harden the edge function code to prevent whitespace issues.
+### Plan
 
----
+**Step 1 — Delete `src/lib/demoAuth.ts`**
+Remove entirely. Contains hardcoded credentials and fake session logic.
 
-## Implementation
+**Step 2 — Delete `src/lib/demoData.ts`**
+Remove entirely. In-memory data layer bypassing RLS.
 
-### Step 1: Update the Secret
-Update the `FRONTEND_URL` secret to:
-- **Value**: `https://beta.searcho.online` (no trailing whitespace)
+**Step 3 — Clean `src/contexts/AuthContext.tsx`**
+- Remove all demo imports
+- Remove `usingDemoAuth` state
+- Remove demo branches in `signIn`, `signOut`, and `useEffect`
+- Keep only standard Supabase auth flow
 
-### Step 2: Fix Whitespace Issue in Edge Function
-The logs showed trailing spaces were causing malformed URLs. Add `.trim()` to prevent this:
+**Step 4 — Clean `src/pages/Auth.tsx`**
+- Remove the credentials display block (lines 157-160)
+- Change label from "Email or Demo Account" to "Email"
+- Fix placeholder to just "Enter your email"
 
-**File**: `supabase/functions/send-invitation-email/index.ts`
-**Line 33**: Change from:
-```typescript
-const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://beta.searcho.online';
-```
-To:
-```typescript
-const frontendUrl = (Deno.env.get('FRONTEND_URL') || 'https://beta.searcho.online').trim();
-```
+**Step 5 — Clean service files (4 files)**
+- `src/services/projectService.ts` — Remove all demo imports and branching, keep only Supabase calls
+- `src/services/participantService.ts` — Same cleanup
+- `src/services/projectReportService.ts` — Remove `isDemoProjectId` import and check
+- `src/pages/Workspace.tsx` — Remove `isDemoProjectId` import and usage
+- `src/components/workspace/StudyPanel.tsx` — Remove `getCurrentDemoUser` import and usage
 
-### Step 3: Redeploy Edge Function
-Redeploy `send-invitation-email` to apply both changes.
+**Step 6 — Fix pre-existing build errors**
+- `supabase/functions/_shared/project-report.ts` — Add type annotations for `value`, `participant` params; fix Map construction and property access types
+- `src/services/presentationService.ts` — Fix `pptx` reference errors and `VAlign` type
 
-### Step 4: Resend Invitation
-Send a new invitation to verify the link works correctly.
-
----
-
-## Expected Result
-After this fix, invitation emails will contain working links:
-`https://beta.searcho.online/join/research/user-study-xxxxx`
-
----
-
-## Files to Modify
-
-| File | Change |
-|------|--------|
-| **Secret: FRONTEND_URL** | Set to `https://beta.searcho.online` |
-| `supabase/functions/send-invitation-email/index.ts` | Add `.trim()` on line 33 |
+### Files affected
+| Action | File |
+|--------|------|
+| Delete | `src/lib/demoAuth.ts` |
+| Delete | `src/lib/demoData.ts` |
+| Edit | `src/contexts/AuthContext.tsx` |
+| Edit | `src/pages/Auth.tsx` |
+| Edit | `src/services/projectService.ts` |
+| Edit | `src/services/participantService.ts` |
+| Edit | `src/services/projectReportService.ts` |
+| Edit | `src/pages/Workspace.tsx` |
+| Edit | `src/components/workspace/StudyPanel.tsx` |
+| Edit | `supabase/functions/_shared/project-report.ts` |
+| Edit | `src/services/presentationService.ts` |
 
