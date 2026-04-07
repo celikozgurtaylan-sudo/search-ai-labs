@@ -96,6 +96,18 @@ const Workspace = () => {
     void hydrateLatestProject();
   }, [projectData?.id, user]);
 
+  useEffect(() => {
+    const persistedGuide = projectData?.analysis?.discussionGuide;
+
+    if (!discussionGuide && Array.isArray(persistedGuide?.sections) && persistedGuide.sections.length > 0) {
+      setDiscussionGuide(persistedGuide);
+    }
+
+    if (!isResearchRelated && (projectData?.analysis?.isResearchRelated || persistedGuide?.sections?.length > 0)) {
+      setIsResearchRelated(true);
+    }
+  }, [discussionGuide, isResearchRelated, projectData?.analysis]);
+
   // Update project in database when research is detected
   useEffect(() => {
     if (isResearchRelated && projectData?.id && discussionGuide) {
@@ -414,10 +426,12 @@ const Workspace = () => {
           ) : (
             <ChatPanel 
               projectData={projectData}
+              discussionGuide={discussionGuide}
               onResearchDetected={setIsResearchRelated}
               onResearchPlanGenerated={(plan) => {
                 setDiscussionGuide(plan);
               }}
+              onMessagesUpdate={setChatMessages}
             />
           )}
         </ResizablePanel>

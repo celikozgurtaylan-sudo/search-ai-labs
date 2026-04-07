@@ -856,7 +856,7 @@ const StudyPanel = ({
                               {shouldShowTypewriter ? <TypewriterText text={question} speed={25} className="text-text-primary" enableControls={true} onComplete={() => setShowQuestionTypewriters(prev => ({
                       ...prev,
                       [questionKey]: false
-                    }))} /> : isRecentlyAdded ? <TypewriterText text={question} speed={30} className="text-text-primary" /> : shouldShowTypewriter === false ? question : null}
+                    }))} /> : isRecentlyAdded ? <TypewriterText text={question} speed={30} className="text-text-primary" /> : question}
                             </div>}
                         </div>
                         

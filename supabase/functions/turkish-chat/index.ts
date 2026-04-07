@@ -391,6 +391,134 @@ const normalizeResearchPlan = (plan: any) => {
   };
 };
 
+const describeGuideContext = (guide: any) => {
+  const normalizedGuide = normalizeResearchPlan(guide);
+
+  if (!normalizedGuide?.sections?.length) {
+    return '';
+  }
+
+  const sections = normalizedGuide.sections
+    .map((section: any, index: number) => {
+      const questions = Array.isArray(section.questions)
+        ? section.questions.map((question: string, questionIndex: number) => `  ${questionIndex + 1}. ${question}`).join('\n')
+        : '  - Soru yok';
+
+      return `${index + 1}. [${section.id}] ${section.title}\n${questions}`;
+    })
+    .join('\n\n');
+
+  return `CURRENT_RESEARCH_PLAN:
+Baslik: ${normalizedGuide.title}
+
+Bolumler:
+${sections}`;
+};
+
+const normalizeGuideQuestion = (question: string) => normalizeForMatch(cleanText(question));
+
+const isAdditiveGuideEditRequest = (message: string) => {
+  const normalized = normalizeForMatch(message);
+
+  const additiveKeywords = [
+    'ekle',
+    'daha fazla',
+    'ek olarak',
+    'biraz daha',
+    'artir',
+    'arttir',
+    'cogalt',
+    'genislet',
+    'yer ver',
+    'soru daha',
+    'yeni soru',
+    'yeni bolum',
+  ];
+
+  const subtractiveKeywords = ['sil', 'kaldir', 'cikar', 'azalt'];
+
+  return additiveKeywords.some((keyword) => normalized.includes(keyword)) &&
+    !subtractiveKeywords.some((keyword) => normalized.includes(keyword));
+};
+
+const mergeAdditiveGuideUpdate = (currentGuide: any, nextGuide: any) => {
+  const normalizedCurrentGuide = normalizeResearchPlan(currentGuide);
+  const normalizedNextGuide = normalizeResearchPlan(nextGuide);
+
+  if (!normalizedCurrentGuide?.sections?.length || !normalizedNextGuide?.sections?.length) {
+    return normalizedNextGuide;
+  }
+
+  const mergedSections = normalizedCurrentGuide.sections.map((currentSection: any) => {
+    const matchingSection = normalizedNextGuide.sections.find((candidate: any) =>
+      candidate.id === currentSection.id ||
+      normalizeForMatch(candidate.title) === normalizeForMatch(currentSection.title)
+    );
+
+    if (!matchingSection) {
+      return currentSection;
+    }
+
+    const seenQuestions = new Set(
+      (currentSection.questions || []).map((question: string) => normalizeGuideQuestion(question)),
+    );
+
+    const appendedQuestions = (matchingSection.questions || []).filter((question: string) => {
+      const normalizedQuestion = normalizeGuideQuestion(question);
+
+      if (!normalizedQuestion || seenQuestions.has(normalizedQuestion)) {
+        return false;
+      }
+
+      seenQuestions.add(normalizedQuestion);
+      return true;
+    });
+
+    return {
+      ...currentSection,
+      title: matchingSection.title || currentSection.title,
+      questions: [...(currentSection.questions || []), ...appendedQuestions],
+    };
+  });
+
+  const additionalSections = normalizedNextGuide.sections.filter((nextSection: any) =>
+    !normalizedCurrentGuide.sections.some((currentSection: any) =>
+      currentSection.id === nextSection.id ||
+      normalizeForMatch(currentSection.title) === normalizeForMatch(nextSection.title)
+    )
+  );
+
+  return {
+    ...normalizedCurrentGuide,
+    title: normalizedNextGuide.title || normalizedCurrentGuide.title,
+    sections: [...mergedSections, ...additionalSections],
+  };
+};
+
+const requestStructuredResponse = async (openaiApiKey: string, messages: any[]) => {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${openaiApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages,
+      response_format: RESPONSE_FORMAT,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[Searcho] API error:', errorText);
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content;
+};
+
 const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
   const usability = researchContext?.usabilityTesting || {};
   const titleBase = usability.objective || message || "Kullanilabilirlik Testi";
@@ -469,9 +597,18 @@ serve(async (req) => {
       throw new Error('OPENAI_API_KEY is not set');
     }
 
-    const { message, conversationHistory = [], researchContext = null, forcePlan = false } = await req.json();
+    const {
+      message,
+      conversationHistory = [],
+      researchContext = null,
+      guideContext = null,
+      forcePlan = false,
+      forceGuideEditPlan = false,
+    } = await req.json();
     console.log(`[Searcho] Message: "${message.substring(0, 80)}..."`);
     console.log(`[Searcho] Conversation depth: ${Math.floor(conversationHistory.length / 2)}`);
+
+    const normalizedGuideContext = normalizeResearchPlan(guideContext);
 
     // Build messages — system prompt as first user message (reasoning models)
     // then conversation history, then current message
@@ -511,6 +648,31 @@ ${usableScreens || 'Screen bilgisi yok'}`;
       }
     }
 
+    if (normalizedGuideContext?.sections?.length) {
+      messages.push({
+        role: 'user',
+        content: `${describeGuideContext(normalizedGuideContext)}
+
+Kurallar:
+- Eger kullanici mevcut arastirma plani, bolumleri veya sorulari uzerinde bir degisiklik istiyorsa action=PLAN don.
+- PLAN donerken sadece degisen parcayi degil, TAM ve GUNCEL researchPlan don.
+- Kullanici acikca sil, kaldir veya cikar demedikce mevcut bolumleri ve sorulari koru.
+- Mevcut section id'lerini korumaya calis.
+- Kullanici sadece belirli bir bolumu tweak etmek istiyorsa diger bolumleri aynen koru.`,
+      });
+      messages.push({
+        role: 'assistant',
+        content: 'Mevcut arastirma planini aldim. Plani guncellerken tum plani geri donecek ve belirtilmeyen bolumleri koruyacagim.',
+      });
+    }
+
+    if (forceGuideEditPlan && normalizedGuideContext?.sections?.length) {
+      messages.push({
+        role: 'user',
+        content: 'Kullanici mevcut arastirma planini guncellemek istiyor. action=PLAN ile yanit ver. researchPlan null olamaz. Tam guncellenmis plani dondur.',
+      });
+    }
+
     // Add conversation history
     for (const msg of conversationHistory) {
       messages.push({
@@ -525,28 +687,7 @@ ${usableScreens || 'Screen bilgisi yok'}`;
     console.log(`[Searcho] Calling ${MODEL} with ${messages.length} messages`);
 
     // Single API call — o4-mini handles everything
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: messages,
-        response_format: RESPONSE_FORMAT,
-        // reasoning_effort is managed by the model
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[Searcho] API error:', errorText);
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices[0].message.content;
+    let content = await requestStructuredResponse(openaiApiKey, messages);
 
     console.log(`[Searcho] Raw response: ${content.substring(0, 200)}...`);
 
@@ -574,10 +715,32 @@ ${usableScreens || 'Screen bilgisi yok'}`;
       parsed = buildUsabilityFallbackPlan(message, researchContext);
     }
 
+    if (forceGuideEditPlan && normalizedGuideContext?.sections?.length && (parsed.action !== 'PLAN' || parsed.researchPlan === null)) {
+      console.log('[Searcho] Model returned CHAT while guide edit PLAN was required, retrying with stronger instruction');
+
+      content = await requestStructuredResponse(openaiApiKey, [
+        ...messages,
+        {
+          role: 'assistant',
+          content: typeof parsed.chatResponse === 'string' ? parsed.chatResponse : 'Plani guncelliyorum.',
+        },
+        {
+          role: 'user',
+          content: 'Yaniti yeniden uret. Bu istek mevcut arastirma planini guncelleme istegi. action=PLAN don. researchPlan null olamaz. Mevcut plandaki belirtilmeyen bolumleri ve sorulari koru, sadece gereken yerleri guncelle ve TAM plani dondur.',
+        },
+      ]);
+
+      parsed = JSON.parse(content);
+    }
+
     const isResearchPlan = parsed.action === 'PLAN' && parsed.researchPlan !== null;
 
     if (isResearchPlan) {
       parsed.researchPlan = normalizeResearchPlan(parsed.researchPlan);
+
+      if (forceGuideEditPlan && isAdditiveGuideEditRequest(message) && normalizedGuideContext?.sections?.length) {
+        parsed.researchPlan = mergeAdditiveGuideUpdate(normalizedGuideContext, parsed.researchPlan);
+      }
     }
 
     console.log(`[Searcho] Action: ${parsed.action}, Plan: ${isResearchPlan}`);

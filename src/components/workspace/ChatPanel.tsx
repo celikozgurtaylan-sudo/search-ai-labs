@@ -22,8 +22,10 @@ interface ChatMessage {
 
 interface ChatPanelProps {
   projectData?: any;
+  discussionGuide?: any;
   onResearchDetected?: (isResearch: boolean) => void;
   onResearchPlanGenerated?: (plan: any) => void;
+  onMessagesUpdate?: (messages: ChatMessage[]) => void;
 }
 
 interface ResearchContextPayload {
@@ -45,11 +47,93 @@ interface ResearchContextPayload {
 
 interface SendToLlmOptions {
   forcePlan?: boolean;
+  forceGuideEditPlan?: boolean;
 }
 
 const isInlineImageUrl = (value?: string) => typeof value === "string" && value.startsWith("data:image/");
 
-const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }: ChatPanelProps) => {
+const normalizeIntentText = (value: string) =>
+  value
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ç/g, 'c')
+    .replace(/ğ/g, 'g')
+    .replace(/ı/g, 'i')
+    .replace(/ö/g, 'o')
+    .replace(/ş/g, 's')
+    .replace(/ü/g, 'u')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const detectGuideEditIntent = (message: string, discussionGuide?: any) => {
+  if (!Array.isArray(discussionGuide?.sections) || discussionGuide.sections.length === 0) {
+    return false;
+  }
+
+  const normalized = normalizeIntentText(message);
+
+  const editKeywords = [
+    'ekle',
+    'artir',
+    'arttir',
+    'cogalt',
+    'guncelle',
+    'degistir',
+    'duzenle',
+    'revize et',
+    'yeniden yaz',
+    'yenile',
+    'kisalt',
+    'uzat',
+    'sil',
+    'kaldir',
+    'cikar',
+    'sadeleştir',
+    'sadelestir',
+    'odaklan',
+    'yer ver',
+    'sorulari',
+    'soruyu',
+    'bolumu',
+    'bolumleri',
+  ];
+
+  const planTargets = [
+    'soru',
+    'sorular',
+    'bolum',
+    'bolumler',
+    'plan',
+    'kilavuz',
+    'arastirma plan',
+    'gorusme',
+  ];
+
+  const refinementPatterns = [
+    /biraz daha/,
+    /daha fazla/,
+    /ek olarak/,
+    /ozellikle/,
+    /bunlari/,
+    /mevcut/,
+    /ilk bolum/,
+    /son bolum/,
+    /bu sorular/,
+  ];
+
+  return (
+    (editKeywords.some((keyword) => normalized.includes(keyword)) &&
+      planTargets.some((target) => normalized.includes(target))) ||
+    refinementPatterns.some((pattern) => pattern.test(normalized))
+  );
+};
+
+const ChatPanel = ({
+  projectData,
+  discussionGuide,
+  onResearchDetected,
+  onResearchPlanGenerated,
+  onMessagesUpdate,
+}: ChatPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -63,13 +147,17 @@ const ChatPanel = ({ projectData, onResearchDetected, onResearchPlanGenerated }:
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
+  useEffect(() => {
+    onMessagesUpdate?.(messages);
+  }, [messages, onMessagesUpdate]);
+
   // Load initial message from localStorage if available
   useEffect(() => {
-    if (projectData?.description && !hasTriggeredInitialMessageRef.current) {
+    if (projectData?.description && !hasTriggeredInitialMessageRef.current && !discussionGuide?.sections?.length) {
       hasTriggeredInitialMessageRef.current = true;
       handleInitialMessage(projectData.description);
     }
-  }, [projectData]);
+  }, [discussionGuide?.sections?.length, projectData]);
 
   const buildUsabilityContextBlock = () => {
     const usability = projectData?.analysis?.usabilityTesting;
@@ -208,7 +296,7 @@ Plan:
     const loadingMessage: ChatMessage = {
       id: `ai-loading-${Date.now()}`,
       type: 'ai',
-      content: 'Düşünüyorum...',
+      content: options.forceGuideEditPlan ? 'Araştırma planınızı güncelliyorum...' : 'Düşünüyorum...',
       timestamp: new Date()
     };
     setMessages(prev => [...prev, loadingMessage]);
@@ -219,7 +307,9 @@ Plan:
           message: messageText,
           conversationHistory: conversationHistory,
           researchContext,
-          forcePlan: options.forcePlan === true
+          guideContext: discussionGuide,
+          forcePlan: options.forcePlan === true,
+          forceGuideEditPlan: options.forceGuideEditPlan === true,
         }
       });
 
@@ -235,7 +325,12 @@ Plan:
         // Update it to show a different message
         setMessages(prev => prev.map(msg =>
           msg.id.includes('loading')
-            ? { ...msg, content: 'Araştırma sorularınızı hazırlıyorum...' }
+            ? {
+                ...msg,
+                content: options.forceGuideEditPlan
+                  ? 'Araştırma planınızı güncelliyorum...'
+                  : 'Araştırma sorularınızı hazırlıyorum...'
+              }
             : msg
         ));
 
@@ -275,7 +370,9 @@ Plan:
             const successMessage: ChatMessage = {
               id: `ai-success-${Date.now()}`,
               type: 'ai',
-              content: 'Elbette sorularınızı hazırladım, dilerseniz üstlerine tıklayarak manuel olarak değiştirebilirsiniz ya da beraber konuşarak da ilerletebiliriz.',
+              content: options.forceGuideEditPlan
+                ? 'Araştırma planınızı güncelledim. Mevcut akışı koruyarak istediğiniz değişiklikleri uyguladım; isterseniz birlikte biraz daha rafine edebiliriz.'
+                : 'Elbette sorularınızı hazırladım, dilerseniz üstlerine tıklayarak manuel olarak değiştirebilirsiniz ya da beraber konuşarak da ilerletebiliriz.',
               timestamp: new Date()
             };
             return [...filtered, successMessage];
@@ -343,7 +440,9 @@ Plan:
     const currentInput = inputMessage;
     setInputMessage('');
 
-    await sendToLLM(currentInput);
+    await sendToLLM(currentInput, {
+      forceGuideEditPlan: detectGuideEditIntent(currentInput, discussionGuide),
+    });
   };
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
