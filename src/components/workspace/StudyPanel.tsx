@@ -543,11 +543,11 @@ const StudyPanel = ({
     });
   }, [discussionGuide]);
 
-  const handleReviewQuestion = async (sectionId: string, questionIndex: number) => {
+  const handleReviewQuestion = async (sectionId: string, questionIndex: number, questionOverride?: string) => {
     if (!discussionGuide) return;
 
     const questionKey = getQuestionKey(sectionId, questionIndex);
-    const trimmedQuestion = editValue.trim();
+    const trimmedQuestion = (questionOverride ?? editValue).trim();
     const section = discussionGuide.sections.find((item: any) => item.id === sectionId);
     const sectionIndex = discussionGuide.sections.findIndex((item: any) => item.id === sectionId);
 
@@ -1071,6 +1071,9 @@ const StudyPanel = ({
                   {section.questions.map((question: string, index: number) => {
               const questionKey = getQuestionKey(section.id, index);
               const isQuestionVisible = visibleQuestions[questionKey] === true;
+              const currentReview = questionReviews[questionKey];
+              const expectedReviewText = editingQuestion === questionKey ? editValue.trim() : question.trim();
+              const isReviewCurrent = !!currentReview && currentReview.reviewedQuestion === expectedReviewText;
               return <div key={`${section.id}-${index}`} className="group flex items-start space-x-2">
                         <span className="text-xs text-text-muted mt-2 w-5">
                           {index + 1}.
@@ -1086,54 +1089,54 @@ const StudyPanel = ({
                                   <Button size="sm" variant="outline" onClick={() => setEditingQuestion(null)}>
                                     İptal
                                   </Button>
-                                  <Button size="sm" variant="outline" onClick={() => handleReviewQuestion(section.id, index)} disabled={!editValue.trim() || reviewingQuestions[questionKey]}>
-                                    {reviewingQuestions[questionKey] ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-                                    Değerlendir
-                                  </Button>
                                 </div>
 
-                                {questionReviews[questionKey] && questionReviews[questionKey].reviewedQuestion !== editValue.trim() && <p className="text-xs text-text-secondary">
+                                {currentReview && currentReview.reviewedQuestion !== editValue.trim() && <p className="text-xs text-text-secondary">
                                     Metin değişti. Güncel yorum için yeniden değerlendir.
                                   </p>}
-
-                                {questionReviews[questionKey] && questionReviews[questionKey].reviewedQuestion === editValue.trim() && <div className="rounded-lg border border-border-light bg-surface/70 p-3 space-y-3">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <Badge className={getReviewStatusClasses(questionReviews[questionKey].status)}>
-                                        {getReviewStatusLabel(questionReviews[questionKey].status)}
-                                      </Badge>
-                                      <p className="text-xs text-text-secondary">
-                                        {questionReviews[questionKey].summary}
-                                      </p>
-                                    </div>
-
-                                    {questionReviews[questionKey].issues.length > 0 && <div className="space-y-2">
-                                        {questionReviews[questionKey].issues.map((issue) => <div key={issue.code} className="rounded-md border border-border-light bg-white/80 px-3 py-2">
-                                            <p className="text-xs font-medium text-text-primary">{issue.label}</p>
-                                            <p className="text-xs text-text-secondary">{issue.detail}</p>
-                                          </div>)}
-                                      </div>}
-
-                                    <div className="flex flex-wrap gap-2">
-                                      {Object.entries(questionReviews[questionKey].checks).map(([key, check]) => <span key={key} className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] ${check.passed ? "bg-status-success-light text-status-success" : "bg-surface text-text-secondary"}`}>
-                                          {check.label}
-                                        </span>)}
-                                    </div>
-
-                                    {questionReviews[questionKey].suggestedRewrite && <div className="rounded-md bg-white/80 px-3 py-3">
-                                        <p className="text-[11px] font-medium uppercase tracking-wide text-text-secondary mb-1">Öneri</p>
-                                        <p className="text-sm text-text-primary">"{questionReviews[questionKey].suggestedRewrite}"</p>
-                                      </div>}
-                                  </div>}
                               </div> : isQuestionVisible ? <div className="text-sm text-text-primary cursor-text hover:bg-surface rounded p-2 -m-2 transition-colors" onClick={() => handleEditQuestion(questionKey, question)}>
                               {question}
                             </div> : <div className="rounded-md border border-border-light bg-surface/60 px-3 py-3">
                               <Skeleton className={`h-4 ${questionSkeletonWidth}`} />
                             </div>}
+
+                          {isReviewCurrent && <div className="mt-3 rounded-lg border border-border-light bg-surface/70 p-3 space-y-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge className={getReviewStatusClasses(currentReview.status)}>
+                                  {getReviewStatusLabel(currentReview.status)}
+                                </Badge>
+                                <p className="text-xs text-text-secondary">
+                                  {currentReview.summary}
+                                </p>
+                              </div>
+
+                              {currentReview.issues.length > 0 && <div className="space-y-2">
+                                  {currentReview.issues.map((issue) => <div key={issue.code} className="rounded-md border border-border-light bg-white/80 px-3 py-2">
+                                      <p className="text-xs font-medium text-text-primary">{issue.label}</p>
+                                      <p className="text-xs text-text-secondary">{issue.detail}</p>
+                                    </div>)}
+                                </div>}
+
+                              <div className="flex flex-wrap gap-2">
+                                {Object.entries(currentReview.checks).map(([key, check]) => <span key={key} className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] ${check.passed ? "bg-status-success-light text-status-success" : "bg-surface text-text-secondary"}`}>
+                                    {check.label}
+                                  </span>)}
+                              </div>
+
+                              {currentReview.suggestedRewrite && <div className="rounded-md bg-white/80 px-3 py-3">
+                                  <p className="text-[11px] font-medium uppercase tracking-wide text-text-secondary mb-1">Öneri</p>
+                                  <p className="text-sm text-text-primary">"{currentReview.suggestedRewrite}"</p>
+                                </div>}
+                            </div>}
                         </div>
                         
-                        <div className="flex items-center">
+                        <div className="flex items-center gap-1">
                           <Button size="sm" variant="ghost" className={`transition-opacity ${isQuestionVisible ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => handleEditQuestion(questionKey, question)}>
                             <Edit3 className="w-3 h-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className={`transition-opacity text-brand-primary hover:text-brand-primary-hover ${isQuestionVisible ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => handleReviewQuestion(section.id, index, question)} disabled={reviewingQuestions[questionKey]}>
+                            {reviewingQuestions[questionKey] ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
+                            <span>Değerlendir</span>
                           </Button>
                           <Button size="sm" variant="ghost" className={`transition-opacity text-text-secondary hover:text-destructive ${isQuestionVisible ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => handleDeleteQuestion(section.id, index)}>
                             <Trash2 className="w-3 h-3" />

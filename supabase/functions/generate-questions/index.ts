@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import {
   buildFallbackQuestions,
   isWarmupSectionTitle,
+  repairGeneratedQuestions,
   sanitizeGeneratedQuestions,
 } from "../_shared/question-quality.ts";
 
@@ -121,7 +122,7 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 ✓ **Nötr ve Yönlendirmesiz**: Kullanıcıya bir sorun, duygu veya yargı empoze etme
 
 ## Bölüm Türlerine Göre Yaklaşım
-- **Isınma ve Bağlam**: "Bugün gününüz nasıl geçiyor, buraya gelmeden önce neler yapıyordunuz?", "Bu konunun günlük hayatınızda ne kadar yeri var?"
+- **Isınma**: "Bugün gününüz nasıl geçiyor, buraya gelmeden önce neler yapıyordunuz?", "Bu konunun günlük hayatınızda ne kadar yeri var?"
 - **Profesyonel Geçmiş / Bağlam**: "Bu alanda ne zamandır çalışıyorsun?", "Günlük iş akışında hangi araçları kullanıyorsun?"
 - **İlk İzlenimler**: "İlk gördüğünde aklına ne geldi?", "Dikkatini çeken ilk şey ne oldu?"
 - **Detaylı Keşif**: "Bu özelliği kullanırken aklından neler geçti?", "Başka ürünlerle kıyasladığında sana ne farklı göründü?"
@@ -234,6 +235,7 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
     console.log('Generated response:', generatedText);
 
     let questions = parseQuestionsFromText(generatedText);
+    questions = repairGeneratedQuestions(questions, { sectionTitle, sectionIndex });
     let { valid, rejected } = sanitizeGeneratedQuestions(questions, { sectionTitle, sectionIndex });
 
     if (valid.length < requestedCount) {
@@ -266,6 +268,7 @@ Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warm
       if (retryResponse.ok) {
         const retryData = await retryResponse.json();
         questions = parseQuestionsFromText(retryData.choices[0].message.content);
+        questions = repairGeneratedQuestions(questions, { sectionTitle, sectionIndex });
         ({ valid, rejected } = sanitizeGeneratedQuestions(questions, { sectionTitle, sectionIndex }));
       }
     }

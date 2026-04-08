@@ -1,4 +1,4 @@
-export const WARMUP_SECTION_TITLE = "Isınma ve Bağlam";
+export const WARMUP_SECTION_TITLE = "Isınma";
 export const WARMUP_SECTION_ID = "warmup_context";
 
 export type QuestionReviewStatus = "strong" | "caution" | "problematic";
@@ -363,6 +363,40 @@ export const sanitizeGeneratedQuestions = (
   });
 
   return { valid, rejected };
+};
+
+export const repairGeneratedQuestions = (
+  questions: string[],
+  context: { sectionTitle?: string; sectionIndex?: number } = {},
+) => {
+  const { sectionTitle = "", sectionIndex } = context;
+  const repaired = questions.map((question) => {
+    const cleaned = cleanQuestion(question);
+    if (!cleaned) {
+      return "";
+    }
+
+    const review = assessQuestionQuality({
+      question: cleaned,
+      sectionTitle,
+      sectionIndex,
+    });
+
+    if (shouldRejectGeneratedQuestion(review)) {
+      return buildFallbackRewrite({
+        question: cleaned,
+        sectionTitle,
+        sectionIndex,
+      });
+    }
+
+    return cleaned;
+  });
+
+  const deduped = dedupeQuestions(repaired.filter(Boolean));
+  const { valid } = sanitizeGeneratedQuestions(deduped, context);
+
+  return valid;
 };
 
 export const ensureWarmupSection = (plan: any) => {

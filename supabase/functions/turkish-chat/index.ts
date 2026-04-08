@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import {
   buildFallbackQuestions,
   ensureWarmupSection,
+  repairGeneratedQuestions,
   sanitizeGeneratedQuestions,
   WARMUP_SECTION_TITLE,
 } from "../_shared/question-quality.ts";
@@ -388,7 +389,12 @@ const normalizeResearchPlan = (plan: any) => {
         : [];
 
       const rawTitle = cleanText(section?.title);
-      let { valid: questions } = sanitizeGeneratedQuestions(rawQuestions, {
+      const repairedQuestions = repairGeneratedQuestions(rawQuestions, {
+        sectionTitle: rawTitle,
+        sectionIndex: index,
+      });
+
+      let { valid: questions } = sanitizeGeneratedQuestions(repairedQuestions, {
         sectionTitle: rawTitle,
         sectionIndex: index,
       });
