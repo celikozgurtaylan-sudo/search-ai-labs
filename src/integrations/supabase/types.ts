@@ -356,6 +356,25 @@ export type Database = {
           user_id: string
         }[]
       }
+      resolve_participant_invitation_access: {
+        Args: { token_input: string }
+        Returns: {
+          access_state: string
+          message: string | null
+          participant_data: Json | null
+          project_link_access: string
+        }[]
+      }
+      resolve_session_access: {
+        Args: { session_token_input: string }
+        Returns: {
+          access_state: string
+          message: string | null
+          participant_data: Json | null
+          project_data: Json | null
+          session_data: Json | null
+        }[]
+      }
       is_valid_participant_token: {
         Args: { token_input: string }
         Returns: boolean

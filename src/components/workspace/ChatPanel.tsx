@@ -4,7 +4,7 @@ import { Send, User } from "lucide-react";
 import { supabase } from '@/integrations/supabase/client';
 import { SearchoMark } from "@/components/icons/SearchoMark";
 
-interface ChatMessage {
+export interface ChatMessage {
   id: string;
   type: 'user' | 'ai';
   content: string;
@@ -24,10 +24,14 @@ interface ChatPanelProps {
   projectData?: any;
   currentStep?: 'guide' | 'recruit' | 'starting' | 'run' | 'analyze';
   discussionGuide?: any;
+  layoutMode?: 'sidebar' | 'centered';
+  initialMessages?: ChatMessage[];
+  initialConversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
   onResearchDetected?: (isResearch: boolean) => void;
   onResearchPlanGenerated?: (plan: any) => void;
   onResearchPlanLoadingChange?: (isLoading: boolean) => void;
   onMessagesUpdate?: (messages: ChatMessage[]) => void;
+  onConversationHistoryUpdate?: (history: Array<{ role: 'user' | 'assistant'; content: string }>) => void;
 }
 
 interface ResearchContextPayload {
@@ -133,19 +137,25 @@ const ChatPanel = ({
   projectData,
   currentStep = 'guide',
   discussionGuide,
+  layoutMode = 'sidebar',
+  initialMessages = [],
+  initialConversationHistory = [],
   onResearchDetected,
   onResearchPlanGenerated,
   onResearchPlanLoadingChange,
   onMessagesUpdate,
+  onConversationHistoryUpdate,
 }: ChatPanelProps) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => initialMessages);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [conversationHistory, setConversationHistory] = useState<any[]>([]);
+  const [conversationHistory, setConversationHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>(
+    () => initialConversationHistory,
+  );
 
   const endRef = useRef<HTMLDivElement | null>(null);
   const isWritingResearchPlanRef = useRef(false);
-  const hasTriggeredInitialMessageRef = useRef(false);
+  const hasTriggeredInitialMessageRef = useRef(initialMessages.length > 0 || initialConversationHistory.length > 0);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -154,6 +164,10 @@ const ChatPanel = ({
   useEffect(() => {
     onMessagesUpdate?.(messages);
   }, [messages, onMessagesUpdate]);
+
+  useEffect(() => {
+    onConversationHistoryUpdate?.(conversationHistory);
+  }, [conversationHistory, onConversationHistoryUpdate]);
 
   // Load initial message from localStorage if available
   useEffect(() => {
@@ -245,33 +259,10 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
   };
 
   const buildInitialPrompt = (initialMessage: string) => {
-    const usability = projectData?.analysis?.usabilityTesting;
-    if (!usability) {
-      return {
-        outgoingMessage: initialMessage,
-        displayMessage: initialMessage,
-        forcePlan: false,
-      };
-    }
-
-    const screens = Array.isArray(projectData?.analysis?.designScreens)
-      ? projectData.analysis.designScreens
-          .map((screen: any, index: number) => `${index + 1}. ${screen.name || "Screen"}`)
-          .join(", ")
-      : "Screen bilgisi yok";
-
     return {
       displayMessage: initialMessage,
-      outgoingMessage: `${initialMessage}
-
-Bu bir ekran tabanli kullanilabilirlik testidir. Elimde arastirma amaci, ana gorev ve ekranlar var.
-Simdi ek netlestirme sormadan dogrudan kullanilabilirlik odakli arastirma plani olustur.
-Plan:
-- en az 3 bolumden olussun
-- her bolum 2-4 acik uclu soru icersin
-- sorular gorev tamamlama, anlasilirlik, guven, karar anlari ve surtunme noktalarina odaklansin
-- ekranlar: ${screens}`,
-      forcePlan: true,
+      outgoingMessage: initialMessage,
+      forcePlan: false,
     };
   };
 
@@ -317,6 +308,7 @@ Plan:
           conversationHistory: conversationHistory,
           researchContext,
           guideContext: discussionGuide,
+          researchMode: projectData?.analysis?.researchMode ?? "structured",
           forcePlan: options.forcePlan === true,
           forceGuideEditPlan: options.forceGuideEditPlan === true,
         }
@@ -484,9 +476,164 @@ Plan:
     }
   };
 
+  const isCenteredLayout = layoutMode === 'centered';
+
+  const renderMessages = (centered: boolean) => {
+    if (messages.length === 0) {
+      return centered ? (
+        <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+          <SearchoMark className="mb-5 h-12 w-12 text-brand-primary/70" />
+          <h2 className="text-2xl font-semibold text-text-primary">Araştırma çerçevesini birlikte netleştirelim</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-text-secondary">
+            Araştırmak istediğin konuyu birkaç cümleyle yaz. Searcho önce bağlamı anlayacak, sonra doğru anda planı açacak.
+          </p>
+        </div>
+      ) : (
+        <div className="py-8 text-center text-text-muted">
+          <SearchoMark className="mx-auto mb-4 h-12 w-12 text-brand-primary opacity-50" />
+          <p>Merhaba! Size nasıl yardımcı olabilirim?</p>
+          <p className="mt-2 text-sm">Sormak istediğiniz her şeyi yazabilirsiniz.</p>
+        </div>
+      );
+    }
+
+    return messages.map((message) => {
+      const timestamp = message.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+      const bubbleWidth = centered ? "max-w-[88%] sm:max-w-[80%]" : "max-w-lg";
+
+      if (message.type === 'user') {
+        return (
+          <div key={message.id} className="flex justify-end space-x-3">
+            <div className={`flex-1 ${bubbleWidth}`}>
+              <div className="rounded-2xl bg-brand-primary px-4 py-3 text-white">
+                <p className="text-sm leading-relaxed whitespace-pre-line">
+                  {message.content}
+                </p>
+                {message.clarifications && message.clarifications.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    {message.clarifications.map((clarification, index) => (
+                      <div
+                        key={`${message.id}-clarification-${index}`}
+                        className="rounded-2xl border border-white/20 bg-white px-3 py-3 text-left text-text-primary"
+                      >
+                        <p className="text-sm font-semibold leading-snug">
+                          {clarification.question}
+                        </p>
+                        <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                          {clarification.answer}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {message.attachments && message.attachments.length > 0 && (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {message.attachments.map((attachment, index) => (
+                      <div key={`${message.id}-attachment-${index}`} className="overflow-hidden rounded-xl border border-white/20 bg-white/10">
+                        <img
+                          src={attachment.url}
+                          alt={attachment.name || "Attached screen"}
+                          className="h-28 w-full object-cover"
+                        />
+                        <div className="px-2 py-1 text-[11px] text-white/85">
+                          {attachment.name || "Screen"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="mt-1 ml-4 text-xs text-text-muted">
+                {timestamp}
+              </p>
+            </div>
+
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-border-light bg-surface text-text-secondary">
+              <User className="h-4 w-4" aria-hidden="true" />
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div key={message.id} className="flex justify-start space-x-3">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-primary-light text-brand-primary">
+            <SearchoMark className="h-4 w-4" />
+          </div>
+
+          <div className={`flex-1 ${bubbleWidth}`}>
+            <div className="rounded-2xl border border-border bg-surface px-4 py-3 text-text-primary">
+              <p className="text-sm leading-relaxed whitespace-pre-line">
+                {message.content}
+              </p>
+            </div>
+            <p className="mt-1 ml-4 text-xs text-text-muted">
+              {timestamp}
+            </p>
+          </div>
+        </div>
+      );
+    });
+  };
+
+  if (isCenteredLayout) {
+    return (
+      <div className="h-full overflow-hidden bg-white">
+        <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 py-8">
+          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto min-h-0 scroll-smooth">
+              <div className="min-h-full space-y-5 py-6">
+                {renderMessages(true)}
+                {isLoading && (
+                  <div className="flex justify-start space-x-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-primary-light text-brand-primary">
+                      <SearchoMark className="h-4 w-4" />
+                    </div>
+                    <div className="rounded-2xl border border-border bg-surface p-3 text-text-primary">
+                      <div className="flex space-x-1">
+                        <div className="h-2 w-2 animate-bounce rounded-full bg-text-secondary"></div>
+                        <div className="h-2 w-2 animate-bounce rounded-full bg-text-secondary" style={{ animationDelay: '0.1s' }}></div>
+                        <div className="h-2 w-2 animate-bounce rounded-full bg-text-secondary" style={{ animationDelay: '0.2s' }}></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div ref={endRef} />
+              </div>
+            </div>
+
+            <div className="border-t border-border-light bg-white/95 pt-4 pb-[env(safe-area-inset-bottom)]">
+              <div className="rounded-3xl border border-border-light bg-surface/30 p-3 shadow-sm">
+                <div className="flex items-end space-x-3">
+                  <textarea
+                    ref={textareaRef}
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Araştırmak istediğin konuyu yaz..."
+                    className="flex-1 resize-none overflow-y-auto scrollbar-hide rounded-2xl border border-input bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isLoading}
+                    rows={1}
+                    style={{ minHeight: '48px', maxHeight: '160px', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                  />
+                  <Button
+                    onClick={handleSendMessage}
+                    disabled={!inputMessage.trim() || isLoading}
+                    className="h-12 flex-shrink-0 rounded-2xl px-5"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Chat Header */}
       <div className="border-b border-border-light p-4">
         <div className="flex items-center justify-between">
           <div className="flex-1">
@@ -496,88 +643,8 @@ Plan:
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 scroll-smooth space-y-4">
-        {messages.length === 0 ? (
-          <div className="text-center text-text-muted py-8">
-            <SearchoMark className="w-12 h-12 mx-auto mb-4 opacity-50 text-brand-primary" />
-            <p>Merhaba! Size nasıl yardımcı olabilirim?</p>
-            <p className="text-sm mt-2">Sormak istediğiniz her şeyi yazabilirsiniz.</p>
-          </div>
-        ) : (
-          messages.map((message) => (
-            <div key={message.id}>
-              {message.type === 'user' ? (
-                <div className="flex space-x-3 justify-end">
-                  <div className="flex-1 max-w-lg">
-                    <div className="rounded-2xl px-4 py-3 bg-brand-primary text-white">
-                      <p className="text-sm leading-relaxed whitespace-pre-line">
-                        {message.content}
-                      </p>
-                      {message.clarifications && message.clarifications.length > 0 && (
-                        <div className="mt-4 space-y-2">
-                          {message.clarifications.map((clarification, index) => (
-                            <div
-                              key={`${message.id}-clarification-${index}`}
-                              className="rounded-2xl border border-white/20 bg-white px-3 py-3 text-left text-text-primary"
-                            >
-                              <p className="text-sm font-semibold leading-snug">
-                                {clarification.question}
-                              </p>
-                              <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-                                {clarification.answer}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {message.attachments && message.attachments.length > 0 && (
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          {message.attachments.map((attachment, index) => (
-                            <div key={`${message.id}-attachment-${index}`} className="overflow-hidden rounded-xl border border-white/20 bg-white/10">
-                              <img
-                                src={attachment.url}
-                                alt={attachment.name || "Attached screen"}
-                                className="h-28 w-full object-cover"
-                              />
-                              <div className="px-2 py-1 text-[11px] text-white/85">
-                                {attachment.name || "Screen"}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-text-muted mt-1 ml-4">
-                      {message.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                  
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center border border-border-light bg-surface text-text-secondary">
-                    <User className="w-4 h-4" aria-hidden="true" />
-                  </div>
-                </div>
-              ) : (
-                <div className="flex space-x-3 justify-start">
-                  <div className="w-8 h-8 bg-brand-primary-light text-brand-primary rounded-full flex items-center justify-center flex-shrink-0">
-                    <SearchoMark className="w-4 h-4" />
-                  </div>
-                  
-                  <div className="flex-1 max-w-lg">
-                    <div className="rounded-2xl px-4 py-3 bg-surface border border-border text-text-primary">
-                      <p className="text-sm leading-relaxed whitespace-pre-line">
-                        {message.content}
-                      </p>
-                    </div>
-                    <p className="text-xs text-text-muted mt-1 ml-4">
-                      {message.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))
-        )}
+        {renderMessages(false)}
         {isLoading && (
           <div className="flex justify-start space-x-3">
             <div className="w-8 h-8 bg-brand-primary-light text-brand-primary rounded-full flex items-center justify-center">
@@ -595,7 +662,6 @@ Plan:
         <div ref={endRef} />
       </div>
 
-      {/* Chat Input */}
       <div className="flex-shrink-0 bg-white border-t border-border-light pb-[env(safe-area-inset-bottom)]">
         <div className="p-4">
           <div className="flex items-end space-x-3">

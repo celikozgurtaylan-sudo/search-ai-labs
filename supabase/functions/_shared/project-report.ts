@@ -1,4 +1,5 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { findThemeById, getResearchModeFromAnalysis, normalizeAIEnhancedBrief } from "./ai-enhanced.ts";
 
 const REPORT_VERSION = 1;
 const REPORT_MODEL = "openai/gpt-5.2";
@@ -86,11 +87,16 @@ const sanitizeIdList = (values: unknown, allowed: Set<string>) =>
 
 const buildQuestionTemplateKey = (section: string, questionText: string) => `${section}:::${questionText}`;
 
-const buildEmptyReport = (trigger: string, failureMessage: string | null = null) => ({
+const buildEmptyReport = (
+  trigger: string,
+  failureMessage: string | null = null,
+  interviewMode: "structured" | "ai_enhanced" = "structured",
+) => ({
+  interviewMode,
   status: failureMessage ? "failed" : "empty",
   version: REPORT_VERSION,
   generatedAt: failureMessage ? null : new Date().toISOString(),
-  generatedFrom: "transcript-only",
+  generatedFrom: interviewMode === "ai_enhanced" ? "ai-enhanced-transcript" : "transcript-only",
   sourceStats: { ...EMPTY_SOURCE_STATS },
   overview: { ...EMPTY_OVERVIEW },
   executiveSummary: failureMessage
@@ -101,6 +107,10 @@ const buildEmptyReport = (trigger: string, failureMessage: string | null = null)
   recommendations: [],
   questionBreakdown: [],
   participantBreakdown: [],
+  anchorCoverage: [],
+  followUpPaths: [],
+  participantJourneys: [],
+  turnCatalog: [],
   quoteCatalog: [],
   generationMeta: {
     trigger,
@@ -160,12 +170,14 @@ export async function setProjectReportStatus(
   const project = await loadProjectWithAnalysis(supabase, projectId);
   const existingAnalysis = isRecord(project.analysis) ? project.analysis : {};
   const existingReport = isRecord(existingAnalysis.report) ? existingAnalysis.report : {};
+  const interviewMode = getResearchModeFromAnalysis(existingAnalysis);
 
   const nextReport = {
     ...existingReport,
+    interviewMode,
     status,
     version: REPORT_VERSION,
-    generatedFrom: "transcript-only",
+    generatedFrom: interviewMode === "ai_enhanced" ? "ai-enhanced-transcript" : "transcript-only",
     generatedAt: typeof existingReport.generatedAt === "string" ? existingReport.generatedAt : null,
     generationMeta: {
       ...(isRecord(existingReport.generationMeta) ? existingReport.generationMeta : {}),
@@ -318,6 +330,426 @@ Kurallar:
   return JSON.parse(rawJson);
 }
 
+async function generateAIEnhancedProjectReport(params: {
+  supabase: any;
+  projectId: string;
+  project: any;
+  analysisContext: Record<string, unknown>;
+  participants: any[];
+  sessions: any[];
+  questions: any[];
+  responses: any[];
+  input: {
+    trigger: string;
+    triggerSessionId?: string | null;
+  };
+}) {
+  const brief = normalizeAIEnhancedBrief(params.analysisContext.aiEnhancedBrief);
+  const completedSessions = params.sessions.filter((session: any) => session.status === "completed" || Boolean(session.ended_at));
+
+  if (params.sessions.length === 0 || !brief) {
+    const report = buildEmptyReport(params.input.trigger, null, "ai_enhanced");
+    await persistProjectReport(params.supabase, params.projectId, report);
+    return report;
+  }
+
+  const participantsById = new Map(asArray<any>(params.participants).map((participant) => [participant.id, participant]));
+  const sessionsById = new Map(asArray<any>(params.sessions).map((session) => [session.id, session]));
+  const questionsById = new Map(asArray<any>(params.questions).map((question) => [question.id, question]));
+  const completedSessionIdSet = new Set(completedSessions.map((session: any) => session.id));
+  const completedResponses = asArray<any>(params.responses).filter(
+    (response) => response.is_complete && completedSessionIdSet.has(response.session_id),
+  );
+  const answeredResponses = completedResponses.filter((response) => asString(response.transcription).length > 0);
+  const skippedResponses = completedResponses.filter((response) => Boolean(isRecord(response.metadata) && response.metadata.skipped));
+  const responsesByQuestionId = new Map<string, any>();
+
+  completedResponses.forEach((response) => {
+    responsesByQuestionId.set(response.question_id, response);
+  });
+
+  const joinedParticipantCount = asArray<any>(params.participants).filter((participant) =>
+    Boolean(participant.joined_at) || participant.status === "joined" || participant.status === "completed",
+  ).length;
+  const completedParticipantCount = asArray<any>(params.participants).filter((participant) => participant.status === "completed").length;
+  const responseDurations = answeredResponses
+    .map((response) => asNumber(response.audio_duration_ms))
+    .filter((value): value is number => value !== null && value > 0);
+  const sessionDurations = completedSessions
+    .map((session: any) => durationBetween(session.started_at, session.ended_at))
+    .filter((value): value is number => value !== null && value > 0);
+
+  const sessionRefById = new Map<string, string>();
+  completedSessions.forEach((session: any, index: number) => {
+    sessionRefById.set(session.id, `session-${index + 1}`);
+  });
+
+  const quoteCatalog = answeredResponses.slice(0, MAX_QUOTES_FOR_PROMPT).map((response, index) => {
+    const question = questionsById.get(response.question_id);
+    const session = sessionsById.get(response.session_id);
+    const participant = participantsById.get(response.participant_id);
+    const questionMetadata = isRecord(question?.metadata) ? question.metadata : {};
+    const anchorId = asString(questionMetadata.anchorId) || null;
+    const anchorLabel = brief.anchorQuestions.find((anchor) => anchor.id === anchorId)?.text || null;
+
+    return {
+      quoteId: `quote-${index + 1}`,
+      responseId: response.id,
+      sessionId: response.session_id,
+      sessionRef: sessionRefById.get(response.session_id) || response.session_id,
+      participantId: response.participant_id ?? null,
+      participantLabel: asString(participant?.name) || asString(participant?.email) || "Katılımcı",
+      questionId: response.question_id,
+      questionRef: anchorId || `turn-${index + 1}`,
+      questionText: asString(question?.question_text),
+      section: asString(question?.section, "AI Enhanced"),
+      text: truncateText(asString(response.transcription)),
+      source: asString(questionMetadata.source) as "anchor" | "follow_up" | "transition" | "closing" | null,
+      anchorId,
+      anchorLabel,
+      turnIndex: asNumber(questionMetadata.turnIndex),
+      videoUrl: asString(response.video_url) || null,
+      videoDurationMs: asNumber(response.video_duration_ms),
+      audioDurationMs: asNumber(response.audio_duration_ms),
+    };
+  });
+
+  const anchorCoverageBase = brief.anchorQuestions.map((anchor) => {
+    const anchorRows = asArray<any>(params.questions).filter((question) => {
+      const metadata = isRecord(question.metadata) ? question.metadata : {};
+      return metadata.source === "anchor" && metadata.anchorId === anchor.id && completedSessionIdSet.has(question.session_id);
+    });
+
+    const answeredSessionIds = new Set<string>();
+    const skippedSessionIds = new Set<string>();
+    const durations: number[] = [];
+
+    anchorRows.forEach((question) => {
+      const response = responsesByQuestionId.get(question.id);
+      if (!response) return;
+      if (Boolean(isRecord(response.metadata) && response.metadata.skipped)) {
+        skippedSessionIds.add(response.session_id);
+        return;
+      }
+      if (asString(response.transcription).length > 0) {
+        answeredSessionIds.add(response.session_id);
+      }
+      const audioDuration = asNumber(response.audio_duration_ms);
+      if (audioDuration && audioDuration > 0) {
+        durations.push(audioDuration);
+      }
+    });
+
+    const themeTitle = findThemeById(brief, anchor.themeId)?.title || "AI Enhanced";
+    const quoteIds = quoteCatalog
+      .filter((quote) => quote.anchorId === anchor.id)
+      .map((quote) => quote.quoteId)
+      .slice(0, 4);
+
+    return {
+      anchorId: anchor.id,
+      anchorLabel: anchor.text,
+      themeTitle,
+      answeredSessionCount: answeredSessionIds.size,
+      skippedSessionCount: skippedSessionIds.size,
+      coverageRate: completedSessions.length > 0
+        ? roundToOneDecimal((answeredSessionIds.size / completedSessions.length) * 100)
+        : 0,
+      averageResponseDurationMs: average(durations),
+      quoteIds,
+      summary: "",
+    };
+  });
+
+  const followUpPathMap = new Map<string, {
+    id: string;
+    anchorId: string | null;
+    anchorLabel: string;
+    questionText: string;
+    count: number;
+    sessionIds: Set<string>;
+    quoteIds: string[];
+  }>();
+
+  asArray<any>(params.questions).forEach((question, index) => {
+    const metadata = isRecord(question.metadata) ? question.metadata : {};
+    if (metadata.source !== "follow_up" || !completedSessionIdSet.has(question.session_id)) return;
+
+    const anchorId = asString(metadata.anchorId) || null;
+    const anchorLabel = brief.anchorQuestions.find((anchor) => anchor.id === anchorId)?.text || "AI follow-up";
+    const key = `${anchorId || "none"}::${asString(question.question_text)}`;
+
+    if (!followUpPathMap.has(key)) {
+      followUpPathMap.set(key, {
+        id: `follow-up-${index + 1}`,
+        anchorId,
+        anchorLabel,
+        questionText: asString(question.question_text),
+        count: 0,
+        sessionIds: new Set<string>(),
+        quoteIds: [],
+      });
+    }
+
+    const entry = followUpPathMap.get(key)!;
+    entry.count += 1;
+    entry.sessionIds.add(question.session_id);
+    const matchingQuote = quoteCatalog.find((quote) => quote.questionId === question.id);
+    if (matchingQuote) {
+      entry.quoteIds.push(matchingQuote.quoteId);
+    }
+  });
+
+  const followUpPaths = Array.from(followUpPathMap.values())
+    .sort((left, right) => right.count - left.count)
+    .map((entry) => ({
+      id: entry.id,
+      anchorId: entry.anchorId,
+      anchorLabel: entry.anchorLabel,
+      questionText: entry.questionText,
+      count: entry.count,
+      sessionCount: entry.sessionIds.size,
+      quoteIds: Array.from(new Set(entry.quoteIds)).slice(0, 3),
+    }));
+
+  const participantJourneysBase = completedSessions.map((session: any) => {
+    const participant = participantsById.get(session.participant_id);
+    const sessionQuestions = asArray<any>(params.questions).filter((question) => question.session_id === session.id);
+    const anchorCoverageCount = sessionQuestions.filter((question) => {
+      const metadata = isRecord(question.metadata) ? question.metadata : {};
+      return metadata.source === "anchor";
+    }).length;
+    const followUpCount = sessionQuestions.filter((question) => {
+      const metadata = isRecord(question.metadata) ? question.metadata : {};
+      return metadata.source === "follow_up";
+    }).length;
+    const quoteIds = quoteCatalog
+      .filter((quote) => quote.sessionId === session.id)
+      .map((quote) => quote.quoteId)
+      .slice(0, 4);
+
+    return {
+      sessionId: session.id,
+      sessionRef: sessionRefById.get(session.id) || session.id,
+      participantId: session.participant_id ?? null,
+      participantLabel: asString(participant?.name) || asString(participant?.email) || "Katılımcı",
+      anchorCoverageCount,
+      followUpCount,
+      sessionDurationMs: durationBetween(session.started_at, session.ended_at),
+      summary: "",
+      quoteIds,
+    };
+  });
+
+  const turnCatalog = asArray<any>(params.questions)
+    .filter((question) => completedSessionIdSet.has(question.session_id))
+    .sort((left, right) => {
+      const leftCreated = Date.parse(asString(left.created_at));
+      const rightCreated = Date.parse(asString(right.created_at));
+      if (left.session_id === right.session_id) {
+        return (left.question_order ?? 0) - (right.question_order ?? 0);
+      }
+      return leftCreated - rightCreated;
+    })
+    .map((question) => {
+      const response = responsesByQuestionId.get(question.id);
+      const metadata = isRecord(question.metadata) ? question.metadata : {};
+      const session = sessionsById.get(question.session_id);
+      const participant = participantsById.get(session?.participant_id);
+      const anchorId = asString(metadata.anchorId) || null;
+      const anchorLabel = brief.anchorQuestions.find((anchor) => anchor.id === anchorId)?.text || null;
+
+      return {
+        questionId: question.id,
+        responseId: response?.id ?? null,
+        sessionId: question.session_id,
+        sessionRef: sessionRefById.get(question.session_id) || question.session_id,
+        participantLabel: asString(participant?.name) || asString(participant?.email) || "Katılımcı",
+        questionText: asString(question.question_text),
+        responseText: truncateText(asString(response?.transcription) || asString(response?.response_text)),
+        source: (asString(metadata.source) || "anchor") as "anchor" | "follow_up" | "transition" | "closing",
+        anchorId,
+        anchorLabel,
+        turnIndex: asNumber(metadata.turnIndex),
+      };
+    });
+
+  const sourceStats = {
+    invitedParticipantCount: asArray<any>(params.participants).length,
+    joinedParticipantCount,
+    completedParticipantCount,
+    totalSessionCount: asArray<any>(params.sessions).length,
+    completedSessionCount: completedSessions.length,
+    pendingSessionCount: Math.max(asArray<any>(params.sessions).length - completedSessions.length, 0),
+    questionTemplateCount: anchorCoverageBase.length,
+    questionInstanceCount: asArray<any>(params.questions).length,
+    responsesAnalyzed: answeredResponses.length,
+    skippedResponseCount: skippedResponses.length,
+    quoteCount: quoteCatalog.length,
+  };
+
+  const overview = {
+    invitedParticipantCount: sourceStats.invitedParticipantCount,
+    joinedParticipantCount: sourceStats.joinedParticipantCount,
+    completedParticipantCount: sourceStats.completedParticipantCount,
+    joinRate: sourceStats.invitedParticipantCount > 0
+      ? roundToOneDecimal((sourceStats.joinedParticipantCount / sourceStats.invitedParticipantCount) * 100)
+      : 0,
+    completionRate: sourceStats.invitedParticipantCount > 0
+      ? roundToOneDecimal((sourceStats.completedParticipantCount / sourceStats.invitedParticipantCount) * 100)
+      : 0,
+    skipRate: completedResponses.length > 0
+      ? roundToOneDecimal((sourceStats.skippedResponseCount / completedResponses.length) * 100)
+      : 0,
+    averageResponseDurationMs: average(responseDurations),
+    averageSessionDurationMs: average(sessionDurations),
+    averageResponsesPerCompletedSession: completedSessions.length > 0
+      ? roundToOneDecimal(completedResponses.length / completedSessions.length)
+      : 0,
+  };
+
+  const deterministicSummary = completedSessions.length === 0
+    ? "Henüz tamamlanmış AI enhanced görüşme bulunmuyor."
+    : `${completedSessions.length} tamamlanmış AI enhanced görüşmeden ${answeredResponses.length} yanıt analiz edildi. Bulgular anchor omurga ve canlı follow-up akışına göre gösteriliyor.`;
+
+  const llmResult = await callLovableForReport({
+    projectTitle: asString(params.project.title, "AI Enhanced Araştırma"),
+    projectDescription: asString(params.project.description),
+    objective: brief.objective,
+    primaryTask: brief.decisionScope,
+    overview,
+    questionSummaries: anchorCoverageBase.map((anchor) => ({
+      questionRef: anchor.anchorId,
+      section: anchor.themeTitle,
+      questionText: anchor.anchorLabel,
+      answeredResponseCount: anchor.answeredSessionCount,
+      skippedResponseCount: anchor.skippedSessionCount,
+      coverageRate: anchor.coverageRate,
+    })),
+    participantSummaries: participantJourneysBase.map((journey) => ({
+      sessionRef: journey.sessionRef,
+      participantLabel: journey.participantLabel,
+      answeredResponseCount: journey.anchorCoverageCount,
+      skippedResponseCount: 0,
+    })),
+    quoteCatalog: quoteCatalog.map((quote) => ({
+      quoteId: quote.quoteId,
+      sessionRef: quote.sessionRef,
+      participantLabel: quote.participantLabel,
+      questionRef: quote.anchorId || quote.questionRef,
+      section: quote.section,
+      questionText: quote.questionText,
+      text: quote.text,
+    })),
+  }).catch((error) => {
+    console.error("AI enhanced report LLM generation failed:", error);
+    return null;
+  });
+
+  const quoteIdSet = new Set(quoteCatalog.map((quote) => quote.quoteId));
+  const anchorRefSet = new Set(anchorCoverageBase.map((anchor) => anchor.anchorId));
+  const sessionRefSet = new Set(participantJourneysBase.map((journey) => journey.sessionRef));
+
+  const findings = asArray<Record<string, unknown>>(llmResult?.findings)
+    .map((finding, index) => ({
+      id: `finding-${index + 1}`,
+      title: asString(finding.title, `Bulgu ${index + 1}`),
+      summary: asString(finding.summary),
+      quoteIds: sanitizeIdList(finding.quoteIds, quoteIdSet),
+      questionRefs: sanitizeIdList(finding.questionRefs, anchorRefSet),
+      sessionRefs: sanitizeIdList(finding.sessionRefs, sessionRefSet),
+    }))
+    .filter((finding) => finding.summary.length > 0 && finding.quoteIds.length > 0)
+    .map((finding) => ({
+      ...finding,
+      evidenceCount: finding.quoteIds.length,
+    }));
+
+  const findingTitleToId = new Map(findings.map((finding) => [normalizeTitle(finding.title), finding.id]));
+
+  const themes = asArray<Record<string, unknown>>(llmResult?.themes)
+    .map((theme, index) => {
+      const quoteIds = sanitizeIdList(theme.quoteIds, quoteIdSet);
+      return {
+        id: `theme-${index + 1}`,
+        title: asString(theme.title, `Tema ${index + 1}`),
+        description: asString(theme.description),
+        quoteIds,
+        questionRefs: sanitizeIdList(theme.questionRefs, anchorRefSet),
+        evidenceCount: quoteIds.length,
+      };
+    })
+    .filter((theme) => theme.description.length > 0 && theme.quoteIds.length > 0);
+
+  const recommendations = asArray<Record<string, unknown>>(llmResult?.recommendations)
+    .map((recommendation, index) => ({
+      id: `recommendation-${index + 1}`,
+      title: asString(recommendation.title, `Öneri ${index + 1}`),
+      description: asString(recommendation.description),
+      priority: clampPriority(recommendation.priority),
+      quoteIds: sanitizeIdList(recommendation.quoteIds, quoteIdSet),
+      linkedFindingIds: asArray<string>(recommendation.linkedFindingTitles)
+        .map((title) => findingTitleToId.get(normalizeTitle(title)))
+        .filter((value): value is string => Boolean(value)),
+    }))
+    .filter((recommendation) => recommendation.description.length > 0 && recommendation.quoteIds.length > 0);
+
+  const participantSummaries = new Map<string, { summary: string }>(
+    asArray<Record<string, unknown>>(llmResult?.participantSummaries)
+      .map((entry) => [asString(entry.sessionRef), { summary: asString(entry.summary) }] as [string, { summary: string }])
+      .filter(([sessionRef]) => sessionRef.length > 0),
+  );
+
+  const anchorInsights = new Map<string, { summary: string }>(
+    asArray<Record<string, unknown>>(llmResult?.questionInsights)
+      .map((entry) => [asString(entry.questionRef), { summary: asString(entry.summary) }] as [string, { summary: string }])
+      .filter(([anchorId]) => anchorId.length > 0),
+  );
+
+  const anchorCoverage = anchorCoverageBase.map((anchor) => ({
+    ...anchor,
+    summary: anchorInsights.get(anchor.anchorId)?.summary || anchor.summary,
+  }));
+
+  const participantJourneys = participantJourneysBase.map((journey) => ({
+    ...journey,
+    summary: participantSummaries.get(journey.sessionRef)?.summary || journey.summary,
+  }));
+
+  const report = {
+    interviewMode: "ai_enhanced",
+    status: completedSessions.length === 0 ? "empty" : "ready",
+    version: REPORT_VERSION,
+    generatedAt: new Date().toISOString(),
+    generatedFrom: "ai-enhanced-transcript",
+    sourceStats,
+    overview,
+    executiveSummary: asString(llmResult?.executiveSummary) || deterministicSummary,
+    findings,
+    themes,
+    recommendations,
+    questionBreakdown: [],
+    participantBreakdown: [],
+    anchorCoverage,
+    followUpPaths,
+    participantJourneys,
+    turnCatalog,
+    quoteCatalog,
+    generationMeta: {
+      trigger: params.input.trigger,
+      triggerSessionId: params.input.triggerSessionId ?? null,
+      generatedBy: REPORT_MODEL,
+      llmUsed: Boolean(llmResult),
+      analyzedSessionIds: completedSessions.map((session: any) => session.id),
+      analyzedResponseIds: answeredResponses.map((response) => response.id),
+      failureMessage: null,
+    },
+  };
+
+  await persistProjectReport(params.supabase, params.projectId, report);
+  return report;
+}
+
 export async function generateAndPersistProjectReport(
   supabase: any,
   projectId: string,
@@ -328,6 +760,7 @@ export async function generateAndPersistProjectReport(
 ) {
   const project = await loadProjectWithAnalysis(supabase, projectId);
   const analysisContext = isRecord(project.analysis) ? project.analysis : {};
+  const interviewMode = getResearchModeFromAnalysis(analysisContext);
   const usabilityTesting = isRecord(analysisContext.usabilityTesting) ? analysisContext.usabilityTesting : {};
 
   const { data: participants, error: participantError } = await supabase
@@ -351,7 +784,7 @@ export async function generateAndPersistProjectReport(
   }
 
   if (!sessions || sessions.length === 0) {
-    const report = buildEmptyReport(input.trigger);
+    const report = buildEmptyReport(input.trigger, null, interviewMode);
     await persistProjectReport(supabase, projectId, report);
     return report;
   }
@@ -379,6 +812,20 @@ export async function generateAndPersistProjectReport(
 
   if (responseError) {
     throw new Error(`Failed to load interview responses: ${responseError.message}`);
+  }
+
+  if (interviewMode === "ai_enhanced") {
+    return await generateAIEnhancedProjectReport({
+      supabase,
+      projectId,
+      project,
+      analysisContext,
+      participants: participants ?? [],
+      sessions: sessions ?? [],
+      questions: questions ?? [],
+      responses: responses ?? [],
+      input,
+    });
   }
 
   const participantsById = new Map(
@@ -749,6 +1196,7 @@ export async function generateAndPersistProjectReport(
   });
 
   const report = {
+    interviewMode: "structured",
     status: completedSessions.length === 0 ? "empty" : "ready",
     version: REPORT_VERSION,
     generatedAt: new Date().toISOString(),
@@ -761,6 +1209,10 @@ export async function generateAndPersistProjectReport(
     recommendations,
     questionBreakdown,
     participantBreakdown,
+    anchorCoverage: [],
+    followUpPaths: [],
+    participantJourneys: [],
+    turnCatalog: [],
     quoteCatalog,
     generationMeta: {
       trigger: input.trigger,

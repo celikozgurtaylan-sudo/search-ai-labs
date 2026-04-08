@@ -6,9 +6,8 @@ import { toast } from "sonner";
 import SearchoAI from "@/components/SearchoAI";
 import { FloatingVideo } from "@/components/FloatingVideo";
 import { participantService } from "@/services/participantService";
-import { projectService } from "@/services/projectService";
 import { InterviewProgress, InterviewQuestion, setInterviewSessionToken } from "@/services/interviewService";
-import { CheckCircle, AlertCircle, Loader2, ExternalLink, Image as ImageIcon, Camera, Mic } from "lucide-react";
+import { CheckCircle, AlertCircle, Clock, Loader2, ExternalLink, Image as ImageIcon, Camera, Mic } from "lucide-react";
 
 type CameraValidationState = 'idle' | 'requesting' | 'verifying' | 'preview' | 'stream' | 'failed';
 
@@ -97,6 +96,7 @@ const StudySession = () => {
   
   const [loading, setLoading] = useState(!isDesignMode);
   const [error, setError] = useState<string | null>(null);
+  const [pausedMessage, setPausedMessage] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(isDesignMode ? 'mock-session-id' : null);
   const [participantId, setParticipantId] = useState<string | null>(isDesignMode ? 'mock-participant-id' : null);
   const [participantName, setParticipantName] = useState<string | null>(isDesignMode ? 'Örnek Katılımcı' : null);
@@ -411,8 +411,6 @@ const StudySession = () => {
       setError("Geçersiz oturum");
       setLoading(false);
     }
-    
-    void checkCameraPermissions();
 
     return () => {
       setInterviewSessionToken(null);
@@ -477,9 +475,9 @@ const StudySession = () => {
   }, [cameraStream, cameraGateCompleted]);
 
   useEffect(() => {
-    if (cameraGateCompleted || cameraEnabled || cameraRequestPending || cameraValidationState === 'failed') return;
+    if (loading || pausedMessage || error || cameraGateCompleted || cameraEnabled || cameraRequestPending || cameraValidationState === 'failed') return;
     void requestCameraAccess();
-  }, [cameraGateCompleted, cameraEnabled, cameraRequestPending, cameraValidationState]);
+  }, [cameraGateCompleted, cameraEnabled, cameraRequestPending, cameraValidationState, error, loading, pausedMessage]);
 
   useEffect(() => {
     if (!cameraStream) return;
@@ -518,55 +516,52 @@ const StudySession = () => {
   const initializeSession = async () => {
     try {
       setLoading(true);
+      setError(null);
+      setPausedMessage(null);
+
+      const access = await participantService.getSessionAccessByToken(sessionToken!);
+
+      if (!access) {
+        setError("Oturum bilgileri yüklenemedi");
+        return;
+      }
+
+      if (access.access_state === 'paused') {
+        setPausedMessage(access.message || "Araştırma geçici olarak duraklatıldı. Lütfen daha sonra tekrar deneyin.");
+        return;
+      }
+
+      if (access.access_state !== 'active' || !access.session_data || !access.project_data) {
+        setError(access.message || "Oturum bulunamadı veya süresi doldu");
+        return;
+      }
 
       const cachedParticipantSession = localStorage.getItem('participant-session');
+      let cachedParticipant: any = null;
+
       if (cachedParticipantSession && sessionToken) {
-        const parsed = JSON.parse(cachedParticipantSession);
-        if (parsed?.token === sessionToken && parsed?.session) {
-          const cachedSession = parsed.session;
-          const cachedParticipant = parsed.participant;
-
-          setSessionId(cachedSession.id || null);
-          setParticipantId(cachedSession.participant_id || cachedParticipant?.id || null);
-          setParticipantName(cachedParticipant?.name || cachedParticipant?.email || 'Katilimci');
-
-          const project = await projectService.getProjectBySessionToken(sessionToken);
-          if (!project) {
-            setError("Proje bilgileri yüklenemedi");
-            return;
+        try {
+          const parsed = JSON.parse(cachedParticipantSession);
+          if (parsed?.token === sessionToken) {
+            cachedParticipant = parsed.participant ?? null;
           }
-
-          setProjectData(project);
-
-          setSessionStatus('active');
-          return;
+        } catch (cacheError) {
+          console.warn('Failed to parse cached participant session:', cacheError);
         }
       }
-      
-      // Fetch session data using the token
-      const session = await participantService.getSessionByToken(sessionToken!);
-      
-      if (!session) {
-        setError("Oturum bulunamadı veya süresi doldu");
-        return;
-      }
 
-      console.log('Session loaded:', session);
-      setSessionId(session.id!);
-      setParticipantId(session.participant_id || null);
-      
-      // Fetch project data using the session token
-      const project = await projectService.getProjectBySessionToken(sessionToken!);
-      
-      if (!project) {
-        setError("Proje bilgileri yüklenemedi");
-        return;
-      }
+      const session = access.session_data;
+      const participant = access.participant_data || cachedParticipant;
 
-      console.log('Project loaded:', project);
-      setProjectData(project);
-      
-      setSessionStatus('active');
+      console.log('Session access resolved:', access);
+      setSessionId(session.id || null);
+      setParticipantId(session.participant_id || participant?.id || null);
+      setParticipantName(participant?.name || participant?.email || 'Katilimci');
+      setProjectData(access.project_data);
+      setSessionStatus(session.status === 'completed' ? 'completed' : 'active');
+      setSessionCompletionReason(session.status === 'completed' ? 'completed' : null);
+
+      await checkCameraPermissions();
     } catch (error) {
       console.error('Failed to initialize session:', error);
       setError("Oturum başlatılırken hata oluştu");
@@ -814,6 +809,24 @@ const StudySession = () => {
     );
   }
 
+  if (pausedMessage) {
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center px-4">
+        <Card className="w-full max-w-xl border-amber-200 bg-amber-50/80 shadow-sm">
+          <CardContent className="pt-8 pb-8 text-center">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+              <Clock className="w-7 h-7" />
+            </div>
+            <h2 className="text-2xl font-semibold text-text-primary mb-3">Araştırma Geçici Olarak Duraklatıldı</h2>
+            <p className="text-text-secondary leading-relaxed">
+              {pausedMessage}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (sessionStatus === 'completed') {
     return (
       <div className="min-h-screen bg-canvas flex items-center justify-center p-4">
@@ -953,6 +966,8 @@ const StudySession = () => {
                   projectContext={{
                     description: projectData.description || '',
                     discussionGuide: projectData.analysis?.discussionGuide || null,
+                    researchMode: projectData.analysis?.researchMode === "ai_enhanced" ? "ai_enhanced" : "structured",
+                    aiEnhancedBrief: projectData.analysis?.aiEnhancedBrief || null,
                     template: 'interview',
                     sessionId: sessionId,
                     sessionToken,

@@ -1,30 +1,56 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ChevronLeft, ChevronRight, Play, Square, Users } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Pause, Play, Square, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import ChatPanel from "@/components/workspace/ChatPanel";
+import ChatPanel, { type ChatMessage } from "@/components/workspace/ChatPanel";
 import StudyPanel from "@/components/workspace/StudyPanel";
 import InvitationPanel from "@/components/workspace/InvitationPanel";
 import AnalysisPanel from "@/components/workspace/AnalysisPanel";
+import AIEnhancedBriefingPanel from "@/components/workspace/AIEnhancedBriefingPanel";
 import { Stepper } from "@/components/ui/stepper";
 import { SearchoMark } from "@/components/icons/SearchoMark";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { projectService } from "@/services/projectService";
 import { participantService, StudyParticipant, StudySession } from "@/services/participantService";
+import { applyInterviewLinkAccess, getInterviewControlState } from "@/lib/interviewControl";
 import {
   createNextQuestionSetState,
   ensureQuestionSetState,
   serializeDiscussionGuide,
   type QuestionSetState,
 } from "@/lib/questionSet";
+import {
+  buildAIEnhancedDisplayGuide,
+  getResearchMode,
+  isAIEnhancedReady,
+  normalizeAIEnhancedBrief,
+  type AIEnhancedBrief,
+} from "@/lib/aiEnhancedResearch";
 
 type WorkspaceStep = "guide" | "recruit" | "run" | "analyze";
+
+const getPersistedWorkflowStage = (analysis: any): WorkspaceStep | null => {
+  const workflowStage = analysis?.workflowStage;
+  return workflowStage === "guide" || workflowStage === "recruit" || workflowStage === "run" || workflowStage === "analyze"
+    ? workflowStage
+    : null;
+};
 
 interface ProjectData {
   id?: string;
@@ -88,15 +114,35 @@ const Workspace = () => {
   const [currentStep, setCurrentStep] = useState<WorkspaceStep>("guide");
   const [showRecruitment, setShowRecruitment] = useState(false);
   const [discussionGuide, setDiscussionGuide] = useState<any>(null);
+  const [aiEnhancedBrief, setAiEnhancedBrief] = useState<AIEnhancedBrief | null>(null);
   const [questionSetState, setQuestionSetState] = useState<QuestionSetState | null>(null);
   const [participants, setParticipants] = useState<StudyParticipant[]>([]);
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
-  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatConversationHistory, setChatConversationHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const [isResearchRelated, setIsResearchRelated] = useState(false);
   const [isButtonReady, setIsButtonReady] = useState(false);
   const [isGuideLoading, setIsGuideLoading] = useState(false);
+  const [showPauseResearchDialog, setShowPauseResearchDialog] = useState(false);
+  const [showCompleteResearchDialog, setShowCompleteResearchDialog] = useState(false);
   const lastPersistedAnalysisKeyRef = useRef<string>("");
+  const researchMode = useMemo(() => getResearchMode(projectData?.analysis), [projectData?.analysis]);
+  const isAIEnhancedMode = researchMode === "ai_enhanced";
+  const aiEnhancedDisplayGuide = useMemo(
+    () => buildAIEnhancedDisplayGuide(aiEnhancedBrief),
+    [aiEnhancedBrief],
+  );
+  const hasStructuredGuide = Boolean(discussionGuide?.sections?.length);
+  const shouldShowCenteredGuideChat = !isAIEnhancedMode && currentStep === "guide" && !hasStructuredGuide;
+
+  const syncProjectData = useCallback((nextProjectData: ProjectData) => {
+    setProjectData(nextProjectData);
+    localStorage.setItem("searchai-project", JSON.stringify({
+      ...nextProjectData,
+      timestamp: Date.now(),
+    }));
+  }, []);
 
   useEffect(() => {
     const researcherSession = localStorage.getItem("researcher-session");
@@ -111,7 +157,15 @@ const Workspace = () => {
 
     const stored = localStorage.getItem("searchai-project");
     if (stored) {
-      setProjectData(JSON.parse(stored));
+      const parsedProject = JSON.parse(stored);
+      const targetStep = localStorage.getItem("searchai-workspace-target-step");
+      const persistedWorkflowStage = getPersistedWorkflowStage(parsedProject?.analysis);
+
+      setProjectData(parsedProject);
+      if (targetStep === "analyze" || persistedWorkflowStage === "analyze") {
+        setCurrentStep("analyze");
+      }
+      localStorage.removeItem("searchai-workspace-target-step");
     } else {
       navigate("/");
     }
@@ -134,18 +188,14 @@ const Workspace = () => {
           analysis: latestProject.analysis || projectData.analysis,
         };
 
-        setProjectData(mergedProject);
-        localStorage.setItem("searchai-project", JSON.stringify({
-          ...mergedProject,
-          timestamp: Date.now(),
-        }));
+        syncProjectData(mergedProject);
       } catch (error) {
         console.error("Failed to hydrate latest project:", error);
       }
     };
 
     void hydrateLatestProject();
-  }, [projectData?.id, user]);
+  }, [projectData?.id, syncProjectData, user]);
 
   const loadResearchState = useCallback(async () => {
     if (!projectData?.id || !user) return;
@@ -188,33 +238,58 @@ const Workspace = () => {
 
   useEffect(() => {
     const persistedGuide = projectData?.analysis?.discussionGuide;
+    const persistedBrief = normalizeAIEnhancedBrief(projectData?.analysis?.aiEnhancedBrief);
 
-    if (!discussionGuide && Array.isArray(persistedGuide?.sections) && persistedGuide.sections.length > 0) {
-      setDiscussionGuide(persistedGuide);
+    if (researchMode === "structured") {
+      if (!discussionGuide && Array.isArray(persistedGuide?.sections) && persistedGuide.sections.length > 0) {
+        setDiscussionGuide(persistedGuide);
+      }
+
+      if (!questionSetState && Array.isArray(persistedGuide?.sections) && persistedGuide.sections.length > 0) {
+        setQuestionSetState(ensureQuestionSetState(projectData?.analysis?.questionSet, persistedGuide));
+      }
+
+      if (!isResearchRelated && (projectData?.analysis?.isResearchRelated || persistedGuide?.sections?.length > 0)) {
+        setIsResearchRelated(true);
+      }
+      return;
     }
 
-    if (!questionSetState && Array.isArray(persistedGuide?.sections) && persistedGuide.sections.length > 0) {
-      setQuestionSetState(ensureQuestionSetState(projectData?.analysis?.questionSet, persistedGuide));
+    if (!aiEnhancedBrief && persistedBrief) {
+      setAiEnhancedBrief(persistedBrief);
     }
 
-    if (!isResearchRelated && (projectData?.analysis?.isResearchRelated || persistedGuide?.sections?.length > 0)) {
+    if (!isResearchRelated) {
       setIsResearchRelated(true);
     }
-  }, [discussionGuide, isResearchRelated, projectData?.analysis, questionSetState]);
+  }, [aiEnhancedBrief, discussionGuide, isResearchRelated, projectData?.analysis, questionSetState, researchMode]);
+
+  useEffect(() => {
+    if (getPersistedWorkflowStage(projectData?.analysis) !== "analyze") return;
+    setCurrentStep("analyze");
+  }, [projectData?.analysis]);
 
   const persistProjectAnalysis = async (persistKey: string) => {
-    if (!projectData?.id || !discussionGuide) return;
+    if (!projectData?.id) return;
 
     try {
       const existingAnalysis = projectData.analysis || {};
-      const ensuredQuestionSet = ensureQuestionSetState(questionSetState, discussionGuide);
-      const nextAnalysis = {
-        ...existingAnalysis,
-        discussionGuide,
-        questionSet: ensuredQuestionSet,
-        isResearchRelated: true,
-        updatedAt: new Date().toISOString(),
-      };
+      const nextAnalysis = researchMode === "ai_enhanced"
+        ? {
+            ...existingAnalysis,
+            researchMode: "ai_enhanced",
+            aiEnhancedBrief,
+            isResearchRelated: true,
+            updatedAt: new Date().toISOString(),
+          }
+        : {
+            ...existingAnalysis,
+            researchMode: "structured",
+            discussionGuide,
+            questionSet: ensureQuestionSetState(questionSetState, discussionGuide),
+            isResearchRelated: true,
+            updatedAt: new Date().toISOString(),
+          };
 
       await projectService.updateProject(projectData.id, {
         analysis: nextAnalysis,
@@ -225,11 +300,7 @@ const Workspace = () => {
         analysis: nextAnalysis,
       };
 
-      setProjectData(nextProjectData);
-      localStorage.setItem("searchai-project", JSON.stringify({
-        ...nextProjectData,
-        timestamp: Date.now(),
-      }));
+      syncProjectData(nextProjectData);
       lastPersistedAnalysisKeyRef.current = persistKey;
     } catch (error) {
       console.error("Failed to update project:", error);
@@ -237,11 +308,26 @@ const Workspace = () => {
   };
 
   useEffect(() => {
-    if (!isResearchRelated || !projectData?.id || !discussionGuide) return;
+    if (!isResearchRelated || !projectData?.id) return;
+
+    if (researchMode === "ai_enhanced") {
+      if (!aiEnhancedBrief) return;
+      const nextPersistKey = JSON.stringify({
+        mode: researchMode,
+        updatedAt: aiEnhancedBrief.updatedAt,
+        readiness: aiEnhancedBrief.contextReadiness,
+        transcriptLength: aiEnhancedBrief.plannerTranscript.length,
+      });
+      if (lastPersistedAnalysisKeyRef.current === nextPersistKey) return;
+      void persistProjectAnalysis(nextPersistKey);
+      return;
+    }
+
+    if (!discussionGuide) return;
     const nextPersistKey = `${serializeDiscussionGuide(discussionGuide)}::${questionSetState?.currentVersionId || "none"}`;
     if (lastPersistedAnalysisKeyRef.current === nextPersistKey) return;
     void persistProjectAnalysis(nextPersistKey);
-  }, [discussionGuide, isResearchRelated, projectData?.id, questionSetState]);
+  }, [aiEnhancedBrief, discussionGuide, isResearchRelated, projectData?.id, questionSetState, researchMode]);
 
   const applyDiscussionGuide = useCallback((nextGuide: any, source: string) => {
     setDiscussionGuide(nextGuide);
@@ -249,63 +335,13 @@ const Workspace = () => {
     setIsResearchRelated(true);
   }, []);
 
-  useEffect(() => {
-    if (isResearchRelated && !discussionGuide && projectData) {
-      const timeoutId = window.setTimeout(() => {
-        const guide = {
-          title: getProjectTitle(projectData.description),
-          sections: [
-            {
-              id: "background",
-              title: "Kullanım Bağlamı ve Mevcut Alışkanlıklar",
-              questions: [
-                "Rolünüz ve sorumluluklarınız hakkında bana bilgi verebilir misiniz?",
-                "Bu alanda ne kadar süredir çalışıyorsunuz?",
-                "[İlgili bağlam] için şu anda hangi araçları kullanıyorsunuz?",
-              ],
-            },
-            {
-              id: "first-impressions",
-              title: "İlk Algı ve Mesaj",
-              questions: [
-                "Bu konudaki ilk tepkiniz nedir?",
-                "Size en çok ne dikkat çekiyor?",
-                "Bu alışık olduğunuz şeylerle nasıl karşılaştırılıyor?",
-                "Aklınıza hemen hangi sorular geliyor?",
-              ],
-            },
-            {
-              id: "detailed-exploration",
-              title: "Akışta Netlik ve Değer",
-              questions: [
-                "Buna normalde nasıl yaklaştığınızı anlatır mısınız?",
-                "Burada sizin için değerli görünen unsurlar neler?",
-                "Bu deneyim sizde hangi düşünceleri uyandırdı?",
-                "Bu mevcut iş akışınızın neresine oturuyor?",
-                "Burada görmeyi beklediğiniz şeyler nelerdi?",
-              ],
-            },
-            {
-              id: "final-thoughts",
-              title: "İyileştirme Fırsatları",
-              questions: [
-                "Genel olarak bu deneyimi nasıl özetlersiniz?",
-                "Elinizde olsa neyi değiştirirdiniz?",
-                "Bunu bir meslektaşınıza nasıl anlatırdınız?",
-                "Son düşünceleriniz veya önerileriniz var mı?",
-              ],
-            },
-          ],
-        };
-
-        applyDiscussionGuide(guide, "fallback");
-      }, 1000);
-
-      return () => window.clearTimeout(timeoutId);
-    }
-  }, [applyDiscussionGuide, discussionGuide, isResearchRelated, projectData]);
+  const applyAIEnhancedBrief = useCallback((nextBrief: AIEnhancedBrief) => {
+    setAiEnhancedBrief(nextBrief);
+    setIsResearchRelated(true);
+  }, []);
 
   useEffect(() => {
+    if (researchMode !== "structured") return;
     if (!discussionGuide || isButtonReady) return;
 
     const calculateAnimationDuration = () => {
@@ -327,7 +363,7 @@ const Workspace = () => {
     }, calculateAnimationDuration() + 8000);
 
     return () => window.clearTimeout(timeoutId);
-  }, [discussionGuide, isButtonReady]);
+  }, [discussionGuide, isButtonReady, researchMode]);
 
   useEffect(() => {
     if (currentStep === "run") {
@@ -339,6 +375,12 @@ const Workspace = () => {
     }
   }, [currentStep]);
 
+  useEffect(() => {
+    if (currentStep === "guide" && hasStructuredGuide) {
+      setIsChatCollapsed(false);
+    }
+  }, [currentStep, hasStructuredGuide]);
+
   const getProjectTitle = (description: string) => {
     if (description.includes("Fibabanka.com.tr")) return "Fibabanka Açılış Sayfası Araştırması";
     if (description.includes("reklam") || description.includes("advertisement") || description.includes("ad")) return "Reklam Test Çalışması";
@@ -347,6 +389,10 @@ const Workspace = () => {
   };
 
   const getResearchSteps = () => {
+    const planningReady = isAIEnhancedMode
+      ? isAIEnhancedReady(aiEnhancedBrief) || currentStep === "recruit" || currentStep === "run" || currentStep === "analyze"
+      : isResearchRelated || currentStep === "recruit" || currentStep === "run" || currentStep === "analyze";
+
     const steps = [
       { id: "planning", title: "Araştırma Planlaması" },
       { id: "recruit", title: "Katılımcı Seçimi" },
@@ -358,9 +404,9 @@ const Workspace = () => {
       let status: "completed" | "current" | "upcoming" = "upcoming";
 
       if (step.id === "planning") {
-        status = currentStep === "guide" && !isResearchRelated
+        status = currentStep === "guide" && !planningReady
           ? "current"
-          : (isResearchRelated || currentStep === "recruit" || currentStep === "run" || currentStep === "analyze")
+          : planningReady
             ? "completed"
             : "current";
       } else if (step.id === "recruit") {
@@ -397,7 +443,49 @@ const Workspace = () => {
     }
 
     if (currentStep === "run") {
-      setCurrentStep("analyze");
+      setShowCompleteResearchDialog(true);
+    }
+  };
+
+  const handleCompleteResearch = async () => {
+    setShowCompleteResearchDialog(false);
+    if (projectData?.id) {
+      const nextAnalysis = {
+        ...(projectData.analysis || {}),
+        workflowStage: "analyze" as WorkspaceStep,
+        updatedAt: new Date().toISOString(),
+      };
+
+      syncProjectData({
+        ...projectData,
+        analysis: nextAnalysis,
+      });
+
+      try {
+        await projectService.updateProject(projectData.id, {
+          analysis: nextAnalysis,
+        });
+      } catch (error) {
+        console.error("Failed to persist analyze stage:", error);
+      }
+    }
+    setCurrentStep("analyze");
+  };
+
+  const handlePauseResearch = async () => {
+    try {
+      await updateInterviewLinkAccess("paused");
+      setShowPauseResearchDialog(false);
+    } catch (error) {
+      console.error("Failed to pause research:", error);
+    }
+  };
+
+  const handleResumeResearch = async () => {
+    try {
+      await updateInterviewLinkAccess("active");
+    } catch (error) {
+      console.error("Failed to resume research:", error);
     }
   };
 
@@ -408,8 +496,16 @@ const Workspace = () => {
           <Button
             onClick={handleNextStep}
             className="bg-brand-primary hover:bg-brand-primary-hover text-white"
-            disabled={!isResearchRelated || !discussionGuide || !isButtonReady}
-            title={`Research: ${isResearchRelated}, Guide: ${!!discussionGuide}, Ready: ${isButtonReady}`}
+            disabled={
+              isAIEnhancedMode
+                ? !isAIEnhancedReady(aiEnhancedBrief)
+                : !isResearchRelated || !discussionGuide || !isButtonReady
+            }
+            title={
+              isAIEnhancedMode
+                ? `AI Enhanced hazır: ${isAIEnhancedReady(aiEnhancedBrief)}`
+                : `Research: ${isResearchRelated}, Guide: ${!!discussionGuide}, Ready: ${isButtonReady}`
+            }
           >
             <Users className="w-4 h-4 mr-2" />
             Sonraki: Katılımcıları Ekle →
@@ -428,10 +524,21 @@ const Workspace = () => {
         );
       case "run":
         return (
-          <Button onClick={handleNextStep} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-            <Square className="w-4 h-4 mr-2" />
-            Araştırmayı Durdur
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant={isResearchPaused ? "outline" : "secondary"}
+              onClick={isResearchPaused ? () => void handleResumeResearch() : () => setShowPauseResearchDialog(true)}
+              className={isResearchPaused ? "border-amber-300 text-amber-900 hover:bg-amber-50" : ""}
+            >
+              {isResearchPaused ? <Play className="w-4 h-4 mr-2" /> : <Pause className="w-4 h-4 mr-2" />}
+              {isResearchPaused ? "Araştırmaya Devam Et" : "Araştırmayı Durdur"}
+            </Button>
+
+            <Button onClick={handleNextStep} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+              <Square className="w-4 h-4 mr-2" />
+              Araştırmayı Tamamla
+            </Button>
+          </div>
         );
       default:
         return null;
@@ -446,6 +553,27 @@ const Workspace = () => {
       updatedAt: questionSetState.updatedAt,
     };
   }, [questionSetState]);
+
+  const interviewControl = useMemo(
+    () => getInterviewControlState(projectData?.analysis),
+    [projectData?.analysis]
+  );
+
+  const isResearchPaused = interviewControl.linkAccess === "paused";
+
+  const updateInterviewLinkAccess = useCallback(async (nextLinkAccess: "active" | "paused") => {
+    if (!projectData?.id || !user) return;
+
+    const nextAnalysis = applyInterviewLinkAccess(projectData.analysis, nextLinkAccess, user.id);
+    const updatedProject = await projectService.updateProject(projectData.id, {
+      analysis: nextAnalysis,
+    });
+
+    syncProjectData({
+      ...projectData,
+      analysis: updatedProject.analysis ?? nextAnalysis,
+    });
+  }, [projectData, syncProjectData, user]);
 
   if (!projectData) {
     return <div>Loading...</div>;
@@ -487,73 +615,36 @@ const Workspace = () => {
           </div>
         </header>
 
-        <ResizablePanelGroup
-          direction={isMobile ? "vertical" : "horizontal"}
-          className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden"
-        >
-          <ResizablePanel
-            defaultSize={isChatCollapsed ? 3 : 25}
-            minSize={isChatCollapsed ? 3 : 20}
-            maxSize={isChatCollapsed ? 3 : 75}
-            className="min-h-0 min-w-0 overflow-hidden transition-all duration-300"
-          >
-            {isChatCollapsed ? (
-              <div className="h-full bg-white border-r border-border-light flex flex-col items-center justify-start pt-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsChatCollapsed(false)}
-                  className="w-10 h-10 p-0 hover:bg-surface"
-                  aria-label="Expand chat"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            ) : (
-              <ChatPanel
-                projectData={projectData}
-                currentStep={currentStep}
-                discussionGuide={discussionGuide}
-                onResearchDetected={setIsResearchRelated}
-                onResearchPlanLoadingChange={setIsGuideLoading}
-                onResearchPlanGenerated={(plan) => {
-                  applyDiscussionGuide(plan, "chat");
-                  setIsButtonReady(false);
-                }}
-                onMessagesUpdate={setChatMessages}
-              />
-            )}
-          </ResizablePanel>
-
-          {!isChatCollapsed && <ResizableHandle withHandle />}
-
-          <ResizablePanel
-            defaultSize={isChatCollapsed ? 97 : 75}
-            minSize={isChatCollapsed ? 97 : 25}
-            maxSize={isChatCollapsed ? 97 : 80}
-            className="min-h-0 min-w-0 overflow-hidden transition-all duration-300"
-          >
+        {isAIEnhancedMode ? (
+          <div className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden">
             {currentStep === "analyze" ? (
               <AnalysisPanel
                 projectId={projectData.id || ""}
                 sessionIds={sessions.map((session) => session.id!).filter(Boolean)}
               />
-            ) : isGuideLoading ? (
-              <GuideLoadingPanel guide={discussionGuide} />
-            ) : isResearchRelated ? (
+            ) : currentStep === "guide" ? (
+              <AIEnhancedBriefingPanel
+                projectTitle={projectData.title || getProjectTitle(projectData.description)}
+                projectDescription={projectData.description}
+                brief={aiEnhancedBrief}
+                onBriefUpdate={applyAIEnhancedBrief}
+              />
+            ) : (
               <StudyPanel
-                discussionGuide={discussionGuide}
+                discussionGuide={aiEnhancedDisplayGuide}
                 participants={participants}
                 sessions={sessions}
                 projectId={projectData.id || ""}
                 projectTitle={projectData.title || getProjectTitle(projectData.description)}
                 currentStep={currentStep}
-                questionSetVersionId={currentQuestionSetVersion?.id || null}
-                questionSetVersionNumber={currentQuestionSetVersion?.number || null}
-                questionSetUpdatedAt={currentQuestionSetVersion?.updatedAt || null}
-                onGuideUpdate={(guide) => {
-                  applyDiscussionGuide(guide, currentStep === "run" ? "run-edit" : "manual-edit");
-                }}
+                researchMode={researchMode}
+                aiEnhancedBrief={aiEnhancedBrief}
+                isResearchPaused={isResearchPaused}
+                researchPausedAt={interviewControl.pausedAt}
+                questionSetVersionId={null}
+                questionSetVersionNumber={null}
+                questionSetUpdatedAt={aiEnhancedBrief?.updatedAt || null}
+                onGuideUpdate={() => {}}
                 onParticipantsUpdate={(nextParticipants) => {
                   setParticipants(nextParticipants);
                   if (nextParticipants.length > 0 && currentStep === "guide") {
@@ -561,22 +652,130 @@ const Workspace = () => {
                   }
                   void loadResearchState();
                 }}
-                isGuideLoading={isGuideLoading}
-                chatMessages={chatMessages}
+                isGuideLoading={false}
+                chatMessages={[]}
               />
-            ) : (
-              <div className="h-full flex items-center justify-center bg-white border-l border-border-light">
-                <div className="text-center text-text-muted max-w-md px-6">
-                  <h3 className="text-lg font-medium text-text-primary mb-2">Araştırma Planı Hazırlığı</h3>
-                  <p className="text-sm leading-relaxed">
-                    Araştırma planınızı hazırlamak için sohbet alanında araştırma konunuzu detaylarıyla paylaşın.
-                    Anlamlı bir araştırma konusu belirlendikten sonra bu alan aktif hale gelecektir.
-                  </p>
-                </div>
-              </div>
             )}
-          </ResizablePanel>
-        </ResizablePanelGroup>
+          </div>
+        ) : shouldShowCenteredGuideChat ? (
+          <div className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden">
+            <ChatPanel
+              projectData={projectData}
+              currentStep={currentStep}
+              discussionGuide={discussionGuide}
+              layoutMode="centered"
+              initialMessages={chatMessages}
+              initialConversationHistory={chatConversationHistory}
+              onResearchDetected={setIsResearchRelated}
+              onResearchPlanLoadingChange={setIsGuideLoading}
+              onResearchPlanGenerated={(plan) => {
+                applyDiscussionGuide(plan, "chat");
+                setIsButtonReady(false);
+              }}
+              onMessagesUpdate={setChatMessages}
+              onConversationHistoryUpdate={setChatConversationHistory}
+            />
+          </div>
+        ) : (
+          <ResizablePanelGroup
+            direction={isMobile ? "vertical" : "horizontal"}
+            className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden"
+          >
+            <ResizablePanel
+              defaultSize={isChatCollapsed ? 4 : currentStep === "guide" ? 24 : 25}
+              minSize={isChatCollapsed ? 4 : currentStep === "guide" ? 18 : 20}
+              maxSize={isChatCollapsed ? 4 : currentStep === "guide" ? 38 : 75}
+              className="min-h-0 min-w-0 overflow-hidden transition-all duration-300"
+            >
+              {isChatCollapsed ? (
+                <div className="h-full bg-white border-r border-border-light flex flex-col items-center justify-start pt-4">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsChatCollapsed(false)}
+                    className="w-10 h-10 p-0 hover:bg-surface"
+                    aria-label="Expand chat"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                <ChatPanel
+                  projectData={projectData}
+                  currentStep={currentStep}
+                  discussionGuide={discussionGuide}
+                  layoutMode="sidebar"
+                  initialMessages={chatMessages}
+                  initialConversationHistory={chatConversationHistory}
+                  onResearchDetected={setIsResearchRelated}
+                  onResearchPlanLoadingChange={setIsGuideLoading}
+                  onResearchPlanGenerated={(plan) => {
+                    applyDiscussionGuide(plan, "chat");
+                    setIsButtonReady(false);
+                  }}
+                  onMessagesUpdate={setChatMessages}
+                  onConversationHistoryUpdate={setChatConversationHistory}
+                />
+              )}
+            </ResizablePanel>
+
+            {!isChatCollapsed && <ResizableHandle withHandle />}
+
+            <ResizablePanel
+              defaultSize={isChatCollapsed ? 97 : 75}
+              minSize={isChatCollapsed ? 97 : 25}
+              maxSize={isChatCollapsed ? 97 : 80}
+              className="min-h-0 min-w-0 overflow-hidden transition-all duration-300"
+            >
+              {currentStep === "analyze" ? (
+                <AnalysisPanel
+                  projectId={projectData.id || ""}
+                  sessionIds={sessions.map((session) => session.id!).filter(Boolean)}
+                />
+              ) : isGuideLoading ? (
+                <GuideLoadingPanel guide={discussionGuide} />
+              ) : isResearchRelated ? (
+                <StudyPanel
+                  discussionGuide={discussionGuide}
+                  participants={participants}
+                  sessions={sessions}
+                  projectId={projectData.id || ""}
+                  projectTitle={projectData.title || getProjectTitle(projectData.description)}
+                  currentStep={currentStep}
+                  researchMode={researchMode}
+                  aiEnhancedBrief={null}
+                  isResearchPaused={isResearchPaused}
+                  researchPausedAt={interviewControl.pausedAt}
+                  questionSetVersionId={currentQuestionSetVersion?.id || null}
+                  questionSetVersionNumber={currentQuestionSetVersion?.number || null}
+                  questionSetUpdatedAt={currentQuestionSetVersion?.updatedAt || null}
+                  onGuideUpdate={(guide) => {
+                    applyDiscussionGuide(guide, currentStep === "run" ? "run-edit" : "manual-edit");
+                  }}
+                  onParticipantsUpdate={(nextParticipants) => {
+                    setParticipants(nextParticipants);
+                    if (nextParticipants.length > 0 && currentStep === "guide") {
+                      setCurrentStep("recruit");
+                    }
+                    void loadResearchState();
+                  }}
+                  isGuideLoading={isGuideLoading}
+                  chatMessages={chatMessages}
+                />
+              ) : (
+                <div className="h-full flex items-center justify-center bg-white border-l border-border-light">
+                  <div className="text-center text-text-muted max-w-md px-6">
+                    <h3 className="text-lg font-medium text-text-primary mb-2">Araştırma Planı Hazırlığı</h3>
+                    <p className="text-sm leading-relaxed">
+                      Araştırma planınızı hazırlamak için sohbet alanında araştırma konunuzu detaylarıyla paylaşın.
+                      Anlamlı bir araştırma konusu belirlendikten sonra bu alan aktif hale gelecektir.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        )}
 
         <InvitationPanel
           open={showRecruitment}
@@ -590,11 +789,57 @@ const Workspace = () => {
           }}
           projectId={projectData.id || ""}
           projectTitle={projectData.title || getProjectTitle(projectData.description)}
+          researchMode={researchMode}
+          aiEnhancedBrief={aiEnhancedBrief}
           currentQuestionSetVersionId={currentQuestionSetVersion?.id || null}
           currentQuestionSetVersionNumber={currentQuestionSetVersion?.number || null}
-          questionSetUpdatedAt={currentQuestionSetVersion?.updatedAt || null}
+          questionSetUpdatedAt={isAIEnhancedMode ? aiEnhancedBrief?.updatedAt || null : currentQuestionSetVersion?.updatedAt || null}
           sessions={sessions}
         />
+
+        <AlertDialog open={showPauseResearchDialog} onOpenChange={setShowPauseResearchDialog}>
+          <AlertDialogContent className="bg-surface">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Araştırmayı durdurmak istiyor musunuz?</AlertDialogTitle>
+              <AlertDialogDescription className="space-y-3">
+                <p>
+                  Araştırmayı durdurduğunuzda bu zamana kadar gönderilen davet linkleri geçici olarak etkisiz hale gelir.
+                </p>
+                <p>
+                  Şu anda görüşmede olan katılımcılar etkilenmez, ancak yeni girişler ve yeniden girişler durur. Araştırmaya devam ettiğinizde aynı linkler tekrar çalışır.
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Vazgeç</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void handlePauseResearch()} className="bg-amber-600 hover:bg-amber-700 text-white">
+                Araştırmayı Durdur
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={showCompleteResearchDialog} onOpenChange={setShowCompleteResearchDialog}>
+          <AlertDialogContent className="bg-surface">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Araştırmayı tamamlamak istiyor musunuz?</AlertDialogTitle>
+              <AlertDialogDescription className="space-y-3">
+                <p>
+                  Araştırmayı tamamladığınız takdirde şu ana kadar tamamlanan görüşmelerin analizi çalıştırılacaktır.
+                </p>
+                <p>
+                  Devam etmek istiyor musunuz? Bu işlem sonrasında analiz ekranına geçeceksiniz.
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Vazgeç</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void handleCompleteResearch()} className="bg-destructive hover:bg-destructive/90">
+                Araştırmayı Tamamla
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </ProtectedRoute>
   );

@@ -7,11 +7,15 @@ import { cn } from "@/lib/utils";
 import { generateResearchPresentation } from "@/services/presentationService";
 import { projectReportService } from "@/services/projectReportService";
 import type {
+  ProjectReportAnchorCoverage,
   ProjectInterviewReport,
   ProjectReportFinding,
+  ProjectReportFollowUpPath,
+  ProjectReportParticipantJourney,
   ProjectReportQuote,
   ProjectReportRecommendation,
   ProjectReportTheme,
+  ProjectReportTurn,
 } from "@/types/projectReport";
 import {
   AlertCircle,
@@ -34,15 +38,6 @@ interface AnalysisPanelProps {
   projectId: string;
   sessionIds: string[];
 }
-
-const navigationSections = [
-  { id: "overview", label: "Genel Bakış" },
-  { id: "findings", label: "Önemli Bulgular" },
-  { id: "themes", label: "Temalar" },
-  { id: "recommendations", label: "Öneriler" },
-  { id: "questions", label: "Soru Dağılımı" },
-  { id: "participants", label: "Katılımcılar" },
-];
 
 const formatPercent = (value: number) => `${Number.isFinite(value) ? value.toFixed(1) : "0.0"}%`;
 
@@ -312,6 +307,179 @@ const RecommendationCard = ({
   );
 };
 
+const getNavigationSections = (report: ProjectInterviewReport | null) => {
+  if (report?.interviewMode === "ai_enhanced") {
+    return [
+      { id: "overview", label: "Genel Bakış" },
+      { id: "findings", label: "Önemli Bulgular" },
+      { id: "themes", label: "Temalar" },
+      { id: "recommendations", label: "Öneriler" },
+      { id: "anchors", label: "Anchor Kapsamı" },
+      { id: "followups", label: "Follow-up Akışları" },
+      { id: "journeys", label: "Katılımcı Akışları" },
+      { id: "turns", label: "Soru-Cevap Dökümü" },
+    ];
+  }
+
+  return [
+    { id: "overview", label: "Genel Bakış" },
+    { id: "findings", label: "Önemli Bulgular" },
+    { id: "themes", label: "Temalar" },
+    { id: "recommendations", label: "Öneriler" },
+    { id: "questions", label: "Soru Dağılımı" },
+    { id: "participants", label: "Katılımcılar" },
+  ];
+};
+
+const AnchorCoverageCard = ({
+  anchor,
+  quotes,
+}: {
+  anchor: ProjectReportAnchorCoverage;
+  quotes: ProjectReportQuote[];
+}) => (
+  <Card className="border-border-light bg-muted/20">
+    <CardContent className="space-y-4 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-text-muted">
+            {anchor.themeTitle}
+          </p>
+          <h4 className="mt-2 text-base font-semibold text-text-primary">{anchor.anchorLabel}</h4>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="secondary">{anchor.answeredSessionCount} cevaplanan</Badge>
+          <Badge variant="outline">{anchor.skippedSessionCount} skip</Badge>
+          <Badge variant="outline">{formatPercent(anchor.coverageRate)} kapsama</Badge>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricBar
+          label="Cevaplanan oturum"
+          value={anchor.answeredSessionCount}
+          maxValue={Math.max(anchor.answeredSessionCount + anchor.skippedSessionCount, 1)}
+          helper="Bu anchor'a gerçek cevap gelen oturumlar"
+        />
+        <MetricBar
+          label="Skip"
+          value={anchor.skippedSessionCount}
+          maxValue={Math.max(anchor.answeredSessionCount + anchor.skippedSessionCount, 1)}
+          helper="Anchor soruda skip oluşan oturumlar"
+        />
+        <MetricBar
+          label="Süre"
+          value={anchor.averageResponseDurationMs ? Math.round(anchor.averageResponseDurationMs / 1000) : 0}
+          maxValue={Math.max(Math.round((anchor.averageResponseDurationMs || 0) / 1000), 1)}
+          helper={`Ortalama ${formatDuration(anchor.averageResponseDurationMs)}`}
+        />
+      </div>
+
+      {anchor.summary ? (
+        <p className="text-sm leading-6 text-text-secondary">{anchor.summary}</p>
+      ) : null}
+
+      <EvidenceQuotes quotes={quotes} />
+    </CardContent>
+  </Card>
+);
+
+const FollowUpPathCard = ({
+  path,
+  quotes,
+}: {
+  path: ProjectReportFollowUpPath;
+  quotes: ProjectReportQuote[];
+}) => (
+  <Card className="border-border-light">
+    <CardHeader className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="secondary">{path.count} kez soruldu</Badge>
+        <Badge variant="outline">{path.sessionCount} oturum</Badge>
+      </div>
+      <CardTitle className="text-base">{path.questionText}</CardTitle>
+      <CardDescription className="text-sm leading-6 text-text-secondary">
+        Anchor: {path.anchorLabel}
+      </CardDescription>
+    </CardHeader>
+    <CardContent>
+      <EvidenceQuotes quotes={quotes} />
+    </CardContent>
+  </Card>
+);
+
+const ParticipantJourneyCard = ({
+  journey,
+  quotes,
+}: {
+  journey: ProjectReportParticipantJourney;
+  quotes: ProjectReportQuote[];
+}) => (
+  <Card className="border-border-light bg-muted/20">
+    <CardContent className="space-y-4 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-text-muted">
+            {journey.sessionRef}
+          </p>
+          <h4 className="mt-2 text-base font-semibold text-text-primary">{journey.participantLabel}</h4>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="secondary">{journey.anchorCoverageCount} anchor</Badge>
+          <Badge variant="outline">{journey.followUpCount} follow-up</Badge>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <ReportMetricCard
+          title="Anchor Kapsamı"
+          value={String(journey.anchorCoverageCount)}
+          description="Bu oturumda kapsanan anchor soru sayısı."
+        />
+        <ReportMetricCard
+          title="Follow-up"
+          value={String(journey.followUpCount)}
+          description="AI tarafından açılan takip soruları."
+        />
+        <ReportMetricCard
+          title="Oturum Süresi"
+          value={formatDuration(journey.sessionDurationMs)}
+          description="Başlangıç ve bitiş zamanından hesaplandı."
+        />
+      </div>
+
+      {journey.summary ? (
+        <p className="text-sm leading-6 text-text-secondary">{journey.summary}</p>
+      ) : null}
+
+      <EvidenceQuotes quotes={quotes} />
+    </CardContent>
+  </Card>
+);
+
+const TurnCard = ({ turn }: { turn: ProjectReportTurn }) => (
+  <Card className="border-border-light bg-muted/20">
+    <CardContent className="space-y-3 p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="secondary">{turn.source === "anchor" ? "Anchor" : turn.source === "follow_up" ? "Follow-up" : turn.source}</Badge>
+        {turn.anchorLabel ? <Badge variant="outline">{truncateTurn(turn.anchorLabel, 48)}</Badge> : null}
+        {turn.turnIndex ? <Badge variant="outline">Tur {turn.turnIndex}</Badge> : null}
+        <Badge variant="outline">{turn.sessionRef}</Badge>
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-text-muted">{turn.participantLabel}</p>
+        <p className="mt-2 text-sm font-medium leading-6 text-text-primary">{turn.questionText}</p>
+      </div>
+      <p className="text-sm leading-6 text-text-secondary">
+        {turn.responseText || "Bu turda kaydedilmiş metin yok."}
+      </p>
+    </CardContent>
+  </Card>
+);
+
+const truncateTurn = (value: string, maxLength = 120) =>
+  value.length > maxLength ? `${value.slice(0, maxLength - 1).trim()}…` : value;
+
 const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
   const [projectTitle, setProjectTitle] = useState("Araştırma Projesi");
   const [projectDescription, setProjectDescription] = useState("");
@@ -326,6 +494,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
     () => new Map((report?.quoteCatalog || []).map((quote) => [quote.quoteId, quote])),
     [report],
   );
+  const navigationSections = useMemo(() => getNavigationSections(report), [report]);
 
   const hasSessions = sessionIds.length > 0;
   const hasRenderableReport = Boolean(
@@ -335,7 +504,11 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
       report.themes.length > 0 ||
       report.recommendations.length > 0 ||
       report.questionBreakdown.length > 0 ||
-      report.participantBreakdown.length > 0
+      report.participantBreakdown.length > 0 ||
+      report.anchorCoverage.length > 0 ||
+      report.followUpPaths.length > 0 ||
+      report.participantJourneys.length > 0 ||
+      report.turnCatalog.length > 0
     ),
   );
 
@@ -402,6 +575,12 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
     return () => observer.disconnect();
   }, [report]);
+
+  useEffect(() => {
+    if (navigationSections.length > 0) {
+      setActiveSection(navigationSections[0].id);
+    }
+  }, [navigationSections]);
 
   const regenerateReport = async () => {
     if (!projectId) return;
@@ -540,6 +719,9 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
               <Badge variant="secondary">
                 {report.status === "ready" ? "Hazır" : report.status === "generating" ? "Güncelleniyor" : report.status === "failed" ? "Hata" : "Boş"}
               </Badge>
+              <Badge variant={report.interviewMode === "ai_enhanced" ? "default" : "outline"}>
+                {report.interviewMode === "ai_enhanced" ? "AI Enhanced" : "Yapılandırılmış"}
+              </Badge>
               <Badge variant="outline">
                 {report.sourceStats.completedSessionCount} tamamlanan oturum
               </Badge>
@@ -629,14 +811,20 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                     description={`Katılım oranı ${formatPercent(report.overview.joinRate)} • Tamamlama oranı ${formatPercent(report.overview.completionRate)}`}
                   />
                   <ReportMetricCard
-                    title="Skip Oranı"
-                    value={formatPercent(report.overview.skipRate)}
-                    description={`${report.sourceStats.skippedResponseCount} yanıt skip olarak işaretlendi.`}
+                    title={report.interviewMode === "ai_enhanced" ? "Anchor Sayısı" : "Skip Oranı"}
+                    value={report.interviewMode === "ai_enhanced" ? String(report.anchorCoverage.length) : formatPercent(report.overview.skipRate)}
+                    description={report.interviewMode === "ai_enhanced"
+                      ? `${report.followUpPaths.length} farklı follow-up yolu oluştu.`
+                      : `${report.sourceStats.skippedResponseCount} yanıt skip olarak işaretlendi.`}
                   />
                   <ReportMetricCard
-                    title="Ort. Yanıt Süresi"
-                    value={formatDuration(report.overview.averageResponseDurationMs)}
-                    description="Tamamlanmış ve transcript oluşmuş cevapların ortalaması."
+                    title={report.interviewMode === "ai_enhanced" ? "Konuşma Turu" : "Ort. Yanıt Süresi"}
+                    value={report.interviewMode === "ai_enhanced"
+                      ? String(report.turnCatalog.length)
+                      : formatDuration(report.overview.averageResponseDurationMs)}
+                    description={report.interviewMode === "ai_enhanced"
+                      ? `${report.turnCatalog.filter((turn) => turn.source === "follow_up").length} follow-up turu kaydedildi.`
+                      : "Tamamlanmış ve transcript oluşmuş cevapların ortalaması."}
                   />
                   <ReportMetricCard
                     title="Ort. Oturum Süresi"
@@ -678,7 +866,9 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                     </CardHeader>
                     <CardContent className="space-y-3 text-sm text-text-secondary">
                       <p>
-                        {report.sourceStats.questionTemplateCount} benzersiz soru şablonu ve {report.sourceStats.questionInstanceCount} soru örneği üzerinden çalışıldı.
+                        {report.interviewMode === "ai_enhanced"
+                          ? `${report.anchorCoverage.length} anchor omurga ve ${report.turnCatalog.length} gerçek konuşma turu üzerinden çalışıldı.`
+                          : `${report.sourceStats.questionTemplateCount} benzersiz soru şablonu ve ${report.sourceStats.questionInstanceCount} soru örneği üzerinden çalışıldı.`}
                       </p>
                       <p>
                         Her bulgu yalnızca kaydedilmiş transcriptlerden ve tamamlanma/skip/süre verilerinden üretildi.
@@ -764,7 +954,106 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
               </CardContent>
             </Card>
 
-            <Card id="questions" className="border-border-light">
+            {report.interviewMode === "ai_enhanced" ? (
+              <>
+                <Card id="anchors" className="border-border-light">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-brand-primary" />
+                      <CardTitle>Anchor Kapsamı</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Her katılımcıya ortak omurga olarak sorulan anchor soruların kapsama ve süre görünümü.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {report.anchorCoverage.length === 0 ? (
+                      <p className="text-sm text-text-secondary">Henüz anchor bazında gösterilecek tamamlanmış cevap yok.</p>
+                    ) : (
+                      report.anchorCoverage.map((anchor) => (
+                        <AnchorCoverageCard
+                          key={anchor.anchorId}
+                          anchor={anchor}
+                          quotes={takeQuotes(quoteMap, anchor.quoteIds)}
+                        />
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card id="followups" className="border-border-light">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-brand-primary" />
+                      <CardTitle>Follow-up Akışları</CardTitle>
+                    </div>
+                    <CardDescription>
+                      AI'ın katılımcı cevabına göre açtığı takip soruları ve en sık tekrar eden yollar.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {report.followUpPaths.length === 0 ? (
+                      <p className="text-sm text-text-secondary">Henüz follow-up üretecek kadar konuşma akışı oluşmadı.</p>
+                    ) : (
+                      report.followUpPaths.map((path) => (
+                        <FollowUpPathCard
+                          key={path.id}
+                          path={path}
+                          quotes={takeQuotes(quoteMap, path.quoteIds)}
+                        />
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card id="journeys" className="border-border-light">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-brand-primary" />
+                      <CardTitle>Katılımcı Akışları</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Her katılımcının anchor kapsaması, follow-up yoğunluğu ve oturum özeti.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {report.participantJourneys.length === 0 ? (
+                      <p className="text-sm text-text-secondary">Henüz katılımcı yolculuğu görünümü oluşmadı.</p>
+                    ) : (
+                      report.participantJourneys.map((journey) => (
+                        <ParticipantJourneyCard
+                          key={journey.sessionId}
+                          journey={journey}
+                          quotes={takeQuotes(quoteMap, journey.quoteIds)}
+                        />
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card id="turns" className="border-border-light">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 text-brand-primary" />
+                      <CardTitle>Soru-Cevap Dökümü</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Görüşmeler sırasında gerçekten sorulan tüm anchor ve follow-up turları.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {report.turnCatalog.length === 0 ? (
+                      <p className="text-sm text-text-secondary">Henüz gösterilecek konuşma dökümü yok.</p>
+                    ) : (
+                      report.turnCatalog.map((turn) => (
+                        <TurnCard key={`${turn.sessionId}-${turn.questionId}`} turn={turn} />
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            ) : (
+              <Card id="questions" className="border-border-light">
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-brand-primary" />
@@ -830,7 +1119,9 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                 )}
               </CardContent>
             </Card>
+            )}
 
+            {report.interviewMode === "structured" ? (
             <Card id="participants" className="border-border-light">
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -891,6 +1182,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                 )}
               </CardContent>
             </Card>
+            ) : null}
 
             {import.meta.env.DEV ? (
               <Card className="border-border-light">

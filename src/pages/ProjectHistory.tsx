@@ -29,6 +29,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+const getProjectReportStatus = (project: Project): string | null => {
+  const status = project.analysis?.report?.status;
+  return typeof status === "string" ? status : null;
+};
+
+const isProjectResultsReady = (project: Project) => {
+  const workflowStage = project.analysis?.workflowStage;
+  const reportStatus = getProjectReportStatus(project);
+
+  if (workflowStage === "analyze") return true;
+  return reportStatus === "ready" || reportStatus === "generating" || reportStatus === "failed";
+};
+
 const ProjectHistory = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +74,14 @@ const ProjectHistory = () => {
   };
 
   const handleContinueProject = (project: Project) => {
+    const targetStep = isProjectResultsReady(project) ? "analyze" : null;
+
+    if (targetStep) {
+      localStorage.setItem("searchai-workspace-target-step", targetStep);
+    } else {
+      localStorage.removeItem("searchai-workspace-target-step");
+    }
+
     // Store project data for the workspace
     localStorage.setItem('searchai-project', JSON.stringify({
       id: project.id,
@@ -314,7 +335,7 @@ const ProjectHistory = () => {
                             handleContinueProject(project);
                           }}
                         >
-                          Devam Et
+                          {isProjectResultsReady(project) ? "Sonuçları Gör" : "Devam Et"}
                         </Button>
                       )}
                       

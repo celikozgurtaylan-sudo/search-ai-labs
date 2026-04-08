@@ -1,16 +1,28 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildFallbackQuestions,
   isWarmupSectionTitle,
   repairGeneratedQuestions,
+  resolveQuestionMode,
   sanitizeGeneratedQuestions,
+  type ResearchQuestionMode,
 } from "../_shared/question-quality.ts";
+import {
+  formatQuestionLearningHints,
+  loadQuestionLearningHints,
+} from "../_shared/question-learning.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const supabase = createClient(
+  Deno.env.get("SUPABASE_URL") ?? "",
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+);
 
 const clampQuestionCount = (count: unknown) => {
   if (typeof count !== 'number' || !Number.isFinite(count)) {
@@ -57,6 +69,8 @@ const buildQuestionPrompt = (
   projectDescription: string,
   existingQuestions: string[],
   count: number,
+  mode: ResearchQuestionMode,
+  learningHintsPrompt: string,
 ) => {
   const warmupSection = sectionIndex === 0 || isWarmupSectionTitle(sectionTitle);
 
@@ -74,6 +88,8 @@ ${warmupSection ? `Bu bölüm görüşmenin ilk ısınma bölümüdür.
 Var olan sorular:
 ${existingQuestions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}
 
+${learningHintsPrompt ? `${learningHintsPrompt}\n` : ""}
+
 Bu bölüm için ${count} yeni, farklı ve yaratıcı soru üret. JSON formatında döndür:
 {"questions": [${Array.from({ length: count }, (_, index) => `"soru${index + 1}"`).join(', ')}]}`;
 };
@@ -90,9 +106,29 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not set');
     }
 
-    const { sectionTitle, sectionId, sectionIndex, projectDescription, existingQuestions = [], validateProject = false, count } = await req.json();
+    const {
+      sectionTitle,
+      sectionId,
+      sectionIndex,
+      projectDescription,
+      existingQuestions = [],
+      validateProject = false,
+      count,
+      mode,
+    } = await req.json();
     const requestedCount = clampQuestionCount(count);
     const warmupSection = sectionIndex === 0 || isWarmupSectionTitle(sectionTitle);
+    const resolvedMode = resolveQuestionMode({
+      researchMode: typeof mode === "string" ? mode : null,
+      hasUsabilityContext: typeof mode === "string" && mode === "usability",
+    });
+    const learningHints = await loadQuestionLearningHints(supabase, {
+      mode: resolvedMode,
+      sectionTitle,
+      sectionIndex,
+      limit: 6,
+    });
+    const learningHintsPrompt = formatQuestionLearningHints(learningHints);
 
     const systemPrompt = `Sen Türkiye'de çalışan deneyimli bir UX araştırmacısısın. Kullanıcı görüşmeleri, kullanılabilirlik testleri ve keşifsel araştırmalarda uzmanlaşmışsın.
 
@@ -112,6 +148,9 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 - Warm-up olmayan bölümlerde rapport yerine doğrudan araştırma odağına gir
 - Her soru tek bir amaca hizmet etsin
 - Mümkünse soru metninde "ve" kullanma; tek soruda tek odak koru
+- "Kendi cümlelerinizle" gibi gereksiz paraphrase kalıplarını kullanma
+- Kullanıcının anlamını senin çerçevelediğin "nasıl anlıyorsunuz" gibi kalıplardan kaçın
+- Özellikle usability bağlamında UI öğesini önce sen isimlendirip sonra anlamını sorma
 
 ## Soru Kalitesi Kriterleri
 ✓ **Açık Uçlu**: "Evet/Hayır" yerine detaylı anlatımı teşvik etmeli
@@ -140,16 +179,31 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 - Evet/hayır ile cevaplanabilecek şekilde soru kurma
 - Kullanıcının olumsuz bir deneyim yaşadığını varsayma
 - Soru metninde "ve" ile iki odağı birleştirme
+- "Kendi cümlelerinizle" yazma
+- "(... ) nasıl anlıyorsunuz" gibi framing yapma
 
 ## Kötü ve İyi Örnekler
 - Kötü: "Promosyon metni ve görsel öğeler arasında anlam karışıklığı yaşadığınız bir bölüm oldu mu?"
 - İyi: "Promosyon metni size nasıl bir mesaj veriyor?"
 - Kötü: "Bu alan size güven verdi mi?"
 - İyi: "Bu alan sizde nasıl bir izlenim bıraktı?"
+- Kötü: "Zaman dilimi kısaltmalarını (1G, 1H, 1A) nasıl anlıyorsunuz?"
+- İyi: "(1G, 1H, 1A) gibi ifadeler size ne anlatıyor?"
+- Kötü: "Bu deneyimi kendi cümlelerinizle nasıl anlatırsınız?"
+- İyi: "Bu deneyimi nasıl tarif edersiniz?"
 
 Çıktıdan önce kendi kendine kontrol et: Her soru nötr, açık uçlu ve varsayımsız mı? Değilse yeniden yaz.`;
 
-    const userPrompt = buildQuestionPrompt(sectionTitle, sectionId, sectionIndex, projectDescription, existingQuestions, requestedCount);
+    const userPrompt = buildQuestionPrompt(
+      sectionTitle,
+      sectionId,
+      sectionIndex,
+      projectDescription,
+      existingQuestions,
+      requestedCount,
+      resolvedMode,
+      learningHintsPrompt,
+    );
 
     console.log('Generating questions for section:', sectionTitle);
 
@@ -237,18 +291,18 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
     console.log('Generated response:', generatedText);
 
     let questions = parseQuestionsFromText(generatedText);
-    questions = repairGeneratedQuestions(questions, { sectionTitle, sectionIndex });
-    let { valid, rejected } = sanitizeGeneratedQuestions(questions, { sectionTitle, sectionIndex });
+    questions = repairGeneratedQuestions(questions, { sectionTitle, sectionIndex, mode: resolvedMode });
+    let { valid, rejected } = sanitizeGeneratedQuestions(questions, { sectionTitle, sectionIndex, mode: resolvedMode });
 
     if (valid.length < requestedCount) {
       console.log('Retrying question generation due to leading or weak questions:', rejected);
 
-      const retryPrompt = `${buildQuestionPrompt(sectionTitle, sectionId, sectionIndex, projectDescription, existingQuestions, requestedCount)}
+      const retryPrompt = `${buildQuestionPrompt(sectionTitle, sectionId, sectionIndex, projectDescription, existingQuestions, requestedCount, resolvedMode, learningHintsPrompt)}
 
 Aşağıdaki sorular leading, varsayımsız değil veya yeterince açık uçlu olmadığı için reddedildi:
 ${questions.map((question, index) => `${index + 1}. ${question}`).join('\n')}
 
-Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warmupSection ? "Bu bölüm warm-up olduğu için sorular hafif, sohbet açıcı ve gündelik tonda olsun." : "Warm-up sorusu üretme."} "Oldu mu?", "yaşadınız mı?", "karışıklık", "sorun", "problem", "güven verdi mi?" gibi kalıpları kullanma.`;
+Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warmupSection ? "Bu bölüm warm-up olduğu için sorular hafif, sohbet açıcı ve gündelik tonda olsun." : "Warm-up sorusu üretme."} "Oldu mu?", "yaşadınız mı?", "karışıklık", "sorun", "problem", "güven verdi mi?", "kendi cümlelerinizle", "nasıl anlıyorsunuz" gibi kalıpları kullanma.`;
 
       const retryResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
@@ -270,8 +324,8 @@ Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warm
       if (retryResponse.ok) {
         const retryData = await retryResponse.json();
         questions = parseQuestionsFromText(retryData.choices[0].message.content);
-        questions = repairGeneratedQuestions(questions, { sectionTitle, sectionIndex });
-        ({ valid, rejected } = sanitizeGeneratedQuestions(questions, { sectionTitle, sectionIndex }));
+        questions = repairGeneratedQuestions(questions, { sectionTitle, sectionIndex, mode: resolvedMode });
+        ({ valid, rejected } = sanitizeGeneratedQuestions(questions, { sectionTitle, sectionIndex, mode: resolvedMode }));
       }
     }
 
@@ -280,11 +334,11 @@ Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warm
     }
 
     if (valid.length === 0) {
-      valid = buildFallbackQuestions(sectionTitle, sectionIndex);
+      valid = buildFallbackQuestions(sectionTitle, sectionIndex, resolvedMode);
     }
 
     if (valid.length < requestedCount) {
-      valid = [...valid, ...buildFallbackQuestions(sectionTitle, sectionIndex)].slice(0, requestedCount);
+      valid = [...valid, ...buildFallbackQuestions(sectionTitle, sectionIndex, resolvedMode)].slice(0, requestedCount);
     }
 
     console.log('Final questions:', valid);
@@ -297,9 +351,9 @@ Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warm
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Internal server error',
       questions: [
-        'Bu konudaki deneyiminizi anlatır mısınız?',
-        'Size en önemli görünen nokta nedir?',
-        'Hangi değişiklikleri önerirsiniz?'
+        'Bu konudaki deneyiminizde ilk aklınıza gelen şey ne oldu?',
+        'Burada size en net gelen nokta neydi?',
+        'Bir değişiklik önerseniz ilk nereden başlardınız?'
       ]
     }), {
       status: 500,

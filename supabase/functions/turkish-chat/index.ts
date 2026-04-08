@@ -1,17 +1,29 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildFallbackQuestions,
   ensureWarmupSection,
   repairGeneratedQuestions,
+  resolveQuestionMode,
   sanitizeGeneratedQuestions,
   WARMUP_SECTION_TITLE,
+  type ResearchQuestionMode,
 } from "../_shared/question-quality.ts";
+import {
+  formatQuestionLearningHints,
+  loadQuestionLearningHints,
+} from "../_shared/question-learning.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const supabase = createClient(
+  Deno.env.get("SUPABASE_URL") ?? "",
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+);
 
 // ============================================================
 // MODEL CONFIGURATION
@@ -95,12 +107,14 @@ Her mesajda su karari ver:
 - Hedef kitle veya arastirma amaci acikca tanimlanmissa
 - Onceki konusmalarda yeterli baglam toplandiysa
 - Hazir sablon mesajlar geldiginde (NPS, reklam testi, acilis sayfasi)
+- Ilk mesajda dogrudan plan dokmeye acele etme; kritik bir bosluk varsa once tek kisa netlestirme yap
 
 **action: "CHAT"** — Dogrudan yanit ver:
 - Arastirma talebi belirsiz veya genel oldugunda → Sokratik sorular sor
 - Daha fazla baglam gerektiginde → en fazla 1 kisa netlestirici soru sor
 - Genel sohbet oldugunda → Kisa ve yardimci yanit ver
 - researchPlan alani null olmali
+- Ilk turda konu net olsa bile eksik baglami once kisa bir soruyla topla
 
 # YANIT TONU
 - Kisa mesaja kisa yanit ver
@@ -116,6 +130,8 @@ Her mesajda su karari ver:
 - Kullanici cok kisa yazdiysa tek bir kritik eksigi netlestir
 - Gereksiz soru zinciri kurma
 - Samimi ama duz bir ton kullan
+- Merakli ol ama kullaniciyi bunaltma
+- Gereksiz yere plani erken acma; once en kritik eksigi kapat
 
 # SORU METODOLOJISI
 - Her researchPlan ilk bolum olarak mutlaka "${WARMUP_SECTION_TITLE}" bolumunu icermeli
@@ -125,6 +141,9 @@ Her mesajda su karari ver:
 - Sorular tek odakli olmali; ayni soruda iki farkli seyi sorma
 - Sorular kullanicinin bir problem yasadigini varsaymamali
 - Mümkünse soru metninde "ve" kullanma; iki farkli odagi ayri sorulara bol
+- "Kendi cumlelerinizle" gibi zorlayici paraphrase kaliplari kullanma
+- "Nasil anliyorsunuz" gibi yorum yonlendiren kaliplari kullanma
+- Ozellikle usability baglaminda UI ogesini once sen isimlendirip sonra anlamini sorma
 
 # ARASTIRMA PLANI KURALLARI
 - chatResponse: Baglama uygun, spesifik bir yanit. Kullanicinin konusuna ozel giris yap.
@@ -147,18 +166,18 @@ Yanit:
         "id": "kmh_usage",
         "title": "KMH Kullanim Deneyimi",
         "questions": [
-          "Kredili mevduat hesabinizi ne siklikla kullaniyorsunuz?",
-          "KMH limitinizi genellikle hangi durumda kullaniyorsunuz?",
-          "KMH'nin calisma mantigini net olarak anliyor musunuz?"
+          "Kredili mevduat hesabinizi en cok hangi durumlarda kullaniyorsunuz?",
+          "KMH limitini kullanmaya karar verdiginiz anlari biraz anlatir misiniz?",
+          "KMH'nin nasil calistigina dair sizde nasil bir anlayis olustu?"
         ]
       },
       {
         "id": "awareness",
         "title": "Farkindalik ve Bilgi Duzeyi",
         "questions": [
-          "KMH faiz oranlari hakkinda yeterince bilgilendirildiginizi dusunuyor musunuz?",
-          "KMH limitinizin ne kadar oldugunu biliyor musunuz?",
-          "KMH kullanimi sonrasi geri odeme surecini anliyor musunuz?"
+          "KMH faiz oranlariyla ilgili ilk baktiginiz bilgiler size ne anlatiyor?",
+          "KMH limitinizle ilgili en cok hangi bilgi aklinizda kaliyor?",
+          "KMH kullandiktan sonraki geri odeme surecini siz nasil tarif edersiniz?"
         ]
       },
       {
@@ -196,7 +215,7 @@ Yanit:
         "id": "product_understanding",
         "title": "Urun Anlama ve Farkindalik",
         "questions": [
-          "Gunluk faiz hesabinin nasil calistigini net olarak anliyor musunuz?",
+          "Gunluk faiz hesabinin nasil calistigina dair sizde nasil bir anlayis olusuyor?",
           "Gunluk faiz hesabini vadeli mevduattan ayiran temel nokta size ne ifade ediyor?",
           "Paranizi baglamadan gunluk faiz kazanma konseptini ilk nasil ogrendiniz?"
         ]
@@ -207,16 +226,16 @@ Yanit:
         "questions": [
           "Gunluk faiz hesabini neden tercih ettiniz?",
           "Paranizi istediginiz zaman cekebilme esnekligi sizin icin ne kadar onemli?",
-          "Gunluk faiz hesabini vadeli hesap yerine mi kullaniyorsunuz, yoksa ikisini birlikte mi?"
+          "Gunluk faiz hesabini diger birikim araclariyla nasil birlikte kullaniyorsunuz?"
         ]
       },
       {
         "id": "satisfaction",
         "title": "Deneyim ve Memnuniyet",
         "questions": [
-          "Gunluk faiz hesabi getiri oranlari beklentilerinizi karsiliyor mu?",
+          "Gunluk faiz hesabi getiri oranlarini gordugunuzde sizde nasil bir beklenti olusuyor?",
           "Faiz hesaplamasini ne kadar seffaf buluyorsunuz?",
-          "Hesaptan para cektiginizde faiz kaybi yasiyor musunuz?"
+          "Hesaptan para cekerken getiri tarafinda aklinizdan neler geciyor?"
         ]
       }
     ]
@@ -237,7 +256,7 @@ Yanit:
         "title": "Alisveris Davranisi",
         "questions": [
           "Online alisveris yaparken genellikle nasil bir surec izliyorsunuz?",
-          "Sepete urun ekleyip satin almadan ciktiginiz zamanlar oluyor mu?",
+          "Sepete urun ekleyip satin almadan ayrildiginiz anlarda genelde neler oluyor?",
           "Satin alma kararinizi etkileyen en onemli faktorler nelerdir?"
         ]
       },
@@ -246,8 +265,8 @@ Yanit:
         "title": "Satin Alma Engelleri",
         "questions": [
           "Sepetinizdeki urunleri satin almaktan vazgectiginizde genellikle nedeni nedir?",
-          "Odeme sayfasinda sizi rahatsiz eden veya durduran bir sey oldu mu?",
-          "Kargo ucreti veya teslimat suresi satin alma kararinizi etkiliyor mu?"
+          "Odeme sayfasinda sizi durup yeniden dusunmeye iten seyler neler oluyor?",
+          "Kargo ucreti veya teslimat suresi kararinizda nasil bir rol oynuyor?"
         ]
       },
       {
@@ -255,8 +274,8 @@ Yanit:
         "title": "Iyilestirme Onerileri",
         "questions": [
           "Satin alma surecinde nelerin degismesini istersiniz?",
-          "Sepet hatirlatma bildirimleri sizi geri donmeye tesvik ediyor mu?",
-          "Rakip sitelerde begendiginiz satin alma ozellikleri var mi?"
+          "Sepet hatirlatma bildirimlerini gordugunuzde sizde nasil bir etki olusuyor?",
+          "Diger sitelerde gordugunuz hangi satin alma yaklasimlari size daha iyi geliyor?"
         ]
       }
     ]
@@ -278,6 +297,8 @@ Yanit:
 - Her zaman kullanicinin konusuna ozel, baglama uygun yanit ver
 - Arastirma sorulari acik uclu olmali (evet/hayir degil)
 - Arastirma sorularinda mümkünse "ve" kullanma; tek odakli soru kur
+- "Kendi cumlelerinizle" yazma
+- "(...) nasil anliyorsunuz" gibi framing yapma
 - Section id'leri snake_case Ingilizce olmali
 - researchPlan.sections sayisi 3 veya 4 olmali, 5. bolum ASLA uretme
 - Section title'lari sabit ve jenerik kaliplar olmasin; her title o bolumun arastirma odagini net anlatsin
@@ -373,7 +394,7 @@ const inferSectionTitle = (questions: string[], index: number) => {
   return fallbackTitles[index] || `Arastirma Odagi ${index + 1}`;
 };
 
-const normalizeResearchPlan = (plan: any) => {
+const normalizeResearchPlan = (plan: any, mode: ResearchQuestionMode = "interview") => {
   if (!plan || !Array.isArray(plan.sections)) {
     return plan;
   }
@@ -394,15 +415,17 @@ const normalizeResearchPlan = (plan: any) => {
       const repairedQuestions = repairGeneratedQuestions(rawQuestions, {
         sectionTitle: rawTitle,
         sectionIndex: index,
+        mode,
       });
 
       let { valid: questions } = sanitizeGeneratedQuestions(repairedQuestions, {
         sectionTitle: rawTitle,
         sectionIndex: index,
+        mode,
       });
 
       if (questions.length < 2) {
-        questions = [...questions, ...buildFallbackQuestions(rawTitle, index)]
+        questions = [...questions, ...buildFallbackQuestions(rawTitle, index, mode)]
           .slice(0, 4);
       }
 
@@ -433,8 +456,8 @@ const normalizeResearchPlan = (plan: any) => {
   });
 };
 
-const describeGuideContext = (guide: any) => {
-  const normalizedGuide = normalizeResearchPlan(guide);
+const describeGuideContext = (guide: any, mode: ResearchQuestionMode = "interview") => {
+  const normalizedGuide = normalizeResearchPlan(guide, mode);
 
   if (!normalizedGuide?.sections?.length) {
     return '';
@@ -483,9 +506,9 @@ const isAdditiveGuideEditRequest = (message: string) => {
     !subtractiveKeywords.some((keyword) => normalized.includes(keyword));
 };
 
-const mergeAdditiveGuideUpdate = (currentGuide: any, nextGuide: any) => {
-  const normalizedCurrentGuide = normalizeResearchPlan(currentGuide);
-  const normalizedNextGuide = normalizeResearchPlan(nextGuide);
+const mergeAdditiveGuideUpdate = (currentGuide: any, nextGuide: any, mode: ResearchQuestionMode = "interview") => {
+  const normalizedCurrentGuide = normalizeResearchPlan(currentGuide, mode);
+  const normalizedNextGuide = normalizeResearchPlan(nextGuide, mode);
 
   if (!normalizedCurrentGuide?.sections?.length || !normalizedNextGuide?.sections?.length) {
     return normalizedNextGuide;
@@ -577,8 +600,8 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
       id: slugifySectionId("task_flow"),
       title: "Ilk Gorev Algi ve Beklentiler",
       questions: [
-        `${screenNames} ekranlarina baktiginizda ilk olarak ne yapmaniz gerektigini nasil anliyorsunuz?`,
-        `${primaryTask} gorevini tamamlarken adimlari kendi cümlelerinizle nasil tarif edersiniz?`,
+        `${screenNames} ekranlarina baktiginizda ilk olarak ne yapmaniz gerektigini size hangi isaretler anlatiyor?`,
+        `${primaryTask} gorevini tamamlarken aklinizdan nasil bir ilerleme akisi geciyor?`,
         `Bu akista ilerlerken size neyin net, neyin daha fazla aciklama gerektirdigini anlatir misiniz?`,
       ],
     },
@@ -588,7 +611,7 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
       questions: [
         `Bu ekranlarda karar vermenize en cok hangi bilgi yardimci oluyor?`,
         `Karar vermeden once biraz daha aciklama gormek isteyeceginiz bir nokta var mi, varsa neresi?`,
-        `Bu deneyimin ${targetUsers} icin nasil bir izlenim biraktigini anlatir misiniz?`,
+        `Bu deneyim sizde nasil bir izlenim birakiyor?`,
       ],
     },
     {
@@ -644,13 +667,24 @@ serve(async (req) => {
       conversationHistory = [],
       researchContext = null,
       guideContext = null,
+      researchMode = null,
       forcePlan = false,
       forceGuideEditPlan = false,
     } = await req.json();
     console.log(`[Searcho] Message: "${message.substring(0, 80)}..."`);
     console.log(`[Searcho] Conversation depth: ${Math.floor(conversationHistory.length / 2)}`);
 
-    const normalizedGuideContext = normalizeResearchPlan(guideContext);
+    const questionMode = resolveQuestionMode({
+      researchMode: typeof researchMode === "string" ? researchMode : null,
+      hasUsabilityContext: Boolean(researchContext?.usabilityTesting),
+    });
+    const learningHints = await loadQuestionLearningHints(supabase, {
+      mode: questionMode,
+      sectionIndex: 0,
+      limit: 6,
+    });
+    const learningHintsPrompt = formatQuestionLearningHints(learningHints);
+    const normalizedGuideContext = normalizeResearchPlan(guideContext, questionMode);
 
     // Build messages — system prompt as first user message (reasoning models)
     // then conversation history, then current message
@@ -658,6 +692,11 @@ serve(async (req) => {
       { role: 'user', content: SYSTEM_PROMPT },
       { role: 'assistant', content: 'Anlasıldı. Searcho AI asistanı olarak hazırım. Kullanıcının mesajını bekliyor ve karar çerçeveme göre yanıt vereceğim.' }
     ];
+
+    if (learningHintsPrompt) {
+      messages.push({ role: "user", content: learningHintsPrompt });
+      messages.push({ role: "assistant", content: "Öğrenilmiş soru kalıplarını aldım. Yeni üretimlerde bunlara göre hareket edeceğim." });
+    }
 
     if (researchContext?.usabilityTesting) {
       const usableScreens = Array.isArray(researchContext.designScreens)
@@ -669,6 +708,8 @@ Bu proje ekran tabanli kullanilabilirlik testidir. Konusma boyunca su prensipler
 - Belirsiz noktalarda kullaniciya netlestirici sorular sor.
 - Sorulari gorev tamamlama, anlasilirlik, guven, karar verme ve surtunme noktalarina odakla.
 - PLAN olustururken bolum ve sorulari ekran kullanilabilirligi odakli kur.
+- Elindeki gizli baglami kullan ama kullaniciya teknik readiness, skor veya sistem bilgisi gostermeden ilerle.
+- Ilk turda dogrudan plan dokmek yerine gerekiyorsa once tek kritik boslugu netlestir.
 
 Arastirma amaci: ${researchContext.usabilityTesting.objective || 'Belirtilmedi'}
 Ana kullanici gorevi: ${researchContext.usabilityTesting.primaryTask || 'Belirtilmedi'}
@@ -682,7 +723,7 @@ ${usableScreens || 'Screen bilgisi yok'}`;
       messages.push({ role: 'user', content: usabilityContextPrompt });
       messages.push({ role: 'assistant', content: 'Usability test baglamini aldim. Sorularimi ekran kullanilabilirligi ekseninde kuracagim.' });
 
-      if (forcePlan || conversationHistory.length === 0) {
+      if (forcePlan) {
         messages.push({
           role: 'user',
           content: `Bu ilk degerlendirme turu. Netlestirme sorulari sormadan dogrudan action=PLAN ile kullanilabilirlik odakli arastirma plani uret. researchPlan null olamaz.`,
@@ -693,7 +734,7 @@ ${usableScreens || 'Screen bilgisi yok'}`;
     if (normalizedGuideContext?.sections?.length) {
       messages.push({
         role: 'user',
-        content: `${describeGuideContext(normalizedGuideContext)}
+        content: `${describeGuideContext(normalizedGuideContext, questionMode)}
 
 Kurallar:
 - Eger kullanici mevcut arastirma plani, bolumleri veya sorulari uzerinde bir degisiklik istiyorsa action=PLAN don.
@@ -752,7 +793,7 @@ Kurallar:
       });
     }
 
-    if ((forcePlan || (researchContext?.usabilityTesting && conversationHistory.length === 0)) && (parsed.action !== 'PLAN' || parsed.researchPlan === null)) {
+    if (forcePlan && (parsed.action !== 'PLAN' || parsed.researchPlan === null)) {
       console.log('[Searcho] Model returned CHAT while PLAN was required, using fallback usability plan');
       parsed = buildUsabilityFallbackPlan(message, researchContext);
     }
@@ -778,10 +819,10 @@ Kurallar:
     const isResearchPlan = parsed.action === 'PLAN' && parsed.researchPlan !== null;
 
     if (isResearchPlan) {
-      parsed.researchPlan = normalizeResearchPlan(parsed.researchPlan);
+      parsed.researchPlan = normalizeResearchPlan(parsed.researchPlan, questionMode);
 
       if (forceGuideEditPlan && isAdditiveGuideEditRequest(message) && normalizedGuideContext?.sections?.length) {
-        parsed.researchPlan = mergeAdditiveGuideUpdate(normalizedGuideContext, parsed.researchPlan);
+        parsed.researchPlan = mergeAdditiveGuideUpdate(normalizedGuideContext, parsed.researchPlan, questionMode);
       }
     }
 

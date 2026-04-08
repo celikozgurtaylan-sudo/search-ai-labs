@@ -1,4 +1,4 @@
-import { useState, useEffect, type ClipboardEvent } from "react";
+import { useState, useEffect, useRef, type ClipboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -80,6 +80,9 @@ const Index = () => {
   const [projectDescription, setProjectDescription] = useState("");
   const [userProjects, setUserProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedResearchMode, setSelectedResearchMode] = useState<"structured" | "ai_enhanced">("structured");
+  const [isAgentEnhancedPressing, setIsAgentEnhancedPressing] = useState(false);
+  const [isUsabilityHovering, setIsUsabilityHovering] = useState(false);
   const [activePlaceholderIndex, setActivePlaceholderIndex] = useState(0);
   const [typedPlaceholderLength, setTypedPlaceholderLength] = useState(0);
   const [isDeletingPlaceholder, setIsDeletingPlaceholder] = useState(false);
@@ -93,19 +96,44 @@ const Index = () => {
     successSignals: "",
     riskAreas: ""
   });
+  const agentEnhancedPressTimeoutRef = useRef<number | null>(null);
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
 
   const hasScreenContext = screenDrafts.length > 0;
   const hasRequiredUsabilityAnswers = usabilityIntake.objective.trim().length > 0 && usabilityIntake.primaryTask.trim().length > 0;
+  const isAgentEnhancedSelected = selectedResearchMode === "ai_enhanced";
+  const isUsabilityModeActive = isDesignModuleOpen || hasScreenContext;
+  const isUsabilityWarmActive = isUsabilityModeActive && !isAgentEnhancedSelected;
+  const isUsabilityWarmVisible = (isUsabilityHovering || isUsabilityWarmActive) && !isAgentEnhancedSelected;
   const activePlaceholder = placeholderHints[activePlaceholderIndex];
   const visiblePlaceholder = activePlaceholder.slice(0, typedPlaceholderLength);
+
+  const triggerAgentEnhancedPress = () => {
+    if (agentEnhancedPressTimeoutRef.current) {
+      window.clearTimeout(agentEnhancedPressTimeoutRef.current);
+    }
+
+    setIsAgentEnhancedPressing(true);
+    agentEnhancedPressTimeoutRef.current = window.setTimeout(() => {
+      setIsAgentEnhancedPressing(false);
+      agentEnhancedPressTimeoutRef.current = null;
+    }, 155);
+  };
 
   useEffect(() => {
     if (user) {
       loadUserProjects();
     }
   }, [user]);
+
+  useEffect(() => {
+    return () => {
+      if (agentEnhancedPressTimeoutRef.current) {
+        window.clearTimeout(agentEnhancedPressTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (projectDescription) return;
@@ -322,6 +350,11 @@ const Index = () => {
       return;
     }
 
+    if (selectedResearchMode === "ai_enhanced" && hasScreenContext) {
+      toast.error("Agent Enhanced mod şimdilik kullanılabilirlik testi akışından ayrı çalışıyor.");
+      return;
+    }
+
     setLoading(true);
     try {
       const uploadedScreens = await uploadDesignScreens();
@@ -342,6 +375,7 @@ const Index = () => {
       null;
 
       const analysisPayload = {
+        researchMode: selectedResearchMode,
         ...(templateId ? { template: templateId } : {}),
         ...(hasScreenContext ? { designScreens, usabilityTesting } : {})
       };
@@ -380,6 +414,7 @@ const Index = () => {
   };
 
   const handleTemplateSelect = (template: typeof templates[0]) => {
+    setSelectedResearchMode("structured");
     const sampleDescriptions = {
       "ad-testing": "Reklam kampanyası performansını ve hedef kitle tepkilerini değerlendirmek için kapsamlı bir kullanıcı araştırması tasarlayın. Duygusal tepkiler, marka algısı ve satın alma niyeti üzerine odaklanılması gereken bir çalışma.",
       "landing-page": "Web sitesi açılış sayfasının kullanıcı deneyimi ve dönüşüm optimizasyonu için detaylı analiz gereksinimi. Kullanıcı davranışları, mesaj netliği ve etkileşim oranları üzerine araştırma planlanması.",
@@ -468,15 +503,20 @@ const Index = () => {
         </div>
 
         {/* Project Input */}
-        <div className="landing-input-card bg-card border border-border rounded-xl p-8 mb-8 shadow-sm landing-fade-in landing-fade-in--4">
-          <div className="relative">
+        <div className={`landing-input-card bg-card border border-border rounded-xl p-8 mb-8 shadow-sm landing-fade-in landing-fade-in--4 ${isAgentEnhancedSelected ? "landing-input-card--agent-active" : ""} ${isUsabilityWarmActive ? "landing-input-card--usability-active" : ""} ${isUsabilityWarmVisible ? "landing-input-card--usability-hover" : ""} ${isAgentEnhancedPressing ? "landing-input-card--agent-smash" : ""}`}>
+          <div
+            className={`landing-agent-border-overlay landing-agent-border-overlay--card ${isAgentEnhancedSelected || isUsabilityWarmVisible ? "landing-agent-border-overlay--active" : ""} ${isUsabilityWarmVisible ? "landing-agent-border-overlay--warm" : ""}`}
+            aria-hidden="true"
+          />
+
+          <div className="relative rounded-[0.9rem]">
             {/* Custom Animated Placeholder Overlay */}
             {!projectDescription &&
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
                 <div className="absolute left-3 top-2 right-4">
-                  <div className="min-h-[120px] whitespace-pre-wrap text-lg leading-8 text-text-muted opacity-75">
+                  <div className={`min-h-[120px] whitespace-pre-wrap text-lg leading-8 ${isAgentEnhancedSelected ? "text-brand-secondary/55" : "text-text-muted opacity-75"}`}>
                     {visiblePlaceholder}
-                    <span className="ml-0.5 inline-block h-5 w-px translate-y-1 align-top animate-pulse bg-text-muted" />
+                    <span className={`ml-0.5 inline-block h-5 w-px translate-y-1 align-top animate-pulse ${isAgentEnhancedSelected ? "bg-brand-secondary/45" : "bg-text-muted"}`} />
                   </div>
                 </div>
               </div>
@@ -644,19 +684,53 @@ const Index = () => {
           </div>
           
           <div className="flex items-center justify-between gap-3 mt-6">
-            <Button
-            type="button"
-            variant="outline"
-            onClick={() => setIsDesignModuleOpen((prev) => !prev)}
-            className="h-9 rounded-full border-border-light bg-white/95 px-1.5 pr-3 hover:bg-white shadow-sm"
-            aria-label={isDesignModuleOpen ? "Kullanılabilirlik testi panelini kapat" : "Kullanılabilirlik testi panelini aç"}>
-              <span className="mr-2 flex h-6 w-6 items-center justify-center rounded-full border border-border-light bg-surface text-text-primary">
-                <Plus className={`h-4 w-4 transition-transform duration-300 ${isDesignModuleOpen ? "rotate-45" : ""}`} />
-              </span>
-              <span className="text-xs font-medium text-text-secondary sm:text-sm">
-                Kullanılabilirlik Testi
-              </span>
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onPointerEnter={() => setIsUsabilityHovering(true)}
+                onPointerLeave={() => setIsUsabilityHovering(false)}
+                onFocus={() => setIsUsabilityHovering(true)}
+                onBlur={() => setIsUsabilityHovering(false)}
+                onClick={() => {
+                  setSelectedResearchMode("structured");
+                  setIsDesignModuleOpen((prev) => !prev);
+                }}
+                className={`landing-usability-button h-9 rounded-full border-border-light bg-white/95 px-1.5 pr-3 hover:bg-white shadow-sm ${isUsabilityWarmVisible ? "landing-usability-button--hovering" : ""} ${isUsabilityWarmActive ? "landing-usability-button--active" : ""}`}
+                aria-label={isDesignModuleOpen ? "Kullanılabilirlik testi panelini kapat" : "Kullanılabilirlik testi panelini aç"}
+              >
+                <span className={`mr-2 flex h-6 w-6 items-center justify-center rounded-full border border-border-light bg-surface text-text-primary ${isUsabilityWarmVisible ? "landing-usability-button__icon landing-usability-button__icon--hovering" : ""} ${isUsabilityWarmActive ? "landing-usability-button__icon landing-usability-button__icon--active" : ""}`}>
+                  <Plus className={`h-4 w-4 transition-transform duration-300 ${isDesignModuleOpen ? "rotate-45" : ""}`} />
+                </span>
+                <span className={`text-xs font-medium text-text-secondary sm:text-sm ${isUsabilityWarmVisible ? "landing-usability-button__label landing-usability-button__label--hovering" : ""} ${isUsabilityWarmActive ? "landing-usability-button__label landing-usability-button__label--active" : ""}`}>
+                  Kullanılabilirlik Testi
+                </span>
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onPointerDown={() => {
+                  if (selectedResearchMode !== "ai_enhanced") {
+                    triggerAgentEnhancedPress();
+                  }
+                }}
+                onClick={() => {
+                  if (selectedResearchMode === "ai_enhanced") {
+                    setSelectedResearchMode("structured");
+                    return;
+                  }
+
+                  setSelectedResearchMode("ai_enhanced");
+                  setIsDesignModuleOpen(false);
+                }}
+                className={`h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm ${selectedResearchMode === "ai_enhanced" ? "border-brand-primary/40 bg-brand-primary-light/30 text-brand-primary" : ""}`}
+                aria-label={selectedResearchMode === "ai_enhanced" ? "Agent Enhanced modunu kapat" : "Agent Enhanced araştırma modunu seç"}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                <span className="text-xs font-medium sm:text-sm">Agent Enhanced</span>
+              </Button>
+            </div>
             <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading || isUploadingScreens} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
               {loading || isUploadingScreens ? 'Oluşturuluyor...' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />
             </Button>

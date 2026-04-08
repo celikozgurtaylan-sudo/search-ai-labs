@@ -1,4 +1,5 @@
 export type ProjectReportStatus = "empty" | "generating" | "ready" | "failed";
+export type ProjectInterviewMode = "structured" | "ai_enhanced";
 
 export interface ProjectReportSourceStats {
   invitedParticipantCount: number;
@@ -38,6 +39,10 @@ export interface ProjectReportQuote {
   questionText: string;
   section: string;
   text: string;
+  source?: "anchor" | "follow_up" | "transition" | "closing" | null;
+  anchorId?: string | null;
+  anchorLabel?: string | null;
+  turnIndex?: number | null;
   videoUrl?: string | null;
   videoDurationMs?: number | null;
   audioDurationMs?: number | null;
@@ -100,6 +105,54 @@ export interface ProjectReportParticipantBreakdown {
   quoteIds: string[];
 }
 
+export interface ProjectReportAnchorCoverage {
+  anchorId: string;
+  anchorLabel: string;
+  themeTitle: string;
+  answeredSessionCount: number;
+  skippedSessionCount: number;
+  coverageRate: number;
+  averageResponseDurationMs: number | null;
+  quoteIds: string[];
+  summary: string;
+}
+
+export interface ProjectReportFollowUpPath {
+  id: string;
+  anchorId: string | null;
+  anchorLabel: string;
+  questionText: string;
+  count: number;
+  sessionCount: number;
+  quoteIds: string[];
+}
+
+export interface ProjectReportParticipantJourney {
+  sessionId: string;
+  sessionRef: string;
+  participantId: string | null;
+  participantLabel: string;
+  anchorCoverageCount: number;
+  followUpCount: number;
+  sessionDurationMs: number | null;
+  summary: string;
+  quoteIds: string[];
+}
+
+export interface ProjectReportTurn {
+  questionId: string;
+  responseId: string | null;
+  sessionId: string;
+  sessionRef: string;
+  participantLabel: string;
+  questionText: string;
+  responseText: string;
+  source: "anchor" | "follow_up" | "transition" | "closing";
+  anchorId: string | null;
+  anchorLabel: string | null;
+  turnIndex: number | null;
+}
+
 export interface ProjectReportGenerationMeta {
   trigger: string;
   triggerSessionId?: string | null;
@@ -111,10 +164,11 @@ export interface ProjectReportGenerationMeta {
 }
 
 export interface ProjectInterviewReport {
+  interviewMode: ProjectInterviewMode;
   status: ProjectReportStatus;
   version: number;
   generatedAt: string | null;
-  generatedFrom: "transcript-only";
+  generatedFrom: "transcript-only" | "ai-enhanced-transcript";
   sourceStats: ProjectReportSourceStats;
   overview: ProjectReportOverview;
   executiveSummary: string;
@@ -123,6 +177,10 @@ export interface ProjectInterviewReport {
   recommendations: ProjectReportRecommendation[];
   questionBreakdown: ProjectReportQuestionBreakdown[];
   participantBreakdown: ProjectReportParticipantBreakdown[];
+  anchorCoverage: ProjectReportAnchorCoverage[];
+  followUpPaths: ProjectReportFollowUpPath[];
+  participantJourneys: ProjectReportParticipantJourney[];
+  turnCatalog: ProjectReportTurn[];
   quoteCatalog: ProjectReportQuote[];
   generationMeta: ProjectReportGenerationMeta;
 }

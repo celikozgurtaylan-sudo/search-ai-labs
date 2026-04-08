@@ -15,6 +15,7 @@ const ParticipantLanding = () => {
   const [participant, setParticipant] = useState<StudyParticipant | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pausedMessage, setPausedMessage] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [consentGiven, setConsentGiven] = useState(false);
   const [participantName, setParticipantName] = useState("");
@@ -28,15 +29,35 @@ const ParticipantLanding = () => {
   const loadParticipant = async () => {
     try {
       setLoading(true);
-      const data = await participantService.getParticipantByToken(token!);
-      
+      setError(null);
+      setPausedMessage(null);
+
+      const access = await participantService.getParticipantInvitationAccess(token!);
+
+      if (!access) {
+        setError("Katılımcı bilgileri yüklenirken hata oluştu");
+        return;
+      }
+
+      if (access.access_state === 'paused') {
+        setPausedMessage(access.message || "Araştırma geçici olarak duraklatıldı. Lütfen daha sonra tekrar deneyin.");
+        return;
+      }
+
+      if (access.access_state === 'invalid_or_expired') {
+        setError("Geçersiz veya süresi dolmuş davet linki");
+        return;
+      }
+
+      const data = access.participant_data;
+
       if (!data) {
         setError("Geçersiz veya süresi dolmuş davet linki");
         return;
       }
-      
-      if (data.status === 'declined') {
-        setError("Bu davet reddedilmiş");
+
+      if (access.access_state === 'declined_or_completed') {
+        setError(data.status === 'declined' ? "Bu davet reddedilmiş" : "Bu davet artık aktif değil");
         return;
       }
 
@@ -55,6 +76,24 @@ const ParticipantLanding = () => {
 
     try {
       setJoining(true);
+      setError(null);
+      setPausedMessage(null);
+
+      const access = await participantService.getParticipantInvitationAccess(participant.invitation_token);
+
+      if (!access) {
+        throw new Error("Çalışma erişimi doğrulanamadı");
+      }
+
+      if (access.access_state === 'paused') {
+        setPausedMessage(access.message || "Araştırma geçici olarak duraklatıldı. Lütfen daha sonra tekrar deneyin.");
+        return;
+      }
+
+      if (access.access_state !== 'active' || !access.participant_data) {
+        setError(access.message || "Bu davet linki şu anda kullanılamıyor.");
+        return;
+      }
       
       // Update participant status to joined
       await participantService.updateParticipantStatusByToken(participant.invitation_token, 'joined');
@@ -77,6 +116,10 @@ const ParticipantLanding = () => {
       
     } catch (error) {
       console.error('Failed to join study:', error);
+      if (error instanceof Error && /durduruldu|duraklatıldı|paused/i.test(error.message)) {
+        setPausedMessage("Araştırma geçici olarak duraklatıldı. Lütfen daha sonra tekrar deneyin.");
+        return;
+      }
       toast.error("Çalışmaya katılırken hata oluştu");
     } finally {
       setJoining(false);
@@ -118,6 +161,24 @@ const ParticipantLanding = () => {
             <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
             <h2 className="text-lg font-semibold text-text-primary mb-2">Hata</h2>
             <p className="text-text-secondary">{error}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (pausedMessage) {
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center px-4">
+        <Card className="w-full max-w-xl border-amber-200 bg-amber-50/80 shadow-sm">
+          <CardContent className="pt-8 pb-8 text-center">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+              <Clock className="w-7 h-7" />
+            </div>
+            <h2 className="text-2xl font-semibold text-text-primary mb-3">Araştırma Geçici Olarak Duraklatıldı</h2>
+            <p className="text-text-secondary leading-relaxed">
+              {pausedMessage}
+            </p>
           </CardContent>
         </Card>
       </div>

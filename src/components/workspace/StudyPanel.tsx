@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import TypewriterText from "@/components/ui/typewriter-text";
 import ParticipantManager from "@/components/workspace/ParticipantManager";
 import { StudyParticipant, StudySession } from "@/services/participantService";
+import type { AIEnhancedBrief, ResearchMode } from "@/lib/aiEnhancedResearch";
 
 interface StudyPanelProps {
   discussionGuide: any;
@@ -19,6 +20,10 @@ interface StudyPanelProps {
   projectId: string;
   projectTitle: string;
   currentStep: 'guide' | 'recruit' | 'run' | 'analyze';
+  researchMode?: ResearchMode;
+  aiEnhancedBrief?: AIEnhancedBrief | null;
+  isResearchPaused?: boolean;
+  researchPausedAt?: string | null;
   questionSetVersionId?: string | null;
   questionSetVersionNumber?: number | null;
   questionSetUpdatedAt?: string | null;
@@ -45,6 +50,8 @@ interface QuestionReviewResult {
   status: "strong" | "caution" | "problematic";
   summary: string;
   issues: QuestionReviewIssue[];
+  methodologyIssues?: QuestionReviewIssue[];
+  violatedMustRules?: string[];
   checks: Record<string, QuestionReviewCheck>;
   suggestedRewrite: string | null;
   suggestionReason?: string;
@@ -57,6 +64,10 @@ const StudyPanel = ({
   projectId,
   projectTitle,
   currentStep,
+  researchMode = "structured",
+  aiEnhancedBrief = null,
+  isResearchPaused = false,
+  researchPausedAt = null,
   questionSetVersionId = null,
   questionSetVersionNumber = null,
   questionSetUpdatedAt = null,
@@ -92,6 +103,8 @@ const StudyPanel = ({
   const [reviewingQuestions, setReviewingQuestions] = useState<{
     [key: string]: boolean;
   }>({});
+  const isAIEnhancedMode = researchMode === "ai_enhanced";
+  const allowGuideEditing = !isAIEnhancedMode;
   const questionSkeletonWidth = "w-11/12";
   const useQuestionSkeletonReveal = currentStep === "recruit";
   const questionRevealTimeoutsRef = useRef<number[]>([]);
@@ -186,12 +199,77 @@ const StudyPanel = ({
     return discussionGuide?.title || "Kullanıcı deneyimi araştırması";
   };
 
+  const resolveQuestionMode = () => {
+    const persistedProject = localStorage.getItem("searchai-project");
+    if (persistedProject) {
+      try {
+        const parsedProject = JSON.parse(persistedProject);
+        if (parsedProject?.analysis?.usabilityTesting) {
+          return "usability";
+        }
+        if (parsedProject?.analysis?.researchMode === "ai_enhanced") {
+          return "ai_enhanced";
+        }
+      } catch (error) {
+        console.error("Stored project parsing failed for question mode:", error);
+      }
+    }
+
+    return researchMode === "ai_enhanced" ? "ai_enhanced" : "structured";
+  };
+
+  const recordQuestionEditLearning = async ({
+    sectionTitle,
+    sectionIndex,
+    originalQuestionText,
+    editedQuestionText,
+    editSource,
+  }: {
+    sectionTitle: string;
+    sectionIndex: number;
+    originalQuestionText: string;
+    editedQuestionText: string;
+    editSource: string;
+  }) => {
+    const normalizedOriginal = originalQuestionText.trim();
+    const normalizedEdited = editedQuestionText.trim();
+
+    if (!projectId || !normalizedOriginal || !normalizedEdited || normalizedOriginal === normalizedEdited) {
+      return;
+    }
+
+    if (sectionIndex < 0) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase.functions.invoke("record-question-edit-learning", {
+        body: {
+          projectId,
+          researchMode,
+          hasUsabilityContext: resolveQuestionMode() === "usability",
+          sectionTitle,
+          sectionIndex,
+          originalQuestionText: normalizedOriginal,
+          editedQuestionText: normalizedEdited,
+          editSource,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error("Question learning event could not be recorded:", error);
+    }
+  };
+
   const createDemoQuestions = (sectionTitle: string, existingQuestions: string[]) => {
     const normalizedTitle = sectionTitle.toLocaleLowerCase('tr-TR');
 
     let candidates = [
       "Bu bölüm sizin için neyi daha görünür veya daha net hale getirmeli?",
-      "Buradaki bilgi akışını kendi cümlelerinizle nasıl anlatırsınız?",
+      "Buradaki bilgi akışını nasıl tarif edersiniz?",
       "Bu aşamada aklınıza gelen ilk soru veya tereddüt ne olurdu?",
     ];
 
@@ -381,6 +459,10 @@ const StudyPanel = ({
     if (!discussionGuide) return;
     const questionKey = getQuestionKey(sectionId, questionIndex);
     const updatedQuestion = editValue.trim() || "Yeni soru - düzenlemek için tıklayın";
+    const currentSection = discussionGuide.sections.find((section: any) => section.id === sectionId);
+    const originalQuestion = currentSection?.questions?.[questionIndex] || "";
+    const currentReview = questionReviews[questionKey];
+    const sectionIndex = discussionGuide.sections.findIndex((section: any) => section.id === sectionId);
     const updatedGuide = {
       ...discussionGuide,
       sections: discussionGuide.sections.map((section: any) => {
@@ -408,6 +490,14 @@ const StudyPanel = ({
     });
     setEditingQuestion(null);
     setEditValue("");
+
+    void recordQuestionEditLearning({
+      sectionTitle: currentSection?.title || "",
+      sectionIndex,
+      originalQuestionText: originalQuestion,
+      editedQuestionText: updatedQuestion,
+      editSource: currentReview?.suggestedRewrite === updatedQuestion ? "review_rewrite_accept" : "manual_edit",
+    });
   };
   const handleDeleteQuestion = (sectionId: string, questionIndex: number) => {
     if (!discussionGuide) return;
@@ -620,6 +710,7 @@ const StudyPanel = ({
           sectionIndex,
           projectDescription: resolveProjectDescription(),
           guideTitle: discussionGuide.title,
+          mode: resolveQuestionMode(),
         }
       });
 
@@ -674,7 +765,8 @@ const StudyPanel = ({
           projectDescription,
           existingQuestions,
           count: 1,
-          validateProject: false
+          validateProject: false,
+          mode: resolveQuestionMode(),
         }
       });
 
@@ -1017,20 +1109,33 @@ const StudyPanel = ({
                   </Button>
                 </div>
               </div> : <div className="flex items-center gap-2">
-                <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditGuideTitle(discussionGuide.title)}>
+                {isAIEnhancedMode ? (
                   <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>
-                </button>
-                {questionSetVersionNumber ? <Badge variant="outline" className="border-brand-primary/30 text-brand-primary">
-                    v{questionSetVersionNumber}
+                ) : (
+                  <>
+                    <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditGuideTitle(discussionGuide.title)}>
+                      <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>
+                    </button>
+                    {questionSetVersionNumber ? <Badge variant="outline" className="border-brand-primary/30 text-brand-primary">
+                        v{questionSetVersionNumber}
+                      </Badge> : null}
+                    <Button size="sm" variant="ghost" onClick={() => handleEditGuideTitle(discussionGuide.title)} className="text-text-secondary hover:text-text-primary">
+                      <Edit3 className="w-3 h-3" />
+                    </Button>
+                  </>
+                )}
+                {isAIEnhancedMode ? <Badge variant="outline" className="border-brand-primary/30 text-brand-primary">
+                    Agent Enhanced
                   </Badge> : null}
-                <Button size="sm" variant="ghost" onClick={() => handleEditGuideTitle(discussionGuide.title)} className="text-text-secondary hover:text-text-primary">
-                  <Edit3 className="w-3 h-3" />
-                </Button>
               </div>}
             <p className="mt-2 text-sm font-medium text-text-secondary">
               {currentStep === 'run'
-                ? 'Katılımcıları yönet, görüşmeleri takip et ve gerekirse soru setini güncelle'
-                : 'Kullanıcılara sorulacak sorular'}
+                ? (isAIEnhancedMode
+                  ? 'Katılımcıları yönet, anchor omurgayı görüntüle ve AI native görüşme akışını takip et'
+                  : 'Katılımcıları yönet, görüşmeleri takip et ve gerekirse soru setini güncelle')
+                : (isAIEnhancedMode
+                  ? 'Agent Enhanced modda herkese aynı anchor omurga sorulur, follow-up sorular agent tarafından canlı üretilir'
+                  : 'Kullanıcılara sorulacak sorular')}
             </p>
           </div>
           
@@ -1045,33 +1150,53 @@ const StudyPanel = ({
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 min-h-0">
         {currentStep === 'analyze' ? renderAnalysisView() : <div className="space-y-6">
-            {currentStep === 'run' ? <Card className="border-amber-200/80 bg-amber-50/90 p-5 shadow-sm">
+            {currentStep === 'run' ? <Card className={`${isResearchPaused ? "border-amber-300/90 bg-amber-50" : "border-amber-200/80 bg-amber-50/90"} p-5 shadow-sm`}>
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <p className="text-sm font-semibold text-amber-900">Görüşme Yürütme Merkezi</p>
+                    <p className="text-sm font-semibold text-amber-900">
+                      {isResearchPaused ? "Araştırma Duraklatıldı" : "Görüşme Yürütme Merkezi"}
+                    </p>
                     <p className="mt-1 text-sm text-amber-800/90">
-                      Katılımcıları buradan takip edebilir, yeni davetler gönderebilir ve soru setini düzenleyebilirsin.
+                      {isResearchPaused
+                        ? "Gönderilmiş linkler geçici olarak kapalı. Aktif görüşmeler devam edebilir, yeni girişler ise araştırmaya devam ettiğinizde tekrar açılır."
+                        : isAIEnhancedMode
+                          ? "Katılımcıları buradan takip edebilir, yeni davetler gönderebilir ve Agent Enhanced görüşme omurgasını izleyebilirsin."
+                          : "Katılımcıları buradan takip edebilir, yeni davetler gönderebilir ve soru setini düzenleyebilirsin."}
                     </p>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
+                    {isResearchPaused ? <Badge variant="outline" className="border-amber-300 bg-white/70 text-amber-900">
+                        Linkler duraklatıldı
+                      </Badge> : null}
                     <Badge variant="outline" className="border-amber-300 bg-white/70 text-amber-900">
                       {participants.length} katılımcı
                     </Badge>
                     <Badge variant="outline" className="border-amber-300 bg-white/70 text-amber-900">
-                      {questionSetVersionNumber ? `v${questionSetVersionNumber}` : "Varsayılan set"}
+                      {isAIEnhancedMode ? "AI native akış" : questionSetVersionNumber ? `v${questionSetVersionNumber}` : "Varsayılan set"}
                     </Badge>
                   </div>
                 </div>
 
-                {questionSetVersionNumber && questionSetVersionNumber > 1 && questionSetUpdatedAt ? <p className="mt-4 text-sm text-amber-900/80">
-                    Sorular {new Date(questionSetUpdatedAt).toLocaleString('tr-TR')} tarihinde güncellendi. Bu andan sonra gönderdiğiniz yeni davetler güncel soru setini kullanır. Aktif veya tamamlanmış oturumlar etkilenmez.
-                  </p> : null}
+                <div className="mt-4 space-y-2 text-sm text-amber-900/80">
+                  {isResearchPaused && researchPausedAt ? <p>
+                      Araştırma {new Date(researchPausedAt).toLocaleString('tr-TR')} tarihinde duraklatıldı. Aynı linkler araştırmaya devam dediğiniz anda yeniden çalışır.
+                    </p> : null}
+                  {isAIEnhancedMode && aiEnhancedBrief?.themes?.length ? <p>
+                      Bu modda tüm katılımcılar aynı anchor omurgayla başlar. AI follow-up soruları cevaplara göre canlı üretir ve tüm turn'ler analizde ayrı gösterilir.
+                    </p> : null}
+                  {!isAIEnhancedMode && questionSetVersionNumber && questionSetVersionNumber > 1 && questionSetUpdatedAt ? <p>
+                      Sorular {new Date(questionSetUpdatedAt).toLocaleString('tr-TR')} tarihinde güncellendi. Bu andan sonra gönderdiğiniz yeni davetler güncel soru setini kullanır. Aktif veya tamamlanmış oturumlar etkilenmez.
+                    </p> : null}
+                </div>
               </Card> : null}
 
             {currentStep === 'run' ? <ParticipantManager
                 projectId={projectId}
                 projectTitle={projectTitle}
+                researchMode={researchMode}
+                aiEnhancedBrief={aiEnhancedBrief}
+                isResearchPaused={isResearchPaused}
                 currentQuestionSetVersionId={questionSetVersionId}
                 currentQuestionSetVersionNumber={questionSetVersionNumber}
                 questionSetUpdatedAt={questionSetUpdatedAt}
@@ -1102,15 +1227,15 @@ const StudyPanel = ({
                               İptal
                             </Button>
                           </div>
-                        </div> : <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditSection(section.id, section.title)}>
+                        </div> : allowGuideEditing ? <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditSection(section.id, section.title)}>
                           {showSectionTypewriters[section.id] ? <TypewriterText text={section.title} speed={24} delay={discussionGuide.sections.indexOf(section) * 180} enableControls={true} onComplete={() => setShowSectionTypewriters(prev => ({
                       ...prev,
                       [section.id]: false
                     }))} /> : section.title}
-                        </button>}
+                        </button> : <span>{section.title}</span>}
                     </CardTitle>
 
-                    <div className="flex items-center gap-1">
+                    {allowGuideEditing ? <div className="flex items-center gap-1">
                       <Button size="sm" variant="ghost" draggable={false} className={`cursor-grab active:cursor-grabbing text-text-secondary hover:text-text-primary ${isGuideLoading ? 'invisible pointer-events-none' : ''}`} aria-label="Bölümü sürükleyerek yeniden sırala">
                         <GripVertical className="w-3 h-3" />
                       </Button>
@@ -1120,7 +1245,7 @@ const StudyPanel = ({
                       <Button size="sm" variant="ghost" onClick={() => handleDeleteSection(section.id)} className={`text-text-secondary hover:text-destructive ${isGuideLoading ? 'invisible pointer-events-none' : ''}`}>
                         <Trash2 className="w-3 h-3" />
                       </Button>
-                    </div>
+                    </div> : null}
                   </div>
                 </CardHeader>
                 
@@ -1139,7 +1264,7 @@ const StudyPanel = ({
                         <div className="flex-1">
                           {isGuideLoading ? <div className="rounded-md border border-border-light bg-surface/60 px-3 py-3">
                               <Skeleton className={`h-4 ${questionSkeletonWidth}`} />
-                            </div> : editingQuestion === questionKey && isQuestionVisible ? <div className="space-y-3">
+                            </div> : editingQuestion === questionKey && isQuestionVisible && allowGuideEditing ? <div className="space-y-3">
                                 <Textarea value={editValue} onChange={e => setEditValue(e.target.value)} className="text-sm" autoFocus />
                                 <div className="flex flex-wrap gap-2">
                                   <Button size="sm" onClick={() => handleSaveQuestion(section.id, index)}>
@@ -1153,7 +1278,11 @@ const StudyPanel = ({
                                 {currentReview && currentReview.reviewedQuestion !== editValue.trim() && <p className="text-xs text-text-secondary">
                                     Metin değişti. Güncel yorum için yeniden değerlendir.
                                   </p>}
-                              </div> : isQuestionVisible ? <div className="text-sm text-text-primary cursor-text hover:bg-surface rounded p-2 -m-2 transition-colors" onClick={() => handleEditQuestion(questionKey, question)}>
+                              </div> : isQuestionVisible ? <div className={`text-sm text-text-primary rounded p-2 -m-2 transition-colors ${allowGuideEditing ? "cursor-text hover:bg-surface" : ""}`} onClick={() => {
+                        if (allowGuideEditing) {
+                          handleEditQuestion(questionKey, question);
+                        }
+                      }}>
                               {question}
                             </div> : <div className="rounded-md border border-border-light bg-surface/60 px-3 py-3">
                               <Skeleton className={`h-4 ${questionSkeletonWidth}`} />
@@ -1176,6 +1305,15 @@ const StudyPanel = ({
                                     </div>)}
                                 </div>}
 
+                              {currentReview.violatedMustRules && currentReview.violatedMustRules.length > 0 ? <div className="rounded-md border border-destructive/15 bg-destructive/5 px-3 py-3">
+                                  <p className="text-[11px] font-medium uppercase tracking-wide text-destructive mb-2">Must Kurallar</p>
+                                  <div className="space-y-1">
+                                    {currentReview.violatedMustRules.map((rule) => <p key={rule} className="text-xs text-text-secondary">
+                                        {rule}
+                                      </p>)}
+                                  </div>
+                                </div> : null}
+
                               <div className="flex flex-wrap gap-2">
                                 {Object.entries(currentReview.checks).map(([key, check]) => <span key={key} className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] ${check.passed ? "bg-status-success-light text-status-success" : "bg-surface text-text-secondary"}`}>
                                     {check.label}
@@ -1189,7 +1327,7 @@ const StudyPanel = ({
                             </div>}
                         </div>
                         
-                        <div className="flex items-center gap-1">
+                        {allowGuideEditing ? <div className="flex items-center gap-1">
                           <Button size="sm" variant="ghost" className={`transition-opacity ${isQuestionVisible ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => handleEditQuestion(questionKey, question)}>
                             <Edit3 className="w-3 h-3" />
                           </Button>
@@ -1200,7 +1338,7 @@ const StudyPanel = ({
                           <Button size="sm" variant="ghost" className={`transition-opacity text-text-secondary hover:text-destructive ${isQuestionVisible ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => handleDeleteQuestion(section.id, index)}>
                             <Trash2 className="w-3 h-3" />
                           </Button>
-                        </div>
+                        </div> : null}
                       </div>;
             })}
                   
@@ -1217,7 +1355,7 @@ const StudyPanel = ({
                       </div>
                     </div>}
                   
-                  {!isGuideLoading && <div className="flex items-center space-x-2">
+                  {!isGuideLoading && allowGuideEditing ? <div className="flex items-center space-x-2">
                     <Button size="sm" variant="ghost" onClick={() => handleAddQuestion(section.id)} className="flex items-center space-x-1 text-text-secondary hover:text-text-primary" disabled={generatingQuestions[section.id]}>
                       <Plus className="w-3 h-3" />
                       <span>Soru ekle</span>
@@ -1227,12 +1365,12 @@ const StudyPanel = ({
                       {generatingQuestions[section.id] ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
                       <span>AI soru üret</span>
                     </Button>
-                  </div>}
+                  </div> : null}
                 </CardContent>
               </Card>;
             })}
 
-            {!isGuideLoading && <Card className="border-dashed border-border-light bg-surface/50">
+            {!isGuideLoading && allowGuideEditing ? <Card className="border-dashed border-border-light bg-surface/50">
               <CardContent className="p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -1245,10 +1383,12 @@ const StudyPanel = ({
                   </Button>
                 </div>
               </CardContent>
-            </Card>}
+            </Card> : null}
             {currentStep === 'recruit' ? <ParticipantManager
                 projectId={projectId}
                 projectTitle={projectTitle}
+                researchMode={researchMode}
+                aiEnhancedBrief={aiEnhancedBrief}
                 currentQuestionSetVersionId={questionSetVersionId}
                 currentQuestionSetVersionNumber={questionSetVersionNumber}
                 questionSetUpdatedAt={questionSetUpdatedAt}

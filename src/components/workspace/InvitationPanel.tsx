@@ -2,6 +2,7 @@ import { Mail } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import ParticipantManager from "@/components/workspace/ParticipantManager";
 import { StudyParticipant, StudySession } from "@/services/participantService";
+import type { AIEnhancedBrief, ResearchMode } from "@/lib/aiEnhancedResearch";
 
 interface InvitationPanelProps {
   open: boolean;
@@ -9,6 +10,8 @@ interface InvitationPanelProps {
   onParticipantsUpdate: (participants: StudyParticipant[]) => void;
   projectId: string;
   projectTitle?: string;
+  researchMode?: ResearchMode;
+  aiEnhancedBrief?: AIEnhancedBrief | null;
   currentQuestionSetVersionId?: string | null;
   currentQuestionSetVersionNumber?: number | null;
   questionSetUpdatedAt?: string | null;
@@ -21,6 +24,8 @@ const InvitationPanel = ({
   onParticipantsUpdate,
   projectId,
   projectTitle,
+  researchMode = "structured",
+  aiEnhancedBrief = null,
   currentQuestionSetVersionId,
   currentQuestionSetVersionNumber,
   questionSetUpdatedAt,
@@ -48,6 +53,8 @@ const InvitationPanel = ({
               variant="sheet"
               projectId={projectId}
               projectTitle={projectTitle}
+              researchMode={researchMode}
+              aiEnhancedBrief={aiEnhancedBrief}
               currentQuestionSetVersionId={currentQuestionSetVersionId}
               currentQuestionSetVersionNumber={currentQuestionSetVersionNumber}
               questionSetUpdatedAt={questionSetUpdatedAt}

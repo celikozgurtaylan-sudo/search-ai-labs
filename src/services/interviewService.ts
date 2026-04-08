@@ -10,6 +10,7 @@ export interface InterviewQuestion {
   question_type: string
   is_follow_up: boolean
   parent_question_id?: string
+  metadata?: any
   created_at: string
   updated_at: string
 }

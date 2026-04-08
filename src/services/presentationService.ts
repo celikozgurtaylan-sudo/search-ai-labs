@@ -1,12 +1,16 @@
 import pptxgen from "pptxgenjs";
 import type {
   ProjectInterviewReport,
+  ProjectReportAnchorCoverage,
   ProjectReportFinding,
+  ProjectReportFollowUpPath,
+  ProjectReportParticipantJourney,
   ProjectReportParticipantBreakdown,
   ProjectReportQuestionBreakdown,
   ProjectReportQuote,
   ProjectReportRecommendation,
   ProjectReportTheme,
+  ProjectReportTurn,
 } from "@/types/projectReport";
 
 const COLORS = {
@@ -270,7 +274,7 @@ const addOverviewSlide = (pptx: pptxgen, report: ProjectInterviewReport, project
   });
 
   slide.addText(
-    `Kaynak: transcript-only • ${report.sourceStats.responsesAnalyzed} yanıt • ${report.sourceStats.quoteCount} alıntı kanıt • ${report.generatedAt ? new Date(report.generatedAt).toLocaleString("tr-TR") : "Henüz yok"}`,
+    `Kaynak: ${report.generatedFrom} • ${report.sourceStats.responsesAnalyzed} yanıt • ${report.sourceStats.quoteCount} alıntı kanıt • ${report.generatedAt ? new Date(report.generatedAt).toLocaleString("tr-TR") : "Henüz yok"}`,
     {
       x: 0.8,
       y: 4.95,
@@ -280,6 +284,149 @@ const addOverviewSlide = (pptx: pptxgen, report: ProjectInterviewReport, project
       color: COLORS.muted,
     },
   );
+};
+
+const addAIEnhancedCoverageSlide = (pptx: pptxgen, report: ProjectInterviewReport) => {
+  const anchors = report.anchorCoverage.slice(0, 6);
+  if (anchors.length === 0) return;
+
+  const slide = pptx.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addSlideTitle(slide, "Anchor Kapsamı", "Ortak anchor omurganın katılımcılar arasında ne kadar kapsandığı.");
+
+  anchors.forEach((anchor: ProjectReportAnchorCoverage, index: number) => {
+    const y = 1.35 + index * 0.88;
+
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: 0.6,
+      y,
+      w: 12,
+      h: 0.72,
+      rectRadius: 0.04,
+      fill: { color: index % 2 === 0 ? COLORS.light : COLORS.white },
+      line: { color: COLORS.border, width: 0.5 },
+    });
+
+    slide.addText(`${anchor.themeTitle} • ${truncate(anchor.anchorLabel, 72)}`, {
+      x: 0.8,
+      y: y + 0.14,
+      w: 6.6,
+      h: 0.18,
+      fontSize: 10,
+      bold: true,
+      color: COLORS.dark,
+    });
+
+    slide.addText(anchor.summary || "Anchor için ek özet bulunmuyor", {
+      x: 0.8,
+      y: y + 0.36,
+      w: 6.6,
+      h: 0.18,
+      fontSize: 8.5,
+      color: COLORS.muted,
+    });
+
+    slide.addText(`${anchor.answeredSessionCount} cevap`, {
+      x: 7.65,
+      y: y + 0.23,
+      w: 1.0,
+      h: 0.18,
+      fontSize: 9,
+      color: COLORS.text,
+      align: "center",
+    });
+    slide.addText(`${anchor.skippedSessionCount} skip`, {
+      x: 8.75,
+      y: y + 0.23,
+      w: 1.0,
+      h: 0.18,
+      fontSize: 9,
+      color: COLORS.text,
+      align: "center",
+    });
+    slide.addText(formatPercent(anchor.coverageRate), {
+      x: 9.85,
+      y: y + 0.23,
+      w: 1.0,
+      h: 0.18,
+      fontSize: 9,
+      color: COLORS.text,
+      align: "center",
+    });
+    slide.addText(formatDuration(anchor.averageResponseDurationMs), {
+      x: 10.9,
+      y: y + 0.23,
+      w: 1.3,
+      h: 0.18,
+      fontSize: 9,
+      color: COLORS.text,
+      align: "center",
+    });
+  });
+};
+
+const addAIEnhancedConversationSlide = (pptx: pptxgen, report: ProjectInterviewReport) => {
+  const followUps = report.followUpPaths.slice(0, 3);
+  const turns = report.turnCatalog.slice(0, 3);
+  if (followUps.length === 0 && turns.length === 0) return;
+
+  const slide = pptx.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addSlideTitle(slide, "AI Konuşma Akışı", "Anchor omurganın etrafında açılan takip soruları ve örnek konuşma turları.");
+
+  followUps.forEach((path: ProjectReportFollowUpPath, index: number) => {
+    addEvidenceBlock(slide, {
+      x: 0.6,
+      y: 1.45 + index * 1.75,
+      w: 6.0,
+      title: path.questionText,
+      body: `${path.anchorLabel} anchor'ı etrafında ${path.count} kez soruldu ve ${path.sessionCount} oturuma yayıldı.`,
+      quote: firstQuoteText(report, path.quoteIds),
+      footer: "Follow-up yolu",
+    });
+  });
+
+  turns.forEach((turn: ProjectReportTurn, index: number) => {
+    addEvidenceBlock(slide, {
+      x: 6.7,
+      y: 1.45 + index * 1.75,
+      w: 5.9,
+      title: `${turn.participantLabel} • ${turn.source === "anchor" ? "Anchor" : "Follow-up"}`,
+      body: truncate(`${turn.questionText} ${turn.responseText ? `Yanıt: ${turn.responseText}` : ""}`, 200),
+      footer: `${turn.sessionRef}${turn.anchorLabel ? ` • ${truncate(turn.anchorLabel, 52)}` : ""}`,
+    });
+  });
+};
+
+const addAIEnhancedJourneySlide = (pptx: pptxgen, report: ProjectInterviewReport) => {
+  const journeys = report.participantJourneys.slice(0, 4);
+  if (journeys.length === 0) return;
+
+  const slide = pptx.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addSlideTitle(slide, "Katılımcı Akışları", "Her oturumun anchor kapsaması ve follow-up yoğunluğu.");
+
+  journeys.forEach((journey: ProjectReportParticipantJourney, index: number) => {
+    const row = Math.floor(index / 2);
+    const column = index % 2;
+
+    addEvidenceBlock(slide, {
+      x: 0.6 + column * 6.05,
+      y: 1.45 + row * 2.3,
+      w: 5.75,
+      title: journey.participantLabel,
+      body: truncate(
+        journey.summary ||
+          `${journey.anchorCoverageCount} anchor kapsandı, ${journey.followUpCount} follow-up üretildi.`,
+        160,
+      ),
+      quote: firstQuoteText(report, journey.quoteIds),
+      footer: `${journey.sessionRef} • ${formatDuration(journey.sessionDurationMs)}`,
+    });
+  });
 };
 
 const addFindingsSlides = (pptx: pptxgen, report: ProjectInterviewReport) => {
@@ -547,15 +694,20 @@ export const generateResearchPresentation = async (
     color: COLORS.white,
     align: "center",
   });
-  coverSlide.addText("Faz 4 • Kanıta Dayalı Araştırma Analizi", {
-    x: 0.7,
-    y: 3.0,
-    w: 11.2,
-    h: 0.4,
-    fontSize: 16,
-    color: COLORS.white,
-    align: "center",
-  });
+  coverSlide.addText(
+    report.interviewMode === "ai_enhanced"
+      ? "AI Enhanced • Konuşma Tabanlı Araştırma Analizi"
+      : "Faz 4 • Kanıta Dayalı Araştırma Analizi",
+    {
+      x: 0.7,
+      y: 3.0,
+      w: 11.2,
+      h: 0.4,
+      fontSize: 16,
+      color: COLORS.white,
+      align: "center",
+    },
+  );
   coverSlide.addText(
     report.generatedAt
       ? new Date(report.generatedAt).toLocaleDateString("tr-TR", {
@@ -579,8 +731,14 @@ export const generateResearchPresentation = async (
   addFindingsSlides(pptx, report);
   addThemesSlide(pptx, report);
   addRecommendationsSlides(pptx, report);
-  addQuestionCoverageSlide(pptx, report);
-  addParticipantSlide(pptx, report);
+  if (report.interviewMode === "ai_enhanced") {
+    addAIEnhancedCoverageSlide(pptx, report);
+    addAIEnhancedConversationSlide(pptx, report);
+    addAIEnhancedJourneySlide(pptx, report);
+  } else {
+    addQuestionCoverageSlide(pptx, report);
+    addParticipantSlide(pptx, report);
+  }
   addNextStepsSlide(pptx, report);
 
   const fileName = `${sanitizeFileName(projectTitle)}-Arastirma-Raporu-${new Date().toISOString().slice(0, 10)}.pptx`;

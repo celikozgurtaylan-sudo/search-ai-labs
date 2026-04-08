@@ -39,6 +39,8 @@ interface SearchoAIProps {
   projectContext?: {
     description: string;
     discussionGuide?: any;
+    researchMode?: "structured" | "ai_enhanced";
+    aiEnhancedBrief?: any;
     template?: string;
     sessionId?: string;
     sessionToken?: string;
@@ -333,17 +335,26 @@ const SearchoAI = ({
   }, [onQuestionChange, projectContext?.projectId, projectContext?.sessionId, toast]);
 
   const initializeInterviewQuestions = useCallback(async () => {
-    if (!projectContext?.sessionId || !projectContext?.projectId || !projectContext?.discussionGuide) {
+    const hasStructuredGuide = Boolean(projectContext?.discussionGuide);
+    const hasAIEnhancedBrief = projectContext?.researchMode === "ai_enhanced" && Boolean(projectContext?.aiEnhancedBrief);
+
+    if (!projectContext?.sessionId || !projectContext?.projectId || (!hasStructuredGuide && !hasAIEnhancedBrief)) {
       console.error('Missing required data for interview initialization');
       return;
     }
 
     try {
-      await interviewService.initializeQuestions(projectContext.projectId, projectContext.sessionId, projectContext.discussionGuide);
+      await interviewService.initializeQuestions(
+        projectContext.projectId,
+        projectContext.sessionId,
+        projectContext.discussionGuide ?? projectContext.aiEnhancedBrief,
+      );
       setQuestionsInitialized(true);
       toast({
         title: 'Görüşme Başlıyor',
-        description: 'Karşılama ve tanıtım ile başlıyoruz...',
+        description: projectContext?.researchMode === "ai_enhanced"
+          ? 'AI enhanced görüşme akışı hazırlanıyor...'
+          : 'Karşılama ve tanıtım ile başlıyoruz...',
       });
     } catch (error) {
       console.error('Failed to initialize questions:', error);
@@ -353,13 +364,19 @@ const SearchoAI = ({
         variant: 'destructive',
       });
     }
-  }, [projectContext?.discussionGuide, projectContext?.projectId, projectContext?.sessionId, toast]);
+  }, [projectContext?.aiEnhancedBrief, projectContext?.discussionGuide, projectContext?.projectId, projectContext?.researchMode, projectContext?.sessionId, toast]);
 
   useEffect(() => {
-    if (isActive && projectContext?.sessionId && projectContext?.projectId && projectContext?.discussionGuide && !questionsInitialized) {
+    if (
+      isActive &&
+      projectContext?.sessionId &&
+      projectContext?.projectId &&
+      (projectContext?.discussionGuide || (projectContext?.researchMode === "ai_enhanced" && projectContext?.aiEnhancedBrief)) &&
+      !questionsInitialized
+    ) {
       void initializeInterviewQuestions();
     }
-  }, [initializeInterviewQuestions, isActive, projectContext?.discussionGuide, projectContext?.projectId, projectContext?.sessionId, questionsInitialized]);
+  }, [initializeInterviewQuestions, isActive, projectContext?.aiEnhancedBrief, projectContext?.discussionGuide, projectContext?.projectId, projectContext?.researchMode, projectContext?.sessionId, questionsInitialized]);
 
   useEffect(() => {
     if (isActive && !sessionStartTime) {
@@ -440,9 +457,11 @@ const SearchoAI = ({
     await getNextQuestion();
     toast({
       title: 'Sorulara Geçiliyor',
-      description: 'Şimdi yapılandırılmış görüşme sorularına başlıyoruz.',
+      description: projectContext?.researchMode === "ai_enhanced"
+        ? 'Şimdi anchor omurgayla başlayan AI enhanced görüşmeye geçiyoruz.'
+        : 'Şimdi yapılandırılmış görüşme sorularına başlıyoruz.',
     });
-  }, [getNextQuestion, toast]);
+  }, [getNextQuestion, projectContext?.researchMode, toast]);
 
   const submitCurrentResponse = useCallback(async (transcription: string) => {
     if (!projectContext?.sessionId || !currentQuestion) {
@@ -479,6 +498,9 @@ const SearchoAI = ({
         metadata: {
           timestamp: new Date().toISOString(),
           questionText: activeQuestion.question_text,
+          questionType: activeQuestion.question_type,
+          isFollowUp: activeQuestion.is_follow_up,
+          questionMetadata: activeQuestion.metadata ?? {},
           autoSaved: true,
         },
       });

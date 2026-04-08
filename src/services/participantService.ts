@@ -31,6 +31,32 @@ export interface StudySession {
   updated_at?: string;
 }
 
+export type ParticipantInvitationAccessState =
+  | 'active'
+  | 'paused'
+  | 'invalid_or_expired'
+  | 'declined_or_completed';
+
+export interface ParticipantInvitationAccessResult {
+  access_state: ParticipantInvitationAccessState;
+  message: string | null;
+  participant_data: StudyParticipant | null;
+  project_link_access: 'active' | 'paused';
+}
+
+export type SessionAccessState = 'active' | 'paused' | 'invalid_or_expired';
+
+export interface SessionAccessResult {
+  access_state: SessionAccessState;
+  message: string | null;
+  session_data: StudySession | null;
+  participant_data: StudyParticipant | null;
+  project_data: any | null;
+}
+
+const buildServiceError = (message: string, code?: string) =>
+  Object.assign(new Error(message), code ? { code } : {});
+
 export const participantService = {
   async createParticipant(participant: Omit<StudyParticipant, 'id' | 'created_at' | 'updated_at'>): Promise<StudyParticipant> {
     const { data, error } = await supabase
@@ -92,6 +118,19 @@ export const participantService = {
     return data as StudyParticipant | null;
   },
 
+  async getParticipantInvitationAccess(token: string): Promise<ParticipantInvitationAccessResult | null> {
+    const { data, error } = await supabase
+      .rpc('resolve_participant_invitation_access', { token_input: token })
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error resolving participant invitation access:', error);
+      return null;
+    }
+
+    return data as ParticipantInvitationAccessResult | null;
+  },
+
   generateInvitationToken(): string {
     return `user-study-${crypto.randomUUID()}`;
   },
@@ -117,7 +156,7 @@ export const participantService = {
 
     const result = data as { success?: boolean; message?: string; participant_data?: unknown } | null;
     if (!result || !result.success) {
-      throw new Error(result?.message || 'Failed to update participant status');
+      throw buildServiceError(result?.message || 'Failed to update participant status');
     }
 
     return result.participant_data as StudyParticipant;
@@ -149,12 +188,25 @@ export const participantService = {
       throw new Error(`Failed to create session: ${error.message}`);
     }
 
-    const result = data as { success?: boolean; message?: string; session_data?: unknown } | null;
+    const result = data as { success?: boolean; message?: string; code?: string; session_data?: unknown } | null;
     if (!result || !result.success) {
-      throw new Error(result?.message || 'Failed to create session');
+      throw buildServiceError(result?.message || 'Failed to create session', result?.code);
     }
 
     return result.session_data as StudySession;
+  },
+
+  async getSessionAccessByToken(token: string): Promise<SessionAccessResult | null> {
+    const { data, error } = await supabase
+      .rpc('resolve_session_access', { session_token_input: token })
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error resolving session access:', error);
+      return null;
+    }
+
+    return data as SessionAccessResult | null;
   },
 
   async getSessionByToken(token: string): Promise<StudySession | null> {

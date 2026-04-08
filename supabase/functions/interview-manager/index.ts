@@ -5,6 +5,12 @@ import {
   generateAndPersistProjectReport,
   setProjectReportStatus,
 } from "../_shared/project-report.ts";
+import {
+  findThemeById,
+  generateAIEnhancedFollowUp,
+  getResearchModeFromAnalysis,
+  normalizeAIEnhancedBrief,
+} from "../_shared/ai-enhanced.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,12 +38,34 @@ type ResponsePayload = {
 async function validateSessionToken(sessionId: string, sessionToken: string): Promise<boolean> {
   const { data, error } = await supabase
     .from('study_sessions')
-    .select('id')
+    .select(`
+      id,
+      status,
+      projects:project_id (
+        analysis
+      )
+    `)
     .eq('id', sessionId)
     .eq('session_token', sessionToken)
     .maybeSingle();
 
-  return !error && Boolean(data);
+  if (error || !data) {
+    return false;
+  }
+
+  const analysis = isRecord(data.projects) && isRecord(data.projects.analysis)
+    ? data.projects.analysis
+    : {};
+  const interviewControl = isRecord(analysis.interviewControl)
+    ? analysis.interviewControl
+    : {};
+  const linkAccess = interviewControl.linkAccess === 'paused' ? 'paused' : 'active';
+
+  if (linkAccess === 'paused' && !['active', 'completed'].includes(data.status)) {
+    return false;
+  }
+
+  return true;
 }
 
 async function findLatestResponse(sessionId: string, questionId: string) {
@@ -107,6 +135,11 @@ async function saveOrUpdateResponse(sessionId: string, responseData: ResponsePay
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const asArray = <T>(value: unknown): T[] => (Array.isArray(value) ? value as T[] : []);
+
+const asString = (value: unknown) =>
+  typeof value === "string" ? value.trim() : "";
 
 async function resolveDiscussionGuideForSession(projectId: string, sessionId: string, fallbackDiscussionGuide: any) {
   const { data: session, error: sessionError } = await supabase
@@ -194,6 +227,7 @@ async function resolveDiscussionGuideForSession(projectId: string, sessionId: st
 
   return {
     session,
+    analysis,
     discussionGuide,
     assignmentMetadata: {
       questionSetVersionId: assignedVersionId,
@@ -201,6 +235,315 @@ async function resolveDiscussionGuideForSession(projectId: string, sessionId: st
       questionSetAssignedAt: assignedAt,
     },
   };
+}
+
+const getAIEnhancedSessionState = (sessionMetadata: Record<string, unknown>) => {
+  const state = isRecord(sessionMetadata.aiEnhancedState) ? sessionMetadata.aiEnhancedState : {};
+
+  return {
+    currentAnchorIndex: typeof state.currentAnchorIndex === "number" ? state.currentAnchorIndex : 0,
+    turnIndex: typeof state.turnIndex === "number" ? state.turnIndex : 0,
+    coveredAnchorIds: asArray<string>(state.coveredAnchorIds).filter((value) => typeof value === "string"),
+  };
+};
+
+const withAIEnhancedSessionState = (
+  sessionMetadata: Record<string, unknown>,
+  nextState: {
+    currentAnchorIndex: number;
+    turnIndex: number;
+    coveredAnchorIds: string[];
+  },
+) => ({
+  ...sessionMetadata,
+  interviewMode: "ai_enhanced",
+  aiEnhancedState: {
+    currentAnchorIndex: nextState.currentAnchorIndex,
+    turnIndex: nextState.turnIndex,
+    coveredAnchorIds: Array.from(new Set(nextState.coveredAnchorIds)),
+  },
+});
+
+async function getQuestionRecord(questionId: string) {
+  const { data, error } = await supabase
+    .from("interview_questions")
+    .select("*")
+    .eq("id", questionId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load interview question: ${error.message}`);
+  }
+
+  return data;
+}
+
+async function getSessionQuestionRows(sessionId: string) {
+  const { data, error } = await supabase
+    .from("interview_questions")
+    .select("*")
+    .eq("session_id", sessionId)
+    .order("question_order", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to load session questions: ${error.message}`);
+  }
+
+  return data ?? [];
+}
+
+async function updateSessionMetadata(sessionId: string, metadata: Record<string, unknown>) {
+  const { error } = await supabase
+    .from("study_sessions")
+    .update({ metadata })
+    .eq("id", sessionId);
+
+  if (error) {
+    throw new Error(`Failed to update session metadata: ${error.message}`);
+  }
+}
+
+async function insertAIEnhancedQuestion(input: {
+  projectId: string;
+  sessionId: string;
+  questionText: string;
+  questionOrder: number;
+  section: string;
+  questionType: string;
+  isFollowUp: boolean;
+  parentQuestionId?: string | null;
+  metadata: Record<string, unknown>;
+}) {
+  const { data, error } = await supabase
+    .from("interview_questions")
+    .insert({
+      project_id: input.projectId,
+      session_id: input.sessionId,
+      question_text: input.questionText,
+      question_order: input.questionOrder,
+      section: input.section,
+      question_type: input.questionType,
+      is_follow_up: input.isFollowUp,
+      parent_question_id: input.parentQuestionId ?? null,
+      metadata: input.metadata,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to insert AI enhanced question: ${error.message}`);
+  }
+
+  return data;
+}
+
+async function initializeAIEnhancedQuestions(
+  projectId: string,
+  sessionId: string,
+  analysis: Record<string, unknown>,
+  session: Record<string, unknown>,
+) {
+  const brief = normalizeAIEnhancedBrief(analysis.aiEnhancedBrief);
+  if (!brief || brief.anchorQuestions.length === 0) {
+    throw new Error("AI enhanced brief is not ready for interview orchestration");
+  }
+
+  const existingQuestions = await getSessionQuestionRows(sessionId);
+  if (existingQuestions.length > 0) {
+    return new Response(
+      JSON.stringify({ success: true, questions: existingQuestions, skipped: true }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
+  const firstAnchor = brief.anchorQuestions[0];
+  const firstTheme = findThemeById(brief, firstAnchor.themeId);
+  const sessionMetadata = isRecord(session.metadata) ? session.metadata : {};
+  const nextMetadata = withAIEnhancedSessionState(sessionMetadata, {
+    currentAnchorIndex: 0,
+    turnIndex: 1,
+    coveredAnchorIds: [],
+  });
+
+  const startedAt = typeof session.started_at === "string" ? session.started_at : new Date().toISOString();
+  const { error: updateSessionError } = await supabase
+    .from("study_sessions")
+    .update({
+      status: "active",
+      started_at: startedAt,
+      metadata: nextMetadata,
+    })
+    .eq("id", sessionId);
+
+  if (updateSessionError) {
+    throw new Error(`Failed to mark AI enhanced session active: ${updateSessionError.message}`);
+  }
+
+  const insertedQuestion = await insertAIEnhancedQuestion({
+    projectId,
+    sessionId,
+    questionText: firstAnchor.text,
+    questionOrder: 1,
+    section: firstTheme?.title || "AI Enhanced",
+    questionType: "anchor",
+    isFollowUp: false,
+    metadata: {
+      interviewMode: "ai_enhanced",
+      source: "anchor",
+      anchorId: firstAnchor.id,
+      anchorIndex: 0,
+      themeId: firstAnchor.themeId,
+      turnIndex: 1,
+    },
+  });
+
+  return new Response(
+    JSON.stringify({ success: true, questions: [insertedQuestion] }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+  );
+}
+
+async function advanceAIEnhancedInterview(
+  sessionId: string,
+  response: Record<string, unknown>,
+) {
+  const questionId = asString(response.question_id);
+  const currentQuestion = await getQuestionRecord(questionId);
+  if (!currentQuestion) {
+    return;
+  }
+
+  const { data: session, error: sessionError } = await supabase
+    .from("study_sessions")
+    .select("id, project_id, metadata")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (sessionError) {
+    throw new Error(`Failed to load session during AI enhanced advance: ${sessionError.message}`);
+  }
+
+  if (!session) {
+    throw new Error("Session not found during AI enhanced advance");
+  }
+
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select("analysis")
+    .eq("id", session.project_id)
+    .maybeSingle();
+
+  if (projectError) {
+    throw new Error(`Failed to load project analysis during AI enhanced advance: ${projectError.message}`);
+  }
+
+  const analysis = isRecord(project?.analysis) ? project.analysis : {};
+  const brief = normalizeAIEnhancedBrief(analysis.aiEnhancedBrief);
+  if (!brief || brief.anchorQuestions.length === 0) {
+    return;
+  }
+
+  const currentMetadata = isRecord(currentQuestion.metadata) ? currentQuestion.metadata : {};
+  const sessionMetadata = isRecord(session.metadata) ? session.metadata : {};
+  const aiState = getAIEnhancedSessionState(sessionMetadata);
+  const allQuestions = await getSessionQuestionRows(sessionId);
+  if (allQuestions.some((question) => Number(question.question_order) > Number(currentQuestion.question_order))) {
+    return;
+  }
+  const nextQuestionOrder = allQuestions.length + 1;
+  const currentAnchorId = asString(currentMetadata.anchorId);
+  const currentAnchorIndex = typeof currentMetadata.anchorIndex === "number"
+    ? currentMetadata.anchorIndex
+    : brief.anchorQuestions.findIndex((anchor) => anchor.id === currentAnchorId);
+  const currentAnchor = brief.anchorQuestions[currentAnchorIndex] ?? null;
+
+  if (!currentAnchor) {
+    return;
+  }
+
+  const updatedCoveredAnchorIds = aiState.coveredAnchorIds.includes(currentAnchor.id)
+    ? aiState.coveredAnchorIds
+    : [...aiState.coveredAnchorIds, currentAnchor.id];
+
+  if (currentMetadata.source === "anchor" && !currentQuestion.is_follow_up) {
+    const responseMetadata = isRecord(response.metadata) ? response.metadata : {};
+    const wasSkipped = Boolean(responseMetadata.skipped);
+    const participantAnswer = asString(response.transcription) || asString(response.response_text);
+    const previousFollowUps = allQuestions
+      .filter((question) => {
+        const metadata = isRecord(question.metadata) ? question.metadata : {};
+        return metadata.source === "follow_up" && metadata.anchorId === currentAnchor.id;
+      })
+      .map((question) => asString(question.question_text))
+      .filter(Boolean);
+
+    const moderation = wasSkipped
+      ? { decision: "next_anchor", followUpQuestion: null }
+      : await generateAIEnhancedFollowUp({
+          brief,
+          anchorQuestion: currentAnchor,
+          themeTitle: findThemeById(brief, currentAnchor.themeId)?.title || "AI Enhanced",
+          participantAnswer,
+          previousFollowUps,
+        });
+
+    if (moderation.decision === "follow_up" && moderation.followUpQuestion) {
+      await insertAIEnhancedQuestion({
+        projectId: session.project_id,
+        sessionId,
+        questionText: moderation.followUpQuestion,
+        questionOrder: nextQuestionOrder,
+        section: findThemeById(brief, currentAnchor.themeId)?.title || "AI Enhanced",
+        questionType: "follow_up",
+        isFollowUp: true,
+        parentQuestionId: currentQuestion.id,
+        metadata: {
+          interviewMode: "ai_enhanced",
+          source: "follow_up",
+          anchorId: currentAnchor.id,
+          anchorIndex: currentAnchorIndex,
+          themeId: currentAnchor.themeId,
+          turnIndex: aiState.turnIndex + 1,
+        },
+      });
+
+      await updateSessionMetadata(sessionId, withAIEnhancedSessionState(sessionMetadata, {
+        currentAnchorIndex,
+        turnIndex: aiState.turnIndex + 1,
+        coveredAnchorIds: updatedCoveredAnchorIds,
+      }));
+      return;
+    }
+  }
+
+  const nextAnchorIndex = currentAnchorIndex + 1;
+  const nextAnchor = brief.anchorQuestions[nextAnchorIndex] ?? null;
+
+  if (nextAnchor) {
+    await insertAIEnhancedQuestion({
+      projectId: session.project_id,
+      sessionId,
+      questionText: nextAnchor.text,
+      questionOrder: nextQuestionOrder,
+      section: findThemeById(brief, nextAnchor.themeId)?.title || "AI Enhanced",
+      questionType: "anchor",
+      isFollowUp: false,
+      metadata: {
+        interviewMode: "ai_enhanced",
+        source: "anchor",
+        anchorId: nextAnchor.id,
+        anchorIndex: nextAnchorIndex,
+        themeId: nextAnchor.themeId,
+        turnIndex: aiState.turnIndex + 1,
+      },
+    });
+  }
+
+  await updateSessionMetadata(sessionId, withAIEnhancedSessionState(sessionMetadata, {
+    currentAnchorIndex: nextAnchor ? nextAnchorIndex : currentAnchorIndex,
+    turnIndex: aiState.turnIndex + 1,
+    coveredAnchorIds: updatedCoveredAnchorIds,
+  }));
 }
 
 async function buildInterviewState(sessionId: string) {
@@ -388,6 +731,10 @@ async function initializeQuestions(projectId: string, sessionId: string, discuss
   console.log('Initializing questions for session:', sessionId);
 
   const resolved = await resolveDiscussionGuideForSession(projectId, sessionId, discussionGuide);
+  if (getResearchModeFromAnalysis(resolved.analysis) === "ai_enhanced") {
+    return await initializeAIEnhancedQuestions(projectId, sessionId, resolved.analysis, resolved.session);
+  }
+
   const resolvedGuide = resolved.discussionGuide;
 
   if (!resolvedGuide?.sections?.length) {
@@ -525,6 +872,7 @@ async function submitResponse(sessionId: string, responseData: ResponsePayload) 
       ...(responseData.metadata ?? {}),
     },
   });
+  await advanceAIEnhancedInterview(sessionId, response);
   const state = await buildInterviewState(sessionId);
   await finalizeCompletedSession(sessionId, state);
 
@@ -547,6 +895,7 @@ async function skipQuestion(sessionId: string, questionId: string, metadata: Rec
       ...metadata,
     },
   });
+  await advanceAIEnhancedInterview(sessionId, response);
   const state = await buildInterviewState(sessionId);
   await finalizeCompletedSession(sessionId, state);
 

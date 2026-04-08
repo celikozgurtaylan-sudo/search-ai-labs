@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { buildAIEnhancedParticipantMetadata, type AIEnhancedBrief, type ResearchMode } from "@/lib/aiEnhancedResearch";
 import { participantService, StudyParticipant, StudySession } from "@/services/participantService";
 import { supabase } from "@/integrations/supabase/client";
 import { CheckCircle, Clock, Copy, Link2, Mail, RefreshCw, Send, Trash2, UserPlus, Users, XCircle } from "lucide-react";
@@ -13,6 +14,9 @@ interface ParticipantManagerProps {
   active?: boolean;
   projectId: string;
   projectTitle?: string;
+  researchMode?: ResearchMode;
+  aiEnhancedBrief?: AIEnhancedBrief | null;
+  isResearchPaused?: boolean;
   currentQuestionSetVersionId?: string | null;
   currentQuestionSetVersionNumber?: number | null;
   questionSetUpdatedAt?: string | null;
@@ -25,6 +29,9 @@ const ParticipantManager = ({
   active = true,
   projectId,
   projectTitle = "Kullanıcı Deneyimi Araştırması",
+  researchMode = "structured",
+  aiEnhancedBrief = null,
+  isResearchPaused = false,
   currentQuestionSetVersionId = null,
   currentQuestionSetVersionNumber = null,
   questionSetUpdatedAt = null,
@@ -160,11 +167,13 @@ const ParticipantManager = ({
         status: "invited",
         invitation_token: participantService.generateInvitationToken(),
         token_expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        metadata: {
-          questionSetVersionId: currentQuestionSetVersionId,
-          questionSetVersionNumber: currentQuestionSetVersionNumber,
-          questionSetAssignedAt: new Date().toISOString(),
-        },
+        metadata: isAIEnhancedMode
+          ? buildAIEnhancedParticipantMetadata(aiEnhancedBrief)
+          : {
+              questionSetVersionId: currentQuestionSetVersionId,
+              questionSetVersionNumber: currentQuestionSetVersionNumber,
+              questionSetAssignedAt: new Date().toISOString(),
+            },
       });
 
       try {
@@ -251,6 +260,7 @@ const ParticipantManager = ({
 
   const currentVersionLabel = currentQuestionSetVersionNumber ? `v${currentQuestionSetVersionNumber}` : null;
   const hasForwardLookingChangeNotice = Boolean(currentQuestionSetVersionNumber && currentQuestionSetVersionNumber > 1 && questionSetUpdatedAt);
+  const isAIEnhancedMode = researchMode === "ai_enhanced";
 
   return (
     <div className="space-y-6">
@@ -276,15 +286,28 @@ const ParticipantManager = ({
           <div className="rounded-2xl border border-border-light bg-surface/70 p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="border-brand-primary/40 text-brand-primary">
-                {currentVersionLabel ? `${currentVersionLabel} yeni davetlerde kullanılacak` : "Varsayılan soru seti"}
+                {isAIEnhancedMode
+                  ? "Agent Enhanced görüşme akışı yeni davetlerde kullanılacak"
+                  : currentVersionLabel
+                    ? `${currentVersionLabel} yeni davetlerde kullanılacak`
+                    : "Varsayılan soru seti"}
               </Badge>
-              {hasForwardLookingChangeNotice ? (
+              {isResearchPaused ? (
+                <Badge variant="outline" className="border-amber-300 text-amber-900">
+                  Linkler geçici olarak kapalı
+                </Badge>
+              ) : null}
+              {!isAIEnhancedMode && hasForwardLookingChangeNotice ? (
                 <span className="text-xs text-text-secondary">
                   Sorular {new Date(questionSetUpdatedAt!).toLocaleString("tr-TR")} tarihinde güncellendi. Bu andan sonra göndereceğiniz yeni davetler yeni soru setini kullanır.
                 </span>
               ) : (
                 <span className="text-xs text-text-secondary">
-                  Yeni davetler mevcut soru seti ile atanır. Mevcut davetler ve aktif oturumlar etkilenmez.
+                  {isResearchPaused
+                    ? "Yeni davetler kaydedilir, ancak araştırmaya devam edilene kadar bu linkler çalışmaz."
+                    : isAIEnhancedMode
+                      ? "Yeni davetler aynı anchor omurgayla başlar. Follow-up sorular görüşme sırasında agent tarafından canlı üretilir."
+                      : "Yeni davetler mevcut soru seti ile atanır. Mevcut davetler ve aktif oturumlar etkilenmez."}
                 </span>
               )}
             </div>
@@ -365,7 +388,9 @@ const ParticipantManager = ({
           <div>
             <h4 className="text-sm font-medium text-text-primary">Davet Edilen Katılımcılar ({participants.length})</h4>
             <p className="mt-1 text-xs text-text-secondary">
-              Her katılımcı kendi davet edildiği soru seti versiyonuyla eşleşir.
+              {isAIEnhancedMode
+                ? "Her katılımcı aynı anchor omurgayla başlar. Görüşme sırasında follow-up akışı AI tarafından yönetilir."
+                : "Her katılımcı kendi davet edildiği soru seti versiyonuyla eşleşir."}
             </p>
           </div>
         </div>
@@ -395,10 +420,16 @@ const ParticipantManager = ({
                           {status.icon}
                           {status.label}
                         </Badge>
-                        <Badge variant="outline" className="border-brand-primary/30 text-brand-primary">
-                          v{versionNumber}
-                        </Badge>
-                        {!isCurrentVersion ? (
+                        {isAIEnhancedMode ? (
+                          <Badge variant="outline" className="border-brand-primary/30 text-brand-primary">
+                            Agent Enhanced
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-brand-primary/30 text-brand-primary">
+                            v{versionNumber}
+                          </Badge>
+                        )}
+                        {!isAIEnhancedMode && !isCurrentVersion ? (
                           <Badge variant="outline" className="border-text-muted/40 text-text-secondary">
                             Eski Soru Seti
                           </Badge>

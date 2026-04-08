@@ -1,16 +1,28 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   assessQuestionQuality,
   buildFallbackRewrite,
   cleanQuestion,
   type QuestionReviewResult,
+  type ResearchQuestionMode,
+  resolveQuestionMode,
 } from "../_shared/question-quality.ts";
+import {
+  formatQuestionLearningHints,
+  loadQuestionLearningHints,
+} from "../_shared/question-learning.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const supabase = createClient(
+  Deno.env.get("SUPABASE_URL") ?? "",
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+);
 
 const parseJsonObject = (value: string) => {
   try {
@@ -28,6 +40,8 @@ const requestSuggestionRewrite = async ({
   sectionIndex,
   projectDescription,
   issues,
+  mode,
+  learningHintsPrompt,
 }: {
   lovableApiKey: string;
   question: string;
@@ -35,6 +49,8 @@ const requestSuggestionRewrite = async ({
   sectionIndex?: number;
   projectDescription?: string;
   issues: QuestionReviewResult["issues"];
+  mode: ResearchQuestionMode;
+  learningHintsPrompt?: string;
 }) => {
   const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -52,6 +68,8 @@ const requestSuggestionRewrite = async ({
           content: `Sen deneyimli bir UX arastirma metodologusun.
 - Verilen soruyu tarafsiz, acik uclu, tek odakli ve dogal Turkce olacak sekilde yeniden yaz.
 - Katilimciya problem, duygu veya yargi empoze etme.
+- "Kendi cümlelerinizle" gibi zorlayici paraphrase kaliplari kullanma.
+- "Nasıl anlıyorsunuz" gibi kullanicinin anlamini senin çerçevelediğin kaliplari kullanma.
 - Eger ilk bolumse, soru hafif bir isinma tonu tasiyabilir.
 - Sadece JSON dondur.`,
         },
@@ -59,9 +77,12 @@ const requestSuggestionRewrite = async ({
           role: "user",
           content: `Proje baglami: ${projectDescription || "Belirtilmedi"}
 Bölüm: ${sectionTitle || "Belirtilmedi"}${typeof sectionIndex === "number" ? ` (Sıra ${sectionIndex + 1})` : ""}
+Mod: ${mode}
 Mevcut soru: ${question}
 Sorundaki bulgular:
 ${issues.map((issue, index) => `${index + 1}. ${issue.label}: ${issue.detail}`).join("\n")}
+
+${learningHintsPrompt || ""}
 
 Su formatta cevap ver:
 {"suggestedRewrite":"...","reason":"kisa aciklama"}`,
@@ -101,9 +122,14 @@ serve(async (req) => {
       sectionTitle = "",
       sectionIndex,
       projectDescription = "",
+      mode,
     } = await req.json();
 
     const cleanedQuestion = cleanQuestion(question);
+    const resolvedMode = resolveQuestionMode({
+      researchMode: typeof mode === "string" ? mode : null,
+      hasUsabilityContext: typeof mode === "string" && mode === "usability",
+    });
 
     if (!cleanedQuestion) {
       return new Response(JSON.stringify({ error: "Question is required" }), {
@@ -116,16 +142,25 @@ serve(async (req) => {
       question: cleanedQuestion,
       sectionTitle,
       sectionIndex,
+      mode: resolvedMode,
     });
 
     let suggestedRewrite: string | null = null;
     let suggestionReason = "";
+    const learningHints = await loadQuestionLearningHints(supabase, {
+      mode: resolvedMode,
+      sectionTitle,
+      sectionIndex,
+      limit: 4,
+    });
+    const learningHintsPrompt = formatQuestionLearningHints(learningHints);
 
     if (review.status !== "strong") {
       suggestedRewrite = buildFallbackRewrite({
         question: cleanedQuestion,
         sectionTitle,
         sectionIndex,
+        mode: resolvedMode,
       });
 
       if (lovableApiKey) {
@@ -137,6 +172,8 @@ serve(async (req) => {
             sectionIndex,
             projectDescription,
             issues: review.issues,
+            mode: resolvedMode,
+            learningHintsPrompt,
           });
 
           if (rewrite.suggestedRewrite) {
@@ -152,6 +189,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       reviewedQuestion: cleanedQuestion,
       ...review,
+      methodologyIssues: review.methodologyIssues,
+      violatedMustRules: review.violatedMustRules,
       suggestedRewrite,
       suggestionReason,
     }), {
