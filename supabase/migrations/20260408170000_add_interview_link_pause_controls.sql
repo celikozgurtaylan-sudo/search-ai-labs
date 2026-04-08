@@ -232,6 +232,8 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.create_session_for_participant(text, text) TO anon;
 
+DROP FUNCTION IF EXISTS public.update_participant_status_by_token(text, text);
+
 CREATE OR REPLACE FUNCTION public.update_participant_status_by_token(
   token_input text,
   new_status text
