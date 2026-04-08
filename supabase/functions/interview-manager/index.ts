@@ -105,6 +105,104 @@ async function saveOrUpdateResponse(sessionId: string, responseData: ResponsePay
   return data;
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+async function resolveDiscussionGuideForSession(projectId: string, sessionId: string, fallbackDiscussionGuide: any) {
+  const { data: session, error: sessionError } = await supabase
+    .from('study_sessions')
+    .select('id, participant_id, status, started_at, metadata')
+    .eq('id', sessionId)
+    .maybeSingle();
+
+  if (sessionError) {
+    throw new Error(`Failed to load session: ${sessionError.message}`);
+  }
+
+  if (!session) {
+    throw new Error('Session not found');
+  }
+
+  const { data: project, error: projectError } = await supabase
+    .from('projects')
+    .select('analysis')
+    .eq('id', projectId)
+    .maybeSingle();
+
+  if (projectError) {
+    throw new Error(`Failed to load project analysis: ${projectError.message}`);
+  }
+
+  const sessionMetadata = isRecord(session.metadata) ? session.metadata : {};
+  let participantMetadata: Record<string, unknown> = {};
+
+  if (session.participant_id) {
+    const { data: participant, error: participantError } = await supabase
+      .from('study_participants')
+      .select('metadata')
+      .eq('id', session.participant_id)
+      .maybeSingle();
+
+    if (participantError) {
+      throw new Error(`Failed to load participant metadata: ${participantError.message}`);
+    }
+
+    participantMetadata = isRecord(participant?.metadata) ? participant.metadata : {};
+  }
+
+  const analysis = isRecord(project?.analysis) ? project.analysis : {};
+  const questionSet = isRecord(analysis.questionSet) ? analysis.questionSet : {};
+  const questionSetVersions = Array.isArray(questionSet.versions) ? questionSet.versions : [];
+
+  const assignedVersionId =
+    typeof sessionMetadata.questionSetVersionId === 'string'
+      ? sessionMetadata.questionSetVersionId
+      : typeof participantMetadata.questionSetVersionId === 'string'
+        ? participantMetadata.questionSetVersionId
+        : isRecord(questionSetVersions[0]) && typeof questionSetVersions[0].id === 'string'
+          ? questionSetVersions[0].id
+          : null;
+
+  const assignedVersionNumber =
+    typeof sessionMetadata.questionSetVersionNumber === 'number'
+      ? sessionMetadata.questionSetVersionNumber
+      : typeof participantMetadata.questionSetVersionNumber === 'number'
+        ? participantMetadata.questionSetVersionNumber
+        : isRecord(questionSetVersions[0]) && typeof questionSetVersions[0].number === 'number'
+          ? questionSetVersions[0].number
+          : null;
+
+  const assignedAt =
+    typeof sessionMetadata.questionSetAssignedAt === 'string'
+      ? sessionMetadata.questionSetAssignedAt
+      : typeof participantMetadata.questionSetAssignedAt === 'string'
+        ? participantMetadata.questionSetAssignedAt
+        : new Date().toISOString();
+
+  const matchingVersion = questionSetVersions.find((version) =>
+    isRecord(version) && version.id === assignedVersionId
+  );
+
+  const versionSnapshot = isRecord(matchingVersion?.discussionGuideSnapshot)
+    ? matchingVersion.discussionGuideSnapshot
+    : null;
+
+  const discussionGuide =
+    versionSnapshot ??
+    (isRecord(analysis.discussionGuide) ? analysis.discussionGuide : null) ??
+    fallbackDiscussionGuide;
+
+  return {
+    session,
+    discussionGuide,
+    assignmentMetadata: {
+      questionSetVersionId: assignedVersionId,
+      questionSetVersionNumber: assignedVersionNumber,
+      questionSetAssignedAt: assignedAt,
+    },
+  };
+}
+
 async function buildInterviewState(sessionId: string) {
   const { data: questions, error } = await supabase
     .from('interview_questions')
@@ -289,6 +387,38 @@ serve(async (req) => {
 async function initializeQuestions(projectId: string, sessionId: string, discussionGuide: any) {
   console.log('Initializing questions for session:', sessionId);
 
+  const resolved = await resolveDiscussionGuideForSession(projectId, sessionId, discussionGuide);
+  const resolvedGuide = resolved.discussionGuide;
+
+  if (!resolvedGuide?.sections?.length) {
+    throw new Error('No discussion guide available for session');
+  }
+
+  const startedAt = resolved.session.started_at ?? new Date().toISOString();
+  const nextSessionMetadata = {
+    ...(isRecord(resolved.session.metadata) ? resolved.session.metadata : {}),
+    ...resolved.assignmentMetadata,
+  };
+
+  if (
+    resolved.session.status !== 'active' ||
+    !resolved.session.started_at ||
+    JSON.stringify(resolved.session.metadata ?? {}) !== JSON.stringify(nextSessionMetadata)
+  ) {
+    const { error: sessionUpdateError } = await supabase
+      .from('study_sessions')
+      .update({
+        status: 'active',
+        started_at: startedAt,
+        metadata: nextSessionMetadata,
+      })
+      .eq('id', sessionId);
+
+    if (sessionUpdateError) {
+      throw new Error(`Failed to mark session active: ${sessionUpdateError.message}`);
+    }
+  }
+
   const { data: existingQuestions, error: checkError } = await supabase
     .from('interview_questions')
     .select('id')
@@ -315,8 +445,8 @@ async function initializeQuestions(projectId: string, sessionId: string, discuss
   const questions: Array<Record<string, unknown>> = [];
   let order = 1;
 
-  if (discussionGuide?.sections) {
-    for (const section of discussionGuide.sections) {
+  if (resolvedGuide?.sections) {
+    for (const section of resolvedGuide.sections) {
       if (!section?.questions) continue;
 
       for (const question of section.questions) {

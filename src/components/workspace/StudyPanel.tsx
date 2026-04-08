@@ -1,21 +1,29 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import { Plus, Edit3, Check, X, FileText, Download, Share, CheckCircle2, Clock, Circle, PlayCircle, BarChart3, Camera, Monitor, Loader2, TrendingUp, AlertTriangle, Users, Video, User, Sparkles, RefreshCw, Trash2, GripVertical } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
+import { Plus, Edit3, Check, X, FileText, Download, Share, Loader2, TrendingUp, AlertTriangle, Users, Video, Sparkles, RefreshCw, Trash2, GripVertical } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import TypewriterText from "@/components/ui/typewriter-text";
+import ParticipantManager from "@/components/workspace/ParticipantManager";
+import { StudyParticipant, StudySession } from "@/services/participantService";
 
 interface StudyPanelProps {
   discussionGuide: any;
-  participants: any[]; // Will work with both old and new participant structures
-  currentStep: 'guide' | 'recruit' | 'starting' | 'run' | 'analyze';
+  participants: StudyParticipant[];
+  sessions: StudySession[];
+  projectId: string;
+  projectTitle: string;
+  currentStep: 'guide' | 'recruit' | 'run' | 'analyze';
+  questionSetVersionId?: string | null;
+  questionSetVersionNumber?: number | null;
+  questionSetUpdatedAt?: string | null;
   onGuideUpdate: (guide: any) => void;
+  onParticipantsUpdate: (participants: StudyParticipant[]) => void;
   isGuideLoading?: boolean;
   chatMessages?: any[];
 }
@@ -45,8 +53,15 @@ interface QuestionReviewResult {
 const StudyPanel = ({
   discussionGuide,
   participants,
+  sessions,
+  projectId,
+  projectTitle,
   currentStep,
+  questionSetVersionId = null,
+  questionSetVersionNumber = null,
+  questionSetUpdatedAt = null,
   onGuideUpdate,
+  onParticipantsUpdate,
   isGuideLoading = false,
   chatMessages = []
 }: StudyPanelProps) => {
@@ -58,15 +73,12 @@ const StudyPanel = ({
   const [editSectionValue, setEditSectionValue] = useState("");
   const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null);
   const [dragOverSectionId, setDragOverSectionId] = useState<string | null>(null);
-  const [isScreenRecording, setIsScreenRecording] = useState(false);
-  const [isCameraRecording, setIsCameraRecording] = useState(false);
   const [loadingQuestions, setLoadingQuestions] = useState<{
     [key: string]: boolean;
   }>({});
   const [generatingQuestions, setGeneratingQuestions] = useState<{
     [key: string]: boolean;
   }>({});
-  const [showTitleTypewriter, setShowTitleTypewriter] = useState(true);
   const [showSectionTypewriters, setShowSectionTypewriters] = useState<{
     [key: string]: boolean;
   }>({});
@@ -81,6 +93,7 @@ const StudyPanel = ({
     [key: string]: boolean;
   }>({});
   const questionSkeletonWidth = "w-11/12";
+  const useQuestionSkeletonReveal = currentStep === "recruit";
   const questionRevealTimeoutsRef = useRef<number[]>([]);
   const scheduledQuestionKeysRef = useRef<{
     [key: string]: boolean;
@@ -493,6 +506,19 @@ const StudyPanel = ({
   useEffect(() => {
     if (!discussionGuide?.sections?.length) return;
     if (isGuideLoading) return;
+    if (!useQuestionSkeletonReveal) {
+      const nextVisibleQuestions: Record<string, boolean> = {};
+      discussionGuide.sections.forEach((section: any) => {
+        section.questions.forEach((_: string, questionIndex: number) => {
+          nextVisibleQuestions[getQuestionKey(section.id, questionIndex)] = true;
+        });
+      });
+      questionRevealTimeoutsRef.current.forEach(timeoutId => window.clearTimeout(timeoutId));
+      questionRevealTimeoutsRef.current = [];
+      scheduledQuestionKeysRef.current = {};
+      setVisibleQuestions(nextVisibleQuestions);
+      return;
+    }
 
     const hiddenQuestions: Record<string, boolean> = {};
     let globalQuestionIndex = 0;
@@ -529,7 +555,7 @@ const StudyPanel = ({
         ...hiddenQuestions
       }));
     }
-  }, [discussionGuide, isGuideLoading]);
+  }, [discussionGuide, isGuideLoading, useQuestionSkeletonReveal]);
 
   useEffect(() => {
     return () => {
@@ -549,6 +575,10 @@ const StudyPanel = ({
   useEffect(() => {
     if (!discussionGuide?.sections?.length) return;
     if (isGuideLoading) return;
+    if (!useQuestionSkeletonReveal) {
+      setShowSectionTypewriters({});
+      return;
+    }
 
     setShowSectionTypewriters(prev => {
       const next = { ...prev };
@@ -563,7 +593,7 @@ const StudyPanel = ({
 
       return changed ? next : prev;
     });
-  }, [discussionGuide, isGuideLoading]);
+  }, [discussionGuide, isGuideLoading, useQuestionSkeletonReveal]);
 
   const handleReviewQuestion = async (sectionId: string, questionIndex: number, questionOverride?: string) => {
     if (!discussionGuide) return;
@@ -706,86 +736,51 @@ const StudyPanel = ({
       }));
     }
   };
-  const getInterviewStatus = (participantId: string) => {
-    // Görüşme ilerlemesini simüle et
-    const statuses = ['Sırada', 'Devam Ediyor', 'Tamamlandı'];
-    const hash = participantId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-    return statuses[hash % statuses.length];
+  const sessionsByParticipantId = useMemo(() => {
+    const entries = new Map<string, StudySession[]>();
+
+    sessions.forEach((session) => {
+      if (!session.participant_id) return;
+      const nextSessions = entries.get(session.participant_id) ?? [];
+      nextSessions.push(session);
+      entries.set(session.participant_id, nextSessions);
+    });
+
+    return entries;
+  }, [sessions]);
+
+  const getLatestSession = (participantId?: string | null) => {
+    if (!participantId) return null;
+
+    const participantSessions = sessionsByParticipantId.get(participantId) ?? [];
+    return participantSessions
+      .slice()
+      .sort((left, right) => new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime())[0] ?? null;
   };
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'Tamamlandı':
-        return <CheckCircle2 className="w-4 h-4 text-status-success" />;
-      case 'Devam Ediyor':
-        return <PlayCircle className="w-4 h-4 text-brand-primary" />;
-      default:
-        return <Circle className="w-4 h-4 text-text-muted" />;
+
+  const getInterviewStatus = (participant: StudyParticipant) => {
+    const latestSession = getLatestSession(participant.id);
+
+    if (participant.status === "declined") {
+      return "Reddetti";
     }
+
+    if (participant.status === "completed" || latestSession?.status === "completed" || latestSession?.ended_at) {
+      return "Tamamlandı";
+    }
+
+    if (latestSession?.status === "active" || latestSession?.started_at) {
+      return "Görüşmede";
+    }
+
+    if (participant.status === "joined" || latestSession?.status === "scheduled") {
+      return "Katıldı";
+    }
+
+    return "Davet Edildi";
   };
-  const renderStartingView = () => {
-    const completedInterviews = Math.floor(Math.random() * 3) + 2; // Simulate progress
-    const totalInterviews = participants.length;
-    return <div className="h-full flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <div className="w-16 h-16 bg-status-success-light rounded-full flex items-center justify-center mx-auto mb-6">
-            <PlayCircle className="w-8 h-8 text-status-success" />
-          </div>
-          
-          <h3 className="text-xl font-semibold text-text-primary mb-2">
-            Araştırma Devam Ediyor
-          </h3>
-          
-          <p className="text-text-secondary mb-6">
-            {completedInterviews} / {totalInterviews} görüşme tamamlandı
-          </p>
-          
-          <div className="space-y-3 mb-6">
-            {participants.map((participant, index) => {
-            const isCompleted = index < completedInterviews;
-            const isActive = index === completedInterviews;
-            return <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg">
-                   <div className="flex items-center space-x-3">
-                     <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
-                        <span className="text-xs font-medium text-brand-primary">
-                          {participant.name ? participant.name.split(' ').map((n: string) => n[0]).join('') : participant.email ? participant.email.substring(0, 2).toUpperCase() : 'P'}
-                        </span>
-                     </div>
-                     <span className="text-sm font-medium text-text-primary">
-                       {participant.name || participant.email || 'Participant'}
-                     </span>
-                   </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    {isCompleted ? <>
-                        <CheckCircle2 className="w-4 h-4 text-status-success" />
-                        <span className="text-xs text-status-success">Tamamlandı</span>
-                      </> : isActive ? <>
-                        <Circle className="w-4 h-4 text-brand-primary animate-pulse" />
-                        <span className="text-xs text-brand-primary">Görüşmede</span>
-                      </> : <>
-                        <Clock className="w-4 h-4 text-text-muted" />
-                        <span className="text-xs text-text-muted">Bekliyor</span>
-                      </>}
-                  </div>
-                </div>;
-          })}
-          </div>
-          
-          <div className="bg-surface p-4 rounded-lg">
-            <div className="flex items-center justify-center space-x-4 text-sm">
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-status-success rounded-full"></div>
-                <span className="text-text-secondary">Ekran kaydı aktif</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-status-success rounded-full"></div>
-                <span className="text-text-secondary">Kamera aktif</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>;
-  };
+  const completedInterviewCount = participants.filter((participant) => getInterviewStatus(participant) === "Tamamlandı").length;
+  const activeInterviewCount = participants.filter((participant) => getInterviewStatus(participant) === "Görüşmede").length;
   const renderAnalysisView = () => <div className="space-y-6">
       {/* Research Summary with Typewriter */}
       <div className="bg-surface p-6 rounded-lg">
@@ -1021,18 +1016,21 @@ const StudyPanel = ({
                     İptal
                   </Button>
                 </div>
-              </div> : showTitleTypewriter ? <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditGuideTitle(discussionGuide.title)}>
-                <TypewriterText text={discussionGuide.title} speed={30} className="text-lg font-semibold text-text-primary" enableControls={true} onComplete={() => setShowTitleTypewriter(false)} />
-              </button> : <div className="flex items-center gap-2">
+              </div> : <div className="flex items-center gap-2">
                 <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditGuideTitle(discussionGuide.title)}>
                   <h2 className="text-lg font-semibold text-text-primary">{discussionGuide.title}</h2>
                 </button>
+                {questionSetVersionNumber ? <Badge variant="outline" className="border-brand-primary/30 text-brand-primary">
+                    v{questionSetVersionNumber}
+                  </Badge> : null}
                 <Button size="sm" variant="ghost" onClick={() => handleEditGuideTitle(discussionGuide.title)} className="text-text-secondary hover:text-text-primary">
                   <Edit3 className="w-3 h-3" />
                 </Button>
               </div>}
             <p className="mt-2 text-sm font-medium text-text-secondary">
-              Kullanıcılara sorulacak sorular
+              {currentStep === 'run'
+                ? 'Katılımcıları yönet, görüşmeleri takip et ve gerekirse soru setini güncelle'
+                : 'Kullanıcılara sorulacak sorular'}
             </p>
           </div>
           
@@ -1040,13 +1038,47 @@ const StudyPanel = ({
         </div>
         
         {currentStep === 'run' && participants.length > 0 && <div className="text-sm text-text-secondary">
-            {participants.filter(p => getInterviewStatus(p.id) === 'Tamamlandı').length} / {participants.length} görüşme tamamlandı
+            {completedInterviewCount} / {participants.length} görüşme tamamlandı • {activeInterviewCount} görüşme şu anda aktif
           </div>}
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 min-h-0">
-        {currentStep === 'starting' ? renderStartingView() : currentStep === 'analyze' ? renderAnalysisView() : <div className="space-y-6">
+        {currentStep === 'analyze' ? renderAnalysisView() : <div className="space-y-6">
+            {currentStep === 'run' ? <Card className="border-amber-200/80 bg-amber-50/90 p-5 shadow-sm">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-amber-900">Görüşme Yürütme Merkezi</p>
+                    <p className="mt-1 text-sm text-amber-800/90">
+                      Katılımcıları buradan takip edebilir, yeni davetler gönderebilir ve soru setini düzenleyebilirsin.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="outline" className="border-amber-300 bg-white/70 text-amber-900">
+                      {participants.length} katılımcı
+                    </Badge>
+                    <Badge variant="outline" className="border-amber-300 bg-white/70 text-amber-900">
+                      {questionSetVersionNumber ? `v${questionSetVersionNumber}` : "Varsayılan set"}
+                    </Badge>
+                  </div>
+                </div>
+
+                {questionSetVersionNumber && questionSetVersionNumber > 1 && questionSetUpdatedAt ? <p className="mt-4 text-sm text-amber-900/80">
+                    Sorular {new Date(questionSetUpdatedAt).toLocaleString('tr-TR')} tarihinde güncellendi. Bu andan sonra gönderdiğiniz yeni davetler güncel soru setini kullanır. Aktif veya tamamlanmış oturumlar etkilenmez.
+                  </p> : null}
+              </Card> : null}
+
+            {currentStep === 'run' ? <ParticipantManager
+                projectId={projectId}
+                projectTitle={projectTitle}
+                currentQuestionSetVersionId={questionSetVersionId}
+                currentQuestionSetVersionNumber={questionSetVersionNumber}
+                questionSetUpdatedAt={questionSetUpdatedAt}
+                sessions={sessions}
+                onParticipantsUpdate={onParticipantsUpdate}
+              /> : null}
+
             {/* Discussion Guide Sections */}
             {discussionGuide.sections.map((section: any) => {
             const isSectionEditing = editingSection === section.id || editingQuestion?.startsWith(`${section.id}-`);
@@ -1095,7 +1127,7 @@ const StudyPanel = ({
                 <CardContent className="p-0 space-y-3">
                   {section.questions.map((question: string, index: number) => {
               const questionKey = getQuestionKey(section.id, index);
-              const isQuestionVisible = !isGuideLoading && visibleQuestions[questionKey] === true;
+              const isQuestionVisible = !isGuideLoading && (useQuestionSkeletonReveal ? visibleQuestions[questionKey] === true : true);
               const currentReview = questionReviews[questionKey];
               const expectedReviewText = editingQuestion === questionKey ? editValue.trim() : question.trim();
               const isReviewCurrent = !!currentReview && currentReview.reviewedQuestion === expectedReviewText;
@@ -1214,46 +1246,15 @@ const StudyPanel = ({
                 </div>
               </CardContent>
             </Card>}
-
-            {/* Participants (when recruited) */}
-            {participants.length > 0 && currentStep !== 'guide' && <Card className="p-6">
-                <CardHeader className="p-0 mb-4">
-                  <CardTitle className="text-base font-semibold text-text-primary flex items-center space-x-2">
-                    <User className="w-4 h-4" />
-                    <span>
-                      <TypewriterText text={`Katılımcılar (${participants.length})`} speed={40} delay={0} />
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-                
-                <CardContent className="p-0 space-y-3">
-                  {participants.map((participant, index) => {
-              const status = getInterviewStatus(participant.id);
-              return <div key={participant.id} className="flex items-center justify-between p-3 bg-surface rounded-lg group">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-brand-primary-light rounded-full flex items-center justify-center">
-                            <span className="text-xs font-medium text-brand-primary">
-                              {participant.name ? participant.name.split(' ').map((n: string) => n[0]).join('') : 'P'}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-text-primary">
-                              <TypewriterText text={participant.name} speed={20} delay={index * 200} showCursor={false} />
-                            </p>
-                            <p className="text-xs text-text-secondary">
-                              <TypewriterText text={participant.role} speed={15} delay={index * 200 + 500} showCursor={false} />
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center space-x-2">
-                          {getStatusIcon(status)}
-                          <span className="text-xs text-text-secondary">{status}</span>
-                        </div>
-                      </div>;
-            })}
-                </CardContent>
-              </Card>}
+            {currentStep === 'recruit' ? <ParticipantManager
+                projectId={projectId}
+                projectTitle={projectTitle}
+                currentQuestionSetVersionId={questionSetVersionId}
+                currentQuestionSetVersionNumber={questionSetVersionNumber}
+                questionSetUpdatedAt={questionSetUpdatedAt}
+                sessions={sessions}
+                onParticipantsUpdate={onParticipantsUpdate}
+              /> : null}
           </div>}
       </div>
     </div>;

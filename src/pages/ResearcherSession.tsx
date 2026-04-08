@@ -42,12 +42,15 @@ const ResearcherSession = () => {
         const sessionData = {
           participantToken: token,
           participant: participant,
-          projectData: project.analysis || { 
-            description: "Researcher Session",
-            timestamp: Date.now()
+          projectData: {
+            id: project.id,
+            title: project.title,
+            description: project.description || "Researcher Session",
+            analysis: project.analysis || null,
+            timestamp: Date.now(),
           },
           researcherMode: true,
-          autoStartPhase: 'starting'
+          autoStartPhase: 'run'
         };
 
         localStorage.setItem('researcher-session', JSON.stringify(sessionData));
