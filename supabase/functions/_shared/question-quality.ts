@@ -109,7 +109,7 @@ export const buildFallbackQuestions = (sectionTitle: string, sectionIndex?: numb
     return [
       "Bu ekranı ilk gördüğünüzde dikkatinizi en çok ne çekti?",
       "İlk bakışta burada size ne anlatılmak istendiğini nasıl yorumladınız?",
-      "Bu ilk görünümde size net gelen ve belirsiz kalan noktalar nelerdi?",
+      "Bu ilk görünümde size en az net gelen nokta neydi?",
     ];
   }
 
@@ -198,6 +198,8 @@ const hasDoubleBarrelStructure = (normalized: string) => {
   return /\bve\b/.test(normalized) && /(neden|nasil|hangi|ne)\b.*\bve\b.*\b(neden|nasil|hangi|ne)\b/.test(normalized);
 };
 
+const hasStandaloneVe = (normalized: string) => /\bve\b/.test(normalized);
+
 const hasHeavyJargon = (normalized: string) =>
   [
     "onboarding",
@@ -234,6 +236,7 @@ export const assessQuestionQuality = ({
   const nonLeading = !hasLeadingLanguage(normalized);
   const nonAssumptive = !hasAssumptiveLanguage(normalized);
   const singleFocus = !hasDoubleBarrelStructure(normalized);
+  const noStandaloneVe = !hasStandaloneVe(normalized);
   const clarity = wordCount >= 6 && wordCount <= 28 && cleanedQuestion.endsWith("?");
   const jargonFree = !hasHeavyJargon(normalized);
   const warmupFit = !warmupSection || hasWarmupQuestionTone(cleanedQuestion);
@@ -271,6 +274,15 @@ export const assessQuestionQuality = ({
       label: "Tek odaklı değil",
       detail: "Soru aynı anda birden fazla şeyi sormaya çalışıyor.",
       severity: "caution",
+    });
+  }
+
+  if (!noStandaloneVe) {
+    issues.push({
+      code: "contains_ve",
+      label: '"ve" ile kurulmuş',
+      detail: 'Soru metninde "ve" geçtiğinde iki farklı odağı tek soruda birleştirme riski artıyor.',
+      severity: "problematic",
     });
   }
 
@@ -325,6 +337,7 @@ export const assessQuestionQuality = ({
       non_leading: { label: "Yönlendirmesiz", passed: nonLeading },
       non_assumptive: { label: "Varsayımsız", passed: nonAssumptive },
       single_focus: { label: "Tek odaklı", passed: singleFocus },
+      no_standalone_ve: { label: '"ve" içermiyor', passed: noStandaloneVe },
       clarity: { label: "Net", passed: clarity },
       warmup_fit: { label: "Isınma akışına uygun", passed: warmupFit },
     },

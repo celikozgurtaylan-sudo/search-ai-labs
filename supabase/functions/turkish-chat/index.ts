@@ -124,6 +124,7 @@ Her mesajda su karari ver:
 - Sonraki bolumler genisten ozele ilerlemeli: baglam/davranis -> ana deneyim/gorev -> degerlendirme/iyilestirme
 - Sorular tek odakli olmali; ayni soruda iki farkli seyi sorma
 - Sorular kullanicinin bir problem yasadigini varsaymamali
+- Mümkünse soru metninde "ve" kullanma; iki farkli odagi ayri sorulara bol
 
 # ARASTIRMA PLANI KURALLARI
 - chatResponse: Baglama uygun, spesifik bir yanit. Kullanicinin konusuna ozel giris yap.
@@ -147,7 +148,7 @@ Yanit:
         "title": "KMH Kullanim Deneyimi",
         "questions": [
           "Kredili mevduat hesabinizi ne siklikla kullaniyorsunuz?",
-          "KMH limitinizi nasil ve hangi durumda kullaniyorsunuz?",
+          "KMH limitinizi genellikle hangi durumda kullaniyorsunuz?",
           "KMH'nin calisma mantigini net olarak anliyor musunuz?"
         ]
       },
@@ -155,7 +156,7 @@ Yanit:
         "id": "awareness",
         "title": "Farkindalik ve Bilgi Duzeyi",
         "questions": [
-          "KMH faiz oranlari ve masraflar konusunda yeterince bilgilendirildiginizi dusunuyor musunuz?",
+          "KMH faiz oranlari hakkinda yeterince bilgilendirildiginizi dusunuyor musunuz?",
           "KMH limitinizin ne kadar oldugunu biliyor musunuz?",
           "KMH kullanimi sonrasi geri odeme surecini anliyor musunuz?"
         ]
@@ -165,7 +166,7 @@ Yanit:
         "title": "Sorunlar ve Iyilestirmeler",
         "questions": [
           "KMH kullaniminda yasadiginiz sorunlar nelerdir?",
-          "KMH uyari ve bildirimleri yeterli mi?",
+          "KMH bildirimlerini nasil degerlendiriyorsunuz?",
           "KMH yerine farkli bir acil nakit cozumu tercih eder miydiniz?"
         ]
       }
@@ -196,7 +197,7 @@ Yanit:
         "title": "Urun Anlama ve Farkindalik",
         "questions": [
           "Gunluk faiz hesabinin nasil calistigini net olarak anliyor musunuz?",
-          "Gunluk faiz hesabi ile vadeli mevduat arasindaki temel farklari biliyor musunuz?",
+          "Gunluk faiz hesabini vadeli mevduattan ayiran temel nokta size ne ifade ediyor?",
           "Paranizi baglamadan gunluk faiz kazanma konseptini ilk nasil ogrendiniz?"
         ]
       },
@@ -214,7 +215,7 @@ Yanit:
         "title": "Deneyim ve Memnuniyet",
         "questions": [
           "Gunluk faiz hesabi getiri oranlari beklentilerinizi karsiliyor mu?",
-          "Faiz hesaplama ve yansitma sureci sizin icin seffaf mi?",
+          "Faiz hesaplamasini ne kadar seffaf buluyorsunuz?",
           "Hesaptan para cektiginizde faiz kaybi yasiyor musunuz?"
         ]
       }
@@ -276,6 +277,7 @@ Yanit:
 - chatResponse alaninda ASLA genel kalip cumleler kullanma
 - Her zaman kullanicinin konusuna ozel, baglama uygun yanit ver
 - Arastirma sorulari acik uclu olmali (evet/hayir degil)
+- Arastirma sorularinda mümkünse "ve" kullanma; tek odakli soru kur
 - Section id'leri snake_case Ingilizce olmali
 - researchPlan.sections sayisi 3 veya 4 olmali, 5. bolum ASLA uretme
 - Section title'lari sabit ve jenerik kaliplar olmasin; her title o bolumun arastirma odagini net anlatsin

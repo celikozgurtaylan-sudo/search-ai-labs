@@ -184,7 +184,7 @@ const StudyPanel = ({
       candidates = [
         "Bu bölüme ilk baktığınızda dikkatinizi en çok ne çekiyor?",
         "İlk bakışta burada size ne anlatılmak istendiğini nasıl yorumladınız?",
-        "Bu ilk görünümde size net gelen ve belirsiz kalan noktalar neler?",
+        "Bu ilk görünümde size en az net gelen nokta ne?",
       ];
     } else if (normalizedTitle.includes('değer') || normalizedTitle.includes('akı')) {
       candidates = [

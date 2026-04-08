@@ -111,6 +111,7 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 - Warm-up bölümünün ilk sorusu mutlaka katılımcının gününe veya o ana kadar ne yaptığına değsin
 - Warm-up olmayan bölümlerde rapport yerine doğrudan araştırma odağına gir
 - Her soru tek bir amaca hizmet etsin
+- Mümkünse soru metninde "ve" kullanma; tek soruda tek odak koru
 
 ## Soru Kalitesi Kriterleri
 ✓ **Açık Uçlu**: "Evet/Hayır" yerine detaylı anlatımı teşvik etmeli
@@ -138,10 +139,11 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 - Sorunun içinde "karışıklık", "sorun", "problem", "eksik", "güven verdi", "ikna edici" gibi yargı veya varsayım gömme
 - Evet/hayır ile cevaplanabilecek şekilde soru kurma
 - Kullanıcının olumsuz bir deneyim yaşadığını varsayma
+- Soru metninde "ve" ile iki odağı birleştirme
 
 ## Kötü ve İyi Örnekler
 - Kötü: "Promosyon metni ve görsel öğeler arasında anlam karışıklığı yaşadığınız bir bölüm oldu mu?"
-- İyi: "Promosyon metni ve görsellerin birlikte nasıl bir mesaj verdiğini anlatır mısınız?"
+- İyi: "Promosyon metni size nasıl bir mesaj veriyor?"
 - Kötü: "Bu alan size güven verdi mi?"
 - İyi: "Bu alan sizde nasıl bir izlenim bıraktı?"
 
