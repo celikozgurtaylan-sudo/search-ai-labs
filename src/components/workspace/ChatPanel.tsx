@@ -22,9 +22,11 @@ interface ChatMessage {
 
 interface ChatPanelProps {
   projectData?: any;
+  currentStep?: 'guide' | 'recruit' | 'starting' | 'run' | 'analyze';
   discussionGuide?: any;
   onResearchDetected?: (isResearch: boolean) => void;
   onResearchPlanGenerated?: (plan: any) => void;
+  onResearchPlanLoadingChange?: (isLoading: boolean) => void;
   onMessagesUpdate?: (messages: ChatMessage[]) => void;
 }
 
@@ -129,9 +131,11 @@ const detectGuideEditIntent = (message: string, discussionGuide?: any) => {
 
 const ChatPanel = ({
   projectData,
+  currentStep = 'guide',
   discussionGuide,
   onResearchDetected,
   onResearchPlanGenerated,
+  onResearchPlanLoadingChange,
   onMessagesUpdate,
 }: ChatPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -289,6 +293,11 @@ Plan:
 
   const sendToLLM = async (messageText: string, options: SendToLlmOptions = {}) => {
     setIsLoading(true);
+    const shouldShowGuideSkeleton = currentStep === 'guide';
+
+    if (shouldShowGuideSkeleton) {
+      onResearchPlanLoadingChange?.(true);
+    }
 
     const researchContext = getResearchContext();
     
@@ -321,6 +330,10 @@ Plan:
 
       // Handle research plan generation - MUST check this first to prevent showing chat response
       if (data.researchPlan && onResearchPlanGenerated) {
+        if (!shouldShowGuideSkeleton) {
+          onResearchPlanLoadingChange?.(true);
+        }
+
         // Keep the loading message visible while questions are being typed
         // Update it to show a different message
         setMessages(prev => prev.map(msg =>
@@ -378,6 +391,7 @@ Plan:
             return [...filtered, successMessage];
           });
           isWritingResearchPlanRef.current = false;
+          onResearchPlanLoadingChange?.(false);
           setIsLoading(false);
         }, animationDuration);
 
@@ -396,6 +410,10 @@ Plan:
         };
         return [...filtered, assistantMessage];
       });
+
+      if (shouldShowGuideSkeleton) {
+        onResearchPlanLoadingChange?.(false);
+      }
       
       // Check if conversation became research-related (for future plan generation)
       if (data.isResearchRelated && onResearchDetected) {
@@ -404,6 +422,7 @@ Plan:
       
     } catch (error) {
       console.error('Error sending message to LLM:', error);
+      onResearchPlanLoadingChange?.(false);
       
       // Remove loading message and add error message
       setMessages(prev => {

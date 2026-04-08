@@ -16,6 +16,7 @@ interface StudyPanelProps {
   participants: any[]; // Will work with both old and new participant structures
   currentStep: 'guide' | 'recruit' | 'starting' | 'run' | 'analyze';
   onGuideUpdate: (guide: any) => void;
+  isGuideLoading?: boolean;
   chatMessages?: any[];
 }
 
@@ -46,6 +47,7 @@ const StudyPanel = ({
   participants,
   currentStep,
   onGuideUpdate,
+  isGuideLoading = false,
   chatMessages = []
 }: StudyPanelProps) => {
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null);
@@ -471,7 +473,26 @@ const StudyPanel = ({
   }, [visibleQuestions]);
 
   useEffect(() => {
+    if (!isGuideLoading || !discussionGuide?.sections?.length) return;
+
+    questionRevealTimeoutsRef.current.forEach(timeoutId => window.clearTimeout(timeoutId));
+    questionRevealTimeoutsRef.current = [];
+    scheduledQuestionKeysRef.current = {};
+
+    const hiddenQuestions: Record<string, boolean> = {};
+    discussionGuide.sections.forEach((section: any) => {
+      section.questions.forEach((_: string, questionIndex: number) => {
+        hiddenQuestions[getQuestionKey(section.id, questionIndex)] = false;
+      });
+    });
+
+    setVisibleQuestions(hiddenQuestions);
+    setShowSectionTypewriters({});
+  }, [discussionGuide, isGuideLoading]);
+
+  useEffect(() => {
     if (!discussionGuide?.sections?.length) return;
+    if (isGuideLoading) return;
 
     const hiddenQuestions: Record<string, boolean> = {};
     let globalQuestionIndex = 0;
@@ -508,7 +529,7 @@ const StudyPanel = ({
         ...hiddenQuestions
       }));
     }
-  }, [discussionGuide]);
+  }, [discussionGuide, isGuideLoading]);
 
   useEffect(() => {
     return () => {
@@ -527,6 +548,7 @@ const StudyPanel = ({
 
   useEffect(() => {
     if (!discussionGuide?.sections?.length) return;
+    if (isGuideLoading) return;
 
     setShowSectionTypewriters(prev => {
       const next = { ...prev };
@@ -541,7 +563,7 @@ const StudyPanel = ({
 
       return changed ? next : prev;
     });
-  }, [discussionGuide]);
+  }, [discussionGuide, isGuideLoading]);
 
   const handleReviewQuestion = async (sectionId: string, questionIndex: number, questionOverride?: string) => {
     if (!discussionGuide) return;
@@ -981,7 +1003,10 @@ const StudyPanel = ({
       <div className="border-b border-border-light p-6 flex-shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
           <div className="group">
-            {editingGuideTitle ? <div className="space-y-2 max-w-xl">
+            {isGuideLoading ? <div className="space-y-3 max-w-xl">
+                <Skeleton className="h-6 w-72" />
+                <Skeleton className="h-4 w-40" />
+              </div> : editingGuideTitle ? <div className="space-y-2 max-w-xl">
                 <Input value={editGuideTitleValue} onChange={e => setEditGuideTitleValue(e.target.value)} autoFocus />
                 <div className="flex items-center gap-2">
                   <Button size="sm" onClick={handleSaveGuideTitle}>
@@ -1030,7 +1055,7 @@ const StudyPanel = ({
                 <CardHeader className="p-0 mb-4">
                   <div className="flex items-start justify-between gap-3">
                     <CardTitle className="text-base font-semibold text-text-primary group flex-1 min-w-0">
-                      {editingSection === section.id ? <div className="space-y-2">
+                      {isGuideLoading ? <Skeleton className="h-5 w-44" /> : editingSection === section.id ? <div className="space-y-2">
                           <Input value={editSectionValue} onChange={e => setEditSectionValue(e.target.value)} autoFocus />
                           <div className="flex items-center gap-2">
                             <Button size="sm" onClick={() => handleSaveSectionTitle(section.id)}>
@@ -1054,13 +1079,13 @@ const StudyPanel = ({
                     </CardTitle>
 
                     <div className="flex items-center gap-1">
-                      <Button size="sm" variant="ghost" draggable={false} className="cursor-grab active:cursor-grabbing text-text-secondary hover:text-text-primary" aria-label="Bölümü sürükleyerek yeniden sırala">
+                      <Button size="sm" variant="ghost" draggable={false} className={`cursor-grab active:cursor-grabbing text-text-secondary hover:text-text-primary ${isGuideLoading ? 'invisible pointer-events-none' : ''}`} aria-label="Bölümü sürükleyerek yeniden sırala">
                         <GripVertical className="w-3 h-3" />
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleEditSection(section.id, section.title)} className="text-text-secondary hover:text-text-primary">
+                      <Button size="sm" variant="ghost" onClick={() => handleEditSection(section.id, section.title)} className={`text-text-secondary hover:text-text-primary ${isGuideLoading ? 'invisible pointer-events-none' : ''}`}>
                         <Edit3 className="w-3 h-3" />
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleDeleteSection(section.id)} className="text-text-secondary hover:text-destructive">
+                      <Button size="sm" variant="ghost" onClick={() => handleDeleteSection(section.id)} className={`text-text-secondary hover:text-destructive ${isGuideLoading ? 'invisible pointer-events-none' : ''}`}>
                         <Trash2 className="w-3 h-3" />
                       </Button>
                     </div>
@@ -1070,7 +1095,7 @@ const StudyPanel = ({
                 <CardContent className="p-0 space-y-3">
                   {section.questions.map((question: string, index: number) => {
               const questionKey = getQuestionKey(section.id, index);
-              const isQuestionVisible = visibleQuestions[questionKey] === true;
+              const isQuestionVisible = !isGuideLoading && visibleQuestions[questionKey] === true;
               const currentReview = questionReviews[questionKey];
               const expectedReviewText = editingQuestion === questionKey ? editValue.trim() : question.trim();
               const isReviewCurrent = !!currentReview && currentReview.reviewedQuestion === expectedReviewText;
@@ -1080,7 +1105,9 @@ const StudyPanel = ({
                         </span>
                         
                         <div className="flex-1">
-                          {editingQuestion === questionKey && isQuestionVisible ? <div className="space-y-3">
+                          {isGuideLoading ? <div className="rounded-md border border-border-light bg-surface/60 px-3 py-3">
+                              <Skeleton className={`h-4 ${questionSkeletonWidth}`} />
+                            </div> : editingQuestion === questionKey && isQuestionVisible ? <div className="space-y-3">
                                 <Textarea value={editValue} onChange={e => setEditValue(e.target.value)} className="text-sm" autoFocus />
                                 <div className="flex flex-wrap gap-2">
                                   <Button size="sm" onClick={() => handleSaveQuestion(section.id, index)}>
@@ -1100,7 +1127,7 @@ const StudyPanel = ({
                               <Skeleton className={`h-4 ${questionSkeletonWidth}`} />
                             </div>}
 
-                          {isReviewCurrent && <div className="mt-3 rounded-lg border border-border-light bg-surface/70 p-3 space-y-3">
+                          {!isGuideLoading && isReviewCurrent && <div className="mt-3 rounded-lg border border-border-light bg-surface/70 p-3 space-y-3">
                               <div className="flex flex-wrap items-center gap-2">
                                 <Badge className={getReviewStatusClasses(currentReview.status)}>
                                   {getReviewStatusLabel(currentReview.status)}
@@ -1145,7 +1172,7 @@ const StudyPanel = ({
                       </div>;
             })}
                   
-                   {loadingQuestions[section.id] && <div className="group flex items-start space-x-2">
+                   {!isGuideLoading && loadingQuestions[section.id] && <div className="group flex items-start space-x-2">
                       <span className="text-xs text-text-muted mt-2 w-5">
                         {section.questions.length + 1}.
                       </span>
@@ -1158,7 +1185,7 @@ const StudyPanel = ({
                       </div>
                     </div>}
                   
-                  <div className="flex items-center space-x-2">
+                  {!isGuideLoading && <div className="flex items-center space-x-2">
                     <Button size="sm" variant="ghost" onClick={() => handleAddQuestion(section.id)} className="flex items-center space-x-1 text-text-secondary hover:text-text-primary" disabled={generatingQuestions[section.id]}>
                       <Plus className="w-3 h-3" />
                       <span>Soru ekle</span>
@@ -1168,12 +1195,12 @@ const StudyPanel = ({
                       {generatingQuestions[section.id] ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
                       <span>AI soru üret</span>
                     </Button>
-                  </div>
+                  </div>}
                 </CardContent>
               </Card>;
             })}
 
-            <Card className="border-dashed border-border-light bg-surface/50">
+            {!isGuideLoading && <Card className="border-dashed border-border-light bg-surface/50">
               <CardContent className="p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -1186,7 +1213,7 @@ const StudyPanel = ({
                   </Button>
                 </div>
               </CardContent>
-            </Card>
+            </Card>}
 
             {/* Participants (when recruited) */}
             {participants.length > 0 && currentStep !== 'guide' && <Card className="p-6">

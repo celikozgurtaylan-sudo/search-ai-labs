@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Search, ArrowLeft, Video, Users, Play, BarChart3, Square, ChevronLeft, ChevronRight } from "lucide-react";
 import { SearchoMark } from "@/components/icons/SearchoMark";
@@ -28,6 +29,51 @@ interface ProjectData {
   timestamp: number;
 }
 
+const GuideLoadingPanel = ({ guide }: { guide: any }) => {
+  const sections = Array.isArray(guide?.sections) && guide.sections.length > 0
+    ? guide.sections
+    : Array.from({ length: 3 }, (_, index) => ({
+        id: `loading-section-${index}`,
+        questions: Array.from({ length: index === 0 ? 3 : 4 })
+      }));
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden bg-white border-l border-border-light">
+      <div className="border-b border-border-light p-6 flex-shrink-0">
+        <div className="space-y-3 max-w-xl">
+          <Skeleton className="h-6 w-72" />
+          <Skeleton className="h-4 w-40" />
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6 min-h-0">
+        <div className="space-y-6">
+          {sections.map((section: any, sectionIndex: number) => (
+            <Card key={section.id || `guide-loading-${sectionIndex}`} className="p-6">
+              <CardHeader className="p-0 mb-4">
+                <Skeleton className="h-5 w-44" />
+              </CardHeader>
+
+              <CardContent className="p-0 space-y-3">
+                {(Array.isArray(section.questions) ? section.questions : []).map((_: unknown, questionIndex: number) => (
+                  <div key={`loading-question-${sectionIndex}-${questionIndex}`} className="flex items-start space-x-2">
+                    <span className="text-xs text-text-muted mt-2 w-5">
+                      {questionIndex + 1}.
+                    </span>
+                    <div className="flex-1 rounded-md border border-border-light bg-surface/60 px-3 py-3">
+                      <Skeleton className="h-4 w-11/12" />
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Workspace = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -44,6 +90,7 @@ const Workspace = () => {
   const [isResearchRelated, setIsResearchRelated] = useState(false);
   const [isButtonReady, setIsButtonReady] = useState(false);
   const [sessionIds, setSessionIds] = useState<string[]>([]);
+  const [isGuideLoading, setIsGuideLoading] = useState(false);
 
   useEffect(() => {
     // Check for researcher session first
@@ -421,8 +468,10 @@ const Workspace = () => {
           ) : (
             <ChatPanel 
               projectData={projectData}
+              currentStep={currentStep}
               discussionGuide={discussionGuide}
               onResearchDetected={setIsResearchRelated}
+              onResearchPlanLoadingChange={setIsGuideLoading}
               onResearchPlanGenerated={(plan) => {
                 setDiscussionGuide(plan);
               }}
@@ -445,12 +494,15 @@ const Workspace = () => {
               projectId={projectData.id || ''}
               sessionIds={sessionIds}
             />
+          ) : isGuideLoading ? (
+            <GuideLoadingPanel guide={discussionGuide} />
           ) : isResearchRelated ? (
             <StudyPanel 
               discussionGuide={discussionGuide}
               participants={participants}
               currentStep={currentStep}
               onGuideUpdate={setDiscussionGuide}
+              isGuideLoading={isGuideLoading}
               chatMessages={chatMessages}
             />
           ) : (
