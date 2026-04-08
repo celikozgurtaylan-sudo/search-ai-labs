@@ -8,7 +8,7 @@ import { FloatingVideo } from "@/components/FloatingVideo";
 import { participantService } from "@/services/participantService";
 import { projectService } from "@/services/projectService";
 import { InterviewProgress, InterviewQuestion, setInterviewSessionToken } from "@/services/interviewService";
-import { CheckCircle, AlertCircle, Loader2, ExternalLink, Image as ImageIcon, Camera } from "lucide-react";
+import { CheckCircle, AlertCircle, Loader2, ExternalLink, Image as ImageIcon, Camera, Mic } from "lucide-react";
 
 type CameraValidationState = 'idle' | 'requesting' | 'verifying' | 'preview' | 'stream' | 'failed';
 
@@ -115,10 +115,12 @@ const StudySession = () => {
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
+  const [hasMicrophonePermission, setHasMicrophonePermission] = useState(false);
   const [cameraGateCompleted, setCameraGateCompleted] = useState(false);
   const [cameraRequestPending, setCameraRequestPending] = useState(false);
   const [cameraPreviewReady, setCameraPreviewReady] = useState(false);
   const [cameraStreamVerified, setCameraStreamVerified] = useState(false);
+  const [microphoneVerified, setMicrophoneVerified] = useState(false);
   const [cameraValidationState, setCameraValidationState] = useState<CameraValidationState>('idle');
   const [cameraValidationMessage, setCameraValidationMessage] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -134,12 +136,16 @@ const StudySession = () => {
     setCameraEnabled(false);
     setCameraPreviewReady(false);
     setCameraStreamVerified(false);
+    setMicrophoneVerified(false);
     setCameraGateCompleted(false);
     setCameraValidationState(message ? 'failed' : 'idle');
     setCameraValidationMessage(message);
   };
 
   const isLiveVideoTrack = (track?: MediaStreamTrack | null) =>
+    Boolean(track && track.readyState === 'live' && track.enabled !== false);
+
+  const isLiveAudioTrack = (track?: MediaStreamTrack | null) =>
     Boolean(track && track.readyState === 'live' && track.enabled !== false);
 
   const waitForVideoMetadata = async (video: HTMLVideoElement, timeoutMs = 2000) =>
@@ -586,9 +592,32 @@ const StudySession = () => {
         if (!isGranted) {
           stopCameraStream(cameraStreamRef.current);
           setCameraStream(null);
-          resetCameraState("Tarayici kamera iznini kapatti. Devam etmek icin izni yeniden acin.");
+          resetCameraState("Tarayici kamera iznini kapatti. Devam etmek icin kamera ve mikrofon iznini yeniden acin.");
         }
       };
+
+      try {
+        const microphonePermissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        const microphoneGranted = microphonePermissionStatus.state === 'granted';
+        setHasMicrophonePermission(microphoneGranted);
+
+        microphonePermissionStatus.onchange = () => {
+          const isGranted = microphonePermissionStatus.state === 'granted';
+          setHasMicrophonePermission(isGranted);
+          if (!isGranted) {
+            stopCameraStream(cameraStreamRef.current);
+            setCameraStream(null);
+            resetCameraState("Tarayici mikrofon iznini kapatti. Devam etmek icin kamera ve mikrofon iznini yeniden acin.");
+          }
+        };
+
+        if (granted && microphoneGranted && !cameraStream) {
+          await requestCameraAccess();
+        }
+        return;
+      } catch (error) {
+        console.warn('Microphone permissions API not available:', error);
+      }
 
       if (granted && !cameraStream) {
         await requestCameraAccess();
@@ -614,14 +643,24 @@ const StudySession = () => {
             height: { ideal: 720 },
             facingMode: { ideal: "user" },
           },
-          audio: false,
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
         },
         {
           video: {
             width: { ideal: 960 },
             height: { ideal: 720 },
           },
-          audio: false,
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
         },
       ];
 
@@ -630,11 +669,24 @@ const StudySession = () => {
           video: {
             deviceId: { exact: fallbackCamera.deviceId },
           },
-          audio: false,
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
         });
       }
 
-      constraintsQueue.push({ video: true, audio: false });
+      constraintsQueue.push({
+        video: true,
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
 
       let stream: MediaStream | null = null;
       let lastError: unknown = null;
@@ -652,14 +704,26 @@ const StudySession = () => {
         throw lastError;
       }
 
+      const audioTrack = stream.getAudioTracks()[0];
+      if (!isLiveAudioTrack(audioTrack)) {
+        stopCameraStream(stream);
+        setCameraStream(null);
+        setHasMicrophonePermission(false);
+        resetCameraState("Mikrofon baglantisi dogrulanamadi. Devam etmek icin mikrofonu yeniden deneyin.");
+        toast.error("Mikrofon baglantisi dogrulanamadi.");
+        return false;
+      }
+
       stopCameraStream(cameraStreamRef.current);
       setCameraStream(stream);
       setCameraEnabled(true);
       setHasCameraPermission(true);
+      setHasMicrophonePermission(true);
+      setMicrophoneVerified(true);
       setCameraPreviewReady(false);
       setCameraStreamVerified(false);
       setCameraValidationState('verifying');
-      setCameraValidationMessage("Kamera baglantisi dogrulaniyor...");
+      setCameraValidationMessage("Kamera ve mikrofon baglantisi dogrulaniyor...");
 
       const validation = await validateCameraStream(stream);
 
@@ -682,12 +746,13 @@ const StudySession = () => {
       const permissionDenied = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(errorName);
       const cameraUnavailable = ['NotFoundError', 'DevicesNotFoundError', 'OverconstrainedError', 'NotReadableError', 'TrackStartError'].includes(errorName);
       const message = permissionDenied
-        ? "Devam etmek icin kamera izni vermelisiniz."
+        ? "Devam etmek icin kamera ve mikrofon izni vermelisiniz."
         : cameraUnavailable
-          ? "Kamera bulunamadi veya kullanilamiyor. Lutfen baska bir kamera secip tekrar deneyin."
-          : "Kamera baslatilamadi. Lutfen tekrar deneyin.";
+          ? "Kamera veya mikrofon bulunamadi ya da kullanilamiyor. Lutfen cihazlarinizi kontrol edip tekrar deneyin."
+          : "Kamera ve mikrofon baslatilamadi. Lutfen tekrar deneyin.";
 
       setHasCameraPermission(false);
+      setHasMicrophonePermission(false);
       resetCameraState(message);
       toast.error(message);
       return false;
@@ -756,7 +821,7 @@ const StudySession = () => {
           <CardContent className="pt-6 text-center">
             {sessionCompletionReason === 'completed' ? (
               <div className="relative">
-                <div className="absolute left-1/2 top-8 h-20 w-20 -translate-x-1/2 rounded-full bg-emerald-200/70 animate-ping" />
+                <div className="absolute left-1/2 top-8 h-20 w-20 -translate-x-1/2 rounded-full bg-emerald-200/70 blur-xl" />
                 <CheckCircle className="relative w-16 h-16 text-emerald-500 mx-auto mb-4" />
               </div>
             ) : (
@@ -915,24 +980,54 @@ const StudySession = () => {
               <div className="space-y-5">
                 <div className="inline-flex items-center gap-2 rounded-full bg-brand-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-brand-primary">
                   <Camera className="h-3.5 w-3.5" />
-                  Kamera Gerekli
+                  Kamera ve Mikrofon Gerekli
                 </div>
                 <div className="space-y-3">
                   <h2 className="text-2xl font-semibold text-text-primary md:text-3xl">
-                    Görüşmeye başlamadan önce kameranızı açın
+                    Görüşmeye başlamadan önce kamera ve mikrofonunuzu açın
                   </h2>
                   <p className="text-base leading-relaxed text-text-secondary">
-                    Bu oturum görüntülü yürütülür. Kamera izni vermeden devam edemezsiniz.
+                    Bu oturum görüntülü ve sesli yürütülür. Kamera ve mikrofon izni vermeden devam edemezsiniz.
                   </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className={`rounded-2xl border px-4 py-3 text-sm ${
+                    cameraEnabled && cameraStreamVerified
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : 'border-border-light bg-surface text-text-secondary'
+                  }`}>
+                    <div className="flex items-center gap-2 font-medium">
+                      <Camera className="h-4 w-4" />
+                      Kamera
+                    </div>
+                    <p className="mt-1 text-xs">
+                      {cameraEnabled && cameraStreamVerified ? 'Hazir' : hasCameraPermission ? 'Dogrulaniyor' : 'Izin bekleniyor'}
+                    </p>
+                  </div>
+
+                  <div className={`rounded-2xl border px-4 py-3 text-sm ${
+                    microphoneVerified
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : 'border-border-light bg-surface text-text-secondary'
+                  }`}>
+                    <div className="flex items-center gap-2 font-medium">
+                      <Mic className="h-4 w-4" />
+                      Mikrofon
+                    </div>
+                    <p className="mt-1 text-xs">
+                      {microphoneVerified ? 'Hazir' : hasMicrophonePermission ? 'Dogrulaniyor' : 'Izin bekleniyor'}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <Button
                     onClick={() => setCameraGateCompleted(true)}
-                    disabled={!cameraEnabled || !cameraStreamVerified}
+                    disabled={!cameraEnabled || !cameraStreamVerified || !microphoneVerified}
                     size="lg"
                     className={`min-w-[180px] ${
-                      cameraEnabled && cameraStreamVerified
+                      cameraEnabled && cameraStreamVerified && microphoneVerified
                         ? "bg-brand-primary text-white hover:bg-brand-primary-hover"
                         : "bg-muted text-muted-foreground hover:bg-muted"
                     }`}
@@ -949,26 +1044,26 @@ const StudySession = () => {
                       onClick={() => void requestCameraAccess()}
                       disabled={cameraRequestPending}
                     >
-                      Kamerayi yeniden dene
+                      Kamera ve mikrofonu yeniden dene
                     </Button>
                   )}
                 </div>
 
-                {!cameraEnabled && !cameraRequestPending && !cameraValidationMessage && (
+                {!cameraEnabled && !microphoneVerified && !cameraRequestPending && !cameraValidationMessage && (
                   <p className="text-sm text-text-secondary">
-                    Kamera izni gerekiyor. Tarayıcı izin penceresini onaylayın.
+                    Kamera ve mikrofon izni gerekiyor. Tarayıcı izin penceresini onaylayın.
                   </p>
                 )}
 
                 {cameraRequestPending && (
                   <p className="text-sm text-text-secondary">
-                    Kamera izni isteniyor...
+                    Kamera ve mikrofon izni isteniyor...
                   </p>
                 )}
 
-                {cameraEnabled && cameraValidationState === 'verifying' && !cameraRequestPending && (
+                {cameraEnabled && microphoneVerified && cameraValidationState === 'verifying' && !cameraRequestPending && (
                   <p className="text-sm text-text-secondary">
-                    Kamera baglandi. Baglanti dogrulaniyor...
+                    Kamera ve mikrofon baglandi. Baglanti dogrulaniyor...
                   </p>
                 )}
 

@@ -296,7 +296,7 @@ Plan:
     const loadingMessage: ChatMessage = {
       id: `ai-loading-${Date.now()}`,
       type: 'ai',
-      content: options.forceGuideEditPlan ? 'Araştırma planınızı güncelliyorum...' : 'Düşünüyorum...',
+      content: options.forceGuideEditPlan ? 'Plan güncelleniyor...' : 'Hazırlanıyor...',
       timestamp: new Date()
     };
     setMessages(prev => [...prev, loadingMessage]);
@@ -328,8 +328,8 @@ Plan:
             ? {
                 ...msg,
                 content: options.forceGuideEditPlan
-                  ? 'Araştırma planınızı güncelliyorum...'
-                  : 'Araştırma sorularınızı hazırlıyorum...'
+                  ? 'Plan güncelleniyor...'
+                  : 'Sorular hazırlanıyor...'
               }
             : msg
         ));
@@ -371,8 +371,8 @@ Plan:
               id: `ai-success-${Date.now()}`,
               type: 'ai',
               content: options.forceGuideEditPlan
-                ? 'Araştırma planınızı güncelledim. Mevcut akışı koruyarak istediğiniz değişiklikleri uyguladım; isterseniz birlikte biraz daha rafine edebiliriz.'
-                : 'Elbette sorularınızı hazırladım, dilerseniz üstlerine tıklayarak manuel olarak değiştirebilirsiniz ya da beraber konuşarak da ilerletebiliriz.',
+                ? 'Planı güncelledim. İstersen devam edelim.'
+                : 'Sorular hazır. İstersen birlikte revize edebiliriz.',
               timestamp: new Date()
             };
             return [...filtered, successMessage];

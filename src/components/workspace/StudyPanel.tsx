@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Plus, Edit3, Check, X, FileText, Download, Share, CheckCircle2, Clock, Circle, PlayCircle, BarChart3, Camera, Monitor, Loader2, TrendingUp, AlertTriangle, Users, Video, User, Sparkles, RefreshCw, Trash2, GripVertical } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import TypewriterText from "@/components/ui/typewriter-text";
 
@@ -17,6 +18,29 @@ interface StudyPanelProps {
   onGuideUpdate: (guide: any) => void;
   chatMessages?: any[];
 }
+
+interface QuestionReviewIssue {
+  code: string;
+  label: string;
+  detail: string;
+  severity: "caution" | "problematic";
+}
+
+interface QuestionReviewCheck {
+  label: string;
+  passed: boolean;
+}
+
+interface QuestionReviewResult {
+  reviewedQuestion: string;
+  status: "strong" | "caution" | "problematic";
+  summary: string;
+  issues: QuestionReviewIssue[];
+  checks: Record<string, QuestionReviewCheck>;
+  suggestedRewrite: string | null;
+  suggestionReason?: string;
+}
+
 const StudyPanel = ({
   discussionGuide,
   participants,
@@ -40,19 +64,112 @@ const StudyPanel = ({
   const [generatingQuestions, setGeneratingQuestions] = useState<{
     [key: string]: boolean;
   }>({});
-  const [typewriterQuestions, setTypewriterQuestions] = useState<{
-    [key: string]: string[];
-  }>({});
   const [showTitleTypewriter, setShowTitleTypewriter] = useState(true);
   const [showSectionTypewriters, setShowSectionTypewriters] = useState<{
     [key: string]: boolean;
   }>({});
   const [showAnalysisTypewriter, setShowAnalysisTypewriter] = useState(false);
-  const [showQuestionTypewriters, setShowQuestionTypewriters] = useState<{
+  const [visibleQuestions, setVisibleQuestions] = useState<{
     [key: string]: boolean;
   }>({});
-  const [loadingMessages] = useState(["AI soruları oluşturuluyor...", "Katılımcı deneyimini analiz ediyor...", "En iyi soruları seçiyor...", "Araştırma planını optimize ediyor..."]);
-  const [currentLoadingIndex, setCurrentLoadingIndex] = useState(0);
+  const [questionReviews, setQuestionReviews] = useState<{
+    [key: string]: QuestionReviewResult;
+  }>({});
+  const [reviewingQuestions, setReviewingQuestions] = useState<{
+    [key: string]: boolean;
+  }>({});
+  const questionSkeletonWidth = "w-11/12";
+  const questionRevealTimeoutsRef = useRef<number[]>([]);
+  const scheduledQuestionKeysRef = useRef<{
+    [key: string]: boolean;
+  }>({});
+  const visibleQuestionsRef = useRef<{
+    [key: string]: boolean;
+  }>({});
+
+  const getQuestionKey = (sectionId: string, questionIndex: number) => `${sectionId}-${questionIndex}`;
+  const getReviewStatusLabel = (status: QuestionReviewResult["status"]) => {
+    switch (status) {
+      case "strong":
+        return "Güçlü";
+      case "caution":
+        return "Dikkat";
+      default:
+        return "Sorunlu";
+    }
+  };
+
+  const getReviewStatusClasses = (status: QuestionReviewResult["status"]) => {
+    switch (status) {
+      case "strong":
+        return "bg-status-success-light text-status-success border-0";
+      case "caution":
+        return "bg-status-warning/15 text-status-warning border-0";
+      default:
+        return "bg-destructive/10 text-destructive border-0";
+    }
+  };
+
+  const clearQuestionReviewState = (questionKey: string) => {
+    setQuestionReviews((prev) => {
+      if (!prev[questionKey]) return prev;
+      const next = { ...prev };
+      delete next[questionKey];
+      return next;
+    });
+
+    setReviewingQuestions((prev) => {
+      if (!prev[questionKey]) return prev;
+      const next = { ...prev };
+      delete next[questionKey];
+      return next;
+    });
+  };
+
+  const clearSectionReviewState = (sectionId: string) => {
+    setQuestionReviews((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        if (key.startsWith(`${sectionId}-`)) {
+          delete next[key];
+        }
+      });
+      return next;
+    });
+
+    setReviewingQuestions((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        if (key.startsWith(`${sectionId}-`)) {
+          delete next[key];
+        }
+      });
+      return next;
+    });
+  };
+
+  const resolveProjectDescription = () => {
+    const userMessages = chatMessages.filter((msg) => msg.type === "user");
+    const latestUserInput = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : "";
+
+    if (latestUserInput) {
+      return latestUserInput;
+    }
+
+    const persistedProject = localStorage.getItem("searchai-project");
+    if (persistedProject) {
+      try {
+        const parsedProject = JSON.parse(persistedProject);
+        if (typeof parsedProject?.description === "string" && parsedProject.description.trim()) {
+          return parsedProject.description.trim();
+        }
+      } catch (error) {
+        console.error("Stored project description parsing failed:", error);
+      }
+    }
+
+    return discussionGuide?.title || "Kullanıcı deneyimi araştırması";
+  };
 
   const createDemoQuestions = (sectionTitle: string, existingQuestions: string[]) => {
     const normalizedTitle = sectionTitle.toLocaleLowerCase('tr-TR');
@@ -151,7 +268,7 @@ const StudyPanel = ({
       delete next[sectionId];
       return next;
     });
-    setShowQuestionTypewriters(prev => {
+    setVisibleQuestions(prev => {
       const next = {
         ...prev
       };
@@ -162,6 +279,12 @@ const StudyPanel = ({
       });
       return next;
     });
+    Object.keys(scheduledQuestionKeysRef.current).forEach(key => {
+      if (key.startsWith(`${sectionId}-`)) {
+        delete scheduledQuestionKeysRef.current[key];
+      }
+    });
+    clearSectionReviewState(sectionId);
   };
   const handleAddSection = () => {
     if (!discussionGuide) return;
@@ -183,10 +306,18 @@ const StudyPanel = ({
       ...prev,
       [sectionId]: false
     }));
-    setShowQuestionTypewriters(prev => ({
+    setVisibleQuestions(prev => ({
       ...prev,
       [questionKey]: false
     }));
+    scheduledQuestionKeysRef.current[questionKey] = true;
+    const timeoutId = window.setTimeout(() => {
+      setVisibleQuestions(prev => ({
+        ...prev,
+        [questionKey]: true
+      }));
+    }, 180);
+    questionRevealTimeoutsRef.current.push(timeoutId);
     setEditingSection(sectionId);
     setEditSectionValue(newSection.title);
   };
@@ -233,12 +364,14 @@ const StudyPanel = ({
   };
   const handleSaveQuestion = (sectionId: string, questionIndex: number) => {
     if (!discussionGuide) return;
+    const questionKey = getQuestionKey(sectionId, questionIndex);
+    const updatedQuestion = editValue.trim() || "Yeni soru - düzenlemek için tıklayın";
     const updatedGuide = {
       ...discussionGuide,
       sections: discussionGuide.sections.map((section: any) => {
         if (section.id === sectionId) {
           const updatedQuestions = [...section.questions];
-          updatedQuestions[questionIndex] = editValue;
+          updatedQuestions[questionIndex] = updatedQuestion;
           return {
             ...section,
             questions: updatedQuestions
@@ -248,6 +381,16 @@ const StudyPanel = ({
       })
     };
     onGuideUpdate(updatedGuide);
+    setQuestionReviews((prev) => {
+      const currentReview = prev[questionKey];
+      if (!currentReview || currentReview.reviewedQuestion === updatedQuestion) {
+        return prev;
+      }
+
+      const next = { ...prev };
+      delete next[questionKey];
+      return next;
+    });
     setEditingQuestion(null);
     setEditValue("");
   };
@@ -269,24 +412,42 @@ const StudyPanel = ({
 
     onGuideUpdate(updatedGuide);
 
-    const questionKey = `${sectionId}-${questionIndex}`;
+    const questionKey = getQuestionKey(sectionId, questionIndex);
     setEditingQuestion(current => current === questionKey ? null : current);
     setEditValue("");
-    setShowQuestionTypewriters(prev => {
+    clearSectionReviewState(sectionId);
+    setVisibleQuestions(prev => {
       const next = {
         ...prev
       };
-      delete next[questionKey];
+      Object.keys(next).forEach(key => {
+        if (key.startsWith(`${sectionId}-`)) {
+          delete next[key];
+        }
+      });
+
+      const updatedSection = updatedGuide.sections.find((section: any) => section.id === sectionId);
+      updatedSection?.questions.forEach((_: string, index: number) => {
+        next[getQuestionKey(sectionId, index)] = true;
+      });
+
       return next;
+    });
+    Object.keys(scheduledQuestionKeysRef.current).forEach(key => {
+      if (key.startsWith(`${sectionId}-`)) {
+        delete scheduledQuestionKeysRef.current[key];
+      }
     });
   };
   const handleAddQuestion = (sectionId: string) => {
     if (!discussionGuide) return;
     const newQuestion = "Yeni soru - düzenlemek için tıklayın";
+    let newQuestionIndex = 0;
     const updatedGuide = {
       ...discussionGuide,
       sections: discussionGuide.sections.map((section: any) => {
         if (section.id === sectionId) {
+          newQuestionIndex = section.questions.length;
           return {
             ...section,
             questions: [...section.questions, newQuestion]
@@ -296,56 +457,66 @@ const StudyPanel = ({
       })
     };
     onGuideUpdate(updatedGuide);
+    const questionKey = getQuestionKey(sectionId, newQuestionIndex);
+    setVisibleQuestions(prev => ({
+      ...prev,
+      [questionKey]: true
+    }));
+    delete scheduledQuestionKeysRef.current[questionKey];
+    clearQuestionReviewState(questionKey);
   };
 
-  // Enhanced loading messages with typewriter effect
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentLoadingIndex(prev => (prev + 1) % loadingMessages.length);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [loadingMessages.length]);
+    visibleQuestionsRef.current = visibleQuestions;
+  }, [visibleQuestions]);
 
-  // Initialize section typewriters when guide is loaded
   useEffect(() => {
-    if (discussionGuide?.sections && Object.keys(showSectionTypewriters).length === 0) {
-      const initialSections: {
-        [key: string]: boolean;
-      } = {};
-      discussionGuide.sections.forEach((section: any, index: number) => {
-        initialSections[section.id] = true;
+    if (!discussionGuide?.sections?.length) return;
+
+    const hiddenQuestions: Record<string, boolean> = {};
+    let globalQuestionIndex = 0;
+
+    discussionGuide.sections.forEach((section: any) => {
+      section.questions.forEach((_: string, questionIndex: number) => {
+        const questionKey = getQuestionKey(section.id, questionIndex);
+
+        if (typeof visibleQuestionsRef.current[questionKey] === 'undefined') {
+          hiddenQuestions[questionKey] = false;
+        }
+
+        if (
+          typeof visibleQuestionsRef.current[questionKey] === 'undefined' &&
+          !scheduledQuestionKeysRef.current[questionKey]
+        ) {
+          scheduledQuestionKeysRef.current[questionKey] = true;
+          const timeoutId = window.setTimeout(() => {
+            setVisibleQuestions(prev => ({
+              ...prev,
+              [questionKey]: true
+            }));
+          }, 320 + globalQuestionIndex * 170);
+          questionRevealTimeoutsRef.current.push(timeoutId);
+        }
+
+        globalQuestionIndex += 1;
       });
-      setShowSectionTypewriters(initialSections);
-    }
-  }, [discussionGuide, showSectionTypewriters]);
+    });
 
-  // Initialize question typewriters when guide is loaded - don't pre-initialize questions
+    if (Object.keys(hiddenQuestions).length > 0) {
+      setVisibleQuestions(prev => ({
+        ...prev,
+        ...hiddenQuestions
+      }));
+    }
+  }, [discussionGuide]);
+
   useEffect(() => {
-    if (discussionGuide?.sections && Object.keys(showQuestionTypewriters).length === 0) {
-      // Don't initialize questions - let them be undefined until typewriter starts
-
-      // Start showing questions section by section after a 2-second delay
-      setTimeout(() => {
-        let sectionStartDelay = 0;
-        discussionGuide.sections.forEach((section: any, sectionIndex: number) => {
-          section.questions.forEach((question: string, questionIndex: number) => {
-            const questionKey = `${section.id}-${questionIndex}`;
-            const questionDelay = sectionStartDelay + questionIndex * 800;
-            setTimeout(() => {
-              setShowQuestionTypewriters(prev => ({
-                ...prev,
-                [questionKey]: true
-              }));
-            }, questionDelay);
-          });
-
-          // Next section starts after all questions in current section finish
-          // Add extra 400ms buffer between sections
-          sectionStartDelay += section.questions.length * 800 + 400;
-        });
-      }, 2000); // 2-second base delay
-    }
-  }, [discussionGuide, showQuestionTypewriters]);
+    return () => {
+      questionRevealTimeoutsRef.current.forEach(timeoutId => window.clearTimeout(timeoutId));
+      questionRevealTimeoutsRef.current = [];
+      scheduledQuestionKeysRef.current = {};
+    };
+  }, []);
 
   // Show analysis typewriter when entering analyze step
   useEffect(() => {
@@ -353,7 +524,74 @@ const StudyPanel = ({
       setShowAnalysisTypewriter(true);
     }
   }, [currentStep, showAnalysisTypewriter]);
+
+  useEffect(() => {
+    if (!discussionGuide?.sections?.length) return;
+
+    setShowSectionTypewriters(prev => {
+      const next = { ...prev };
+      let changed = false;
+
+      discussionGuide.sections.forEach((section: any) => {
+        if (typeof next[section.id] === 'undefined') {
+          next[section.id] = true;
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [discussionGuide]);
+
+  const handleReviewQuestion = async (sectionId: string, questionIndex: number) => {
+    if (!discussionGuide) return;
+
+    const questionKey = getQuestionKey(sectionId, questionIndex);
+    const trimmedQuestion = editValue.trim();
+    const section = discussionGuide.sections.find((item: any) => item.id === sectionId);
+    const sectionIndex = discussionGuide.sections.findIndex((item: any) => item.id === sectionId);
+
+    if (!trimmedQuestion || !section) {
+      return;
+    }
+
+    setReviewingQuestions((prev) => ({
+      ...prev,
+      [questionKey]: true
+    }));
+
+    try {
+      const { data, error } = await supabase.functions.invoke("review-question-quality", {
+        body: {
+          question: trimmedQuestion,
+          sectionTitle: section.title,
+          sectionIndex,
+          projectDescription: resolveProjectDescription(),
+          guideTitle: discussionGuide.title,
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setQuestionReviews((prev) => ({
+        ...prev,
+        [questionKey]: data as QuestionReviewResult
+      }));
+    } catch (error) {
+      console.error("Error reviewing question quality:", error);
+      alert(`Soru değerlendirilirken hata oluştu: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
+    } finally {
+      setReviewingQuestions((prev) => ({
+        ...prev,
+        [questionKey]: false
+      }));
+    }
+  };
+
   const generateAIQuestions = async (sectionId: string, sectionTitle: string) => {
+    const loadingStartedAt = performance.now();
     setGeneratingQuestions(prev => ({
       ...prev,
       [sectionId]: true
@@ -369,12 +607,8 @@ const StudyPanel = ({
       const currentSection = discussionGuide?.sections?.find((s: any) => s.id === sectionId);
       const existingQuestions = currentSection?.questions || [];
 
-      // Get the latest user message from chat as project description
-      const userMessages = chatMessages.filter(msg => msg.type === 'user');
-      const latestUserInput = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
-
-      // Fallback to stored project data if no chat messages
-      const projectDescription = latestUserInput || (localStorage.getItem('searchai-project') ? JSON.parse(localStorage.getItem('searchai-project')!).description : 'Kullanıcı deneyimi araştırması');
+      const projectDescription = resolveProjectDescription();
+      const sectionIndex = discussionGuide?.sections?.findIndex((section: any) => section.id === sectionId);
 
       console.log('Generating questions for:', { sectionTitle, sectionId, projectDescription });
 
@@ -384,8 +618,10 @@ const StudyPanel = ({
         body: {
           sectionTitle,
           sectionId,
+          sectionIndex,
           projectDescription,
           existingQuestions,
+          count: 1,
           validateProject: false
         }
       });
@@ -403,7 +639,7 @@ const StudyPanel = ({
         return;
       }
 
-      questions = data?.questions || [];
+      questions = (data?.questions || []).slice(0, 1);
       
       if (questions.length === 0) {
         alert('Soru oluşturulamadı. Lütfen tekrar deneyin.');
@@ -412,37 +648,32 @@ const StudyPanel = ({
 
       console.log('Adding questions:', questions);
 
-      // Set up typewriter effect for new questions - append to existing, don't replace
-      setTypewriterQuestions(prev => ({
-        ...prev,
-        [sectionId]: [...(prev[sectionId] || []), ...questions]
-      }));
-
-      // Add questions one by one with typewriter effect
-      for (let i = 0; i < questions.length; i++) {
-        await new Promise(resolve => setTimeout(resolve, i * 1000));
-
-        const updatedGuide = {
-          ...discussionGuide,
-          sections: discussionGuide.sections.map((section: any) => {
-            if (section.id === sectionId) {
-              const newQuestions = [...section.questions, questions[i]];
-              return {
-                ...section,
-                questions: newQuestions
-              };
-            }
-            return section;
-          })
-        };
-        onGuideUpdate(updatedGuide);
-      }
+      const updatedGuide = {
+        ...discussionGuide,
+        sections: discussionGuide.sections.map((section: any) => {
+          if (section.id === sectionId) {
+            return {
+              ...section,
+              questions: [...section.questions, ...questions]
+            };
+          }
+          return section;
+        })
+      };
+      onGuideUpdate(updatedGuide);
 
       console.log('Questions added successfully');
     } catch (error) {
       console.error('Error generating AI questions:', error);
       alert(`Beklenmeyen bir hata oluştu: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
     } finally {
+      const elapsed = performance.now() - loadingStartedAt;
+      const remainingDelay = Math.max(0, 900 - elapsed);
+
+      if (remainingDelay > 0) {
+        await new Promise(resolve => setTimeout(resolve, remainingDelay));
+      }
+
       setLoadingQuestions(prev => ({
         ...prev,
         [sectionId]: false
@@ -717,12 +948,31 @@ const StudyPanel = ({
       </div>
     </div>;
   if (!discussionGuide) {
-    return <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 bg-brand-primary-light rounded-lg flex items-center justify-center mx-auto mb-3">
-            <Video className="w-6 h-6 text-brand-primary" />
+    return <div className="h-full overflow-y-auto p-6">
+        <div className="max-w-4xl space-y-6">
+          <div className="text-center">
+            <div className="w-12 h-12 bg-brand-primary-light rounded-lg flex items-center justify-center mx-auto mb-3">
+              <Video className="w-6 h-6 text-brand-primary" />
+            </div>
+            <TypewriterText text="Tartışma kılavuzu oluşturuluyor..." speed={50} className="text-text-secondary" showCursor={true} />
           </div>
-          <TypewriterText text="Tartışma kılavuzu oluşturuluyor..." speed={50} className="text-text-secondary" showCursor={true} />
+
+          {[0, 1].map(cardIndex => <Card key={cardIndex} className="p-6">
+              <CardHeader className="p-0 mb-5 space-y-3">
+                <Skeleton className="h-5 w-40" />
+                <Skeleton className="h-4 w-56" />
+              </CardHeader>
+              <CardContent className="p-0 space-y-4">
+                <div className="flex items-start gap-3">
+                    <Skeleton className="mt-1 h-4 w-4 rounded-sm" />
+                    <Skeleton className={`h-4 ${questionSkeletonWidth}`} />
+                  </div>
+                <div className="flex gap-2 pt-2">
+                  <Skeleton className="h-8 w-24 rounded-md" />
+                  <Skeleton className="h-8 w-28 rounded-md" />
+                </div>
+              </CardContent>
+            </Card>)}
         </div>
       </div>;
   }
@@ -796,7 +1046,7 @@ const StudyPanel = ({
                             </Button>
                           </div>
                         </div> : <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditSection(section.id, section.title)}>
-                          {showSectionTypewriters[section.id] ? <TypewriterText text={section.title} speed={25} delay={discussionGuide.sections.indexOf(section) * 500} enableControls={true} onComplete={() => setShowSectionTypewriters(prev => ({
+                          {showSectionTypewriters[section.id] ? <TypewriterText text={section.title} speed={24} delay={discussionGuide.sections.indexOf(section) * 180} enableControls={true} onComplete={() => setShowSectionTypewriters(prev => ({
                       ...prev,
                       [section.id]: false
                     }))} /> : section.title}
@@ -819,57 +1069,90 @@ const StudyPanel = ({
                 
                 <CardContent className="p-0 space-y-3">
                   {section.questions.map((question: string, index: number) => {
-              const isRecentlyAdded = typewriterQuestions[section.id]?.includes(question);
-              const questionKey = `${section.id}-${index}`;
-              const shouldShowTypewriter = showQuestionTypewriters[questionKey];
-
-              // Calculate delay: 2 seconds base + staggered delay based on position
-              let globalQuestionIndex = 0;
-              for (let i = 0; i < discussionGuide.sections.indexOf(section); i++) {
-                globalQuestionIndex += discussionGuide.sections[i].questions.length;
-              }
-              globalQuestionIndex += index;
-              const questionDelay = 2000 + globalQuestionIndex * 800; // 2s base + 0.8s between questions
-
+              const questionKey = getQuestionKey(section.id, index);
+              const isQuestionVisible = visibleQuestions[questionKey] === true;
               return <div key={`${section.id}-${index}`} className="group flex items-start space-x-2">
                         <span className="text-xs text-text-muted mt-2 w-5">
                           {index + 1}.
                         </span>
                         
                         <div className="flex-1">
-                          {editingQuestion === `${section.id}-${index}` ? <div className="space-y-2">
+                          {editingQuestion === questionKey && isQuestionVisible ? <div className="space-y-3">
                                 <Textarea value={editValue} onChange={e => setEditValue(e.target.value)} className="text-sm" autoFocus />
-                                <div className="flex space-x-2">
+                                <div className="flex flex-wrap gap-2">
                                   <Button size="sm" onClick={() => handleSaveQuestion(section.id, index)}>
                                     Kaydet
                                   </Button>
                                   <Button size="sm" variant="outline" onClick={() => setEditingQuestion(null)}>
                                     İptal
                                   </Button>
+                                  <Button size="sm" variant="outline" onClick={() => handleReviewQuestion(section.id, index)} disabled={!editValue.trim() || reviewingQuestions[questionKey]}>
+                                    {reviewingQuestions[questionKey] ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
+                                    Değerlendir
+                                  </Button>
                                 </div>
-                              </div> : <div className="text-sm text-text-primary cursor-text hover:bg-surface rounded p-2 -m-2 transition-colors" onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}>
-                              {shouldShowTypewriter ? <TypewriterText text={question} speed={25} className="text-text-primary" enableControls={true} onComplete={() => setShowQuestionTypewriters(prev => ({
-                      ...prev,
-                      [questionKey]: false
-                    }))} /> : isRecentlyAdded ? <TypewriterText text={question} speed={30} className="text-text-primary" /> : question}
+
+                                {questionReviews[questionKey] && questionReviews[questionKey].reviewedQuestion !== editValue.trim() && <p className="text-xs text-text-secondary">
+                                    Metin değişti. Güncel yorum için yeniden değerlendir.
+                                  </p>}
+
+                                {questionReviews[questionKey] && questionReviews[questionKey].reviewedQuestion === editValue.trim() && <div className="rounded-lg border border-border-light bg-surface/70 p-3 space-y-3">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge className={getReviewStatusClasses(questionReviews[questionKey].status)}>
+                                        {getReviewStatusLabel(questionReviews[questionKey].status)}
+                                      </Badge>
+                                      <p className="text-xs text-text-secondary">
+                                        {questionReviews[questionKey].summary}
+                                      </p>
+                                    </div>
+
+                                    {questionReviews[questionKey].issues.length > 0 && <div className="space-y-2">
+                                        {questionReviews[questionKey].issues.map((issue) => <div key={issue.code} className="rounded-md border border-border-light bg-white/80 px-3 py-2">
+                                            <p className="text-xs font-medium text-text-primary">{issue.label}</p>
+                                            <p className="text-xs text-text-secondary">{issue.detail}</p>
+                                          </div>)}
+                                      </div>}
+
+                                    <div className="flex flex-wrap gap-2">
+                                      {Object.entries(questionReviews[questionKey].checks).map(([key, check]) => <span key={key} className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] ${check.passed ? "bg-status-success-light text-status-success" : "bg-surface text-text-secondary"}`}>
+                                          {check.label}
+                                        </span>)}
+                                    </div>
+
+                                    {questionReviews[questionKey].suggestedRewrite && <div className="rounded-md bg-white/80 px-3 py-3">
+                                        <p className="text-[11px] font-medium uppercase tracking-wide text-text-secondary mb-1">Öneri</p>
+                                        <p className="text-sm text-text-primary">"{questionReviews[questionKey].suggestedRewrite}"</p>
+                                      </div>}
+                                  </div>}
+                              </div> : isQuestionVisible ? <div className="text-sm text-text-primary cursor-text hover:bg-surface rounded p-2 -m-2 transition-colors" onClick={() => handleEditQuestion(questionKey, question)}>
+                              {question}
+                            </div> : <div className="rounded-md border border-border-light bg-surface/60 px-3 py-3">
+                              <Skeleton className={`h-4 ${questionSkeletonWidth}`} />
                             </div>}
                         </div>
                         
                         <div className="flex items-center">
-                          <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleEditQuestion(`${section.id}-${index}`, question)}>
+                          <Button size="sm" variant="ghost" className={`transition-opacity ${isQuestionVisible ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => handleEditQuestion(questionKey, question)}>
                             <Edit3 className="w-3 h-3" />
                           </Button>
-                          <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity text-text-secondary hover:text-destructive" onClick={() => handleDeleteQuestion(section.id, index)}>
+                          <Button size="sm" variant="ghost" className={`transition-opacity text-text-secondary hover:text-destructive ${isQuestionVisible ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => handleDeleteQuestion(section.id, index)}>
                             <Trash2 className="w-3 h-3" />
                           </Button>
                         </div>
                       </div>;
             })}
                   
-                   {/* Loading State with Typewriter */}
-                  {loadingQuestions[section.id] && <div className="flex items-center space-x-2 p-2 text-text-secondary">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <TypewriterText text={loadingMessages[currentLoadingIndex]} speed={50} className="text-sm text-text-secondary" showCursor={false} />
+                   {loadingQuestions[section.id] && <div className="group flex items-start space-x-2">
+                      <span className="text-xs text-text-muted mt-2 w-5">
+                        {section.questions.length + 1}.
+                      </span>
+                      <div className="flex-1 rounded-md border border-border-light bg-surface/60 px-3 py-3">
+                        <div className="flex items-center gap-2 text-xs text-text-secondary mb-2">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>AI sorusu hazırlanıyor...</span>
+                        </div>
+                        <Skeleton className={`h-4 ${questionSkeletonWidth}`} />
+                      </div>
                     </div>}
                   
                   <div className="flex items-center space-x-2">

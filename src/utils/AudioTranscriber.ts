@@ -1,13 +1,14 @@
 import { supabase } from "@/integrations/supabase/client";
 
 const CALIBRATION_WINDOW_MS = 450;
-const MAX_WAIT_FOR_SPEECH_MS = 3000;
-const SILENCE_AFTER_SPEECH_MS = 1000;
+const MAX_WAIT_FOR_SPEECH_MS = 5000;
+const SILENCE_AFTER_SPEECH_MS = 2200;
 const MIN_RECORDING_MS = 750;
 const MIN_AUDIO_BLOB_SIZE = 6000;
 const MIN_SPEECH_FRAMES = 2;
 const ABSOLUTE_ENTER_THRESHOLD = 4.2;
-const ABSOLUTE_STAY_THRESHOLD = 2.8;
+const ABSOLUTE_STAY_THRESHOLD = 2.2;
+const SOFT_STAY_THRESHOLD_RATIO = 0.72;
 const HALLUCINATION_PATTERNS = [
   /abone ol/i,
   /yorum yap/i,
@@ -164,7 +165,8 @@ export class AudioTranscriber {
       if (!this.analyser || !this.isRecording) return;
 
       this.analyser.getByteTimeDomainData(dataArray);
-      const elapsed = performance.now() - this.recordingStartedAt;
+      const now = performance.now();
+      const elapsed = now - this.recordingStartedAt;
       const level = this.calculateRmsLevel(dataArray);
 
       this.totalLevel += level;
@@ -190,15 +192,18 @@ export class AudioTranscriber {
 
       if (!this.speechDetected && this.speechFrameCount >= MIN_SPEECH_FRAMES) {
         this.speechDetected = true;
-        this.lastVoiceActivityAt = performance.now();
+        this.lastVoiceActivityAt = now;
         this.onSpeechDetected();
       }
 
       if (this.speechDetected && level >= stayThreshold) {
-        this.lastVoiceActivityAt = performance.now();
+        this.lastVoiceActivityAt = now;
+      } else if (this.speechDetected && level >= stayThreshold * SOFT_STAY_THRESHOLD_RATIO) {
+        // Treat near-threshold speech as active so short reflective pauses do not cut the user off.
+        this.lastVoiceActivityAt = now;
       }
 
-      if (this.speechDetected && performance.now() - this.lastVoiceActivityAt >= SILENCE_AFTER_SPEECH_MS) {
+      if (this.speechDetected && now - this.lastVoiceActivityAt >= SILENCE_AFTER_SPEECH_MS) {
         this.finish('speech-ended');
         return;
       }

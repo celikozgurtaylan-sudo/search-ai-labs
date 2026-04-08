@@ -80,9 +80,9 @@ const Index = () => {
   const [projectDescription, setProjectDescription] = useState("");
   const [userProjects, setUserProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
-  const [currentPlaceholder, setCurrentPlaceholder] = useState(placeholderHints[0]);
-  const [nextPlaceholder, setNextPlaceholder] = useState(placeholderHints[1]);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [activePlaceholderIndex, setActivePlaceholderIndex] = useState(0);
+  const [typedPlaceholderLength, setTypedPlaceholderLength] = useState(0);
+  const [isDeletingPlaceholder, setIsDeletingPlaceholder] = useState(false);
   const [screenDrafts, setScreenDrafts] = useState<DesignScreenDraft[]>([]);
   const [isUploadingScreens, setIsUploadingScreens] = useState(false);
   const [isDesignModuleOpen, setIsDesignModuleOpen] = useState(false);
@@ -98,6 +98,8 @@ const Index = () => {
 
   const hasScreenContext = screenDrafts.length > 0;
   const hasRequiredUsabilityAnswers = usabilityIntake.objective.trim().length > 0 && usabilityIntake.primaryTask.trim().length > 0;
+  const activePlaceholder = placeholderHints[activePlaceholderIndex];
+  const visiblePlaceholder = activePlaceholder.slice(0, typedPlaceholderLength);
 
   useEffect(() => {
     if (user) {
@@ -106,22 +108,35 @@ const Index = () => {
   }, [user]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setIsTransitioning(true);
+    if (projectDescription) return;
 
-      setTimeout(() => {
-        const currentIndex = placeholderHints.indexOf(currentPlaceholder);
-        const nextIndex = (currentIndex + 1) % placeholderHints.length;
-        const afterNextIndex = (nextIndex + 1) % placeholderHints.length;
+    let timeoutId: number | undefined;
 
-        setCurrentPlaceholder(placeholderHints[nextIndex]);
-        setNextPlaceholder(placeholderHints[afterNextIndex]);
-        setIsTransitioning(false);
-      }, 500);
-    }, 4000);
+    if (!isDeletingPlaceholder && typedPlaceholderLength < activePlaceholder.length) {
+      timeoutId = window.setTimeout(() => {
+        setTypedPlaceholderLength((prev) => prev + 1);
+      }, 18);
+    } else if (!isDeletingPlaceholder && typedPlaceholderLength === activePlaceholder.length) {
+      timeoutId = window.setTimeout(() => {
+        setIsDeletingPlaceholder(true);
+      }, 2200);
+    } else if (isDeletingPlaceholder && typedPlaceholderLength > 0) {
+      timeoutId = window.setTimeout(() => {
+        setTypedPlaceholderLength((prev) => prev - 1);
+      }, 10);
+    } else if (isDeletingPlaceholder && typedPlaceholderLength === 0) {
+      timeoutId = window.setTimeout(() => {
+        setIsDeletingPlaceholder(false);
+        setActivePlaceholderIndex((prev) => (prev + 1) % placeholderHints.length);
+      }, 220);
+    }
 
-    return () => clearInterval(interval);
-  }, [currentPlaceholder]);
+    return () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [activePlaceholder, isDeletingPlaceholder, projectDescription, typedPlaceholderLength]);
 
   const getNextScreenNumber = (drafts: DesignScreenDraft[]) => {
     const screenNumbers = drafts.
@@ -458,32 +473,10 @@ const Index = () => {
             {/* Custom Animated Placeholder Overlay */}
             {!projectDescription &&
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                <div className="absolute left-3 top-2 right-3">
-                  <div className="landing-placeholder-stack relative h-[120px] overflow-hidden">
-                    <div
-                  className={`text-lg text-muted-foreground transition-all duration-600 ease-in-out ${
-                  isTransitioning ? "animate-scroll-down-out" : ""}`
-                  }
-                  style={{
-                    position: 'absolute',
-                    width: '100%',
-                    top: 0
-                  }}>
-                  
-                      {currentPlaceholder}
-                    </div>
-                    <div
-                  className={`text-lg text-muted-foreground transition-all duration-600 ease-in-out ${
-                  isTransitioning ? "animate-scroll-up-in" : "opacity-0"}`
-                  }
-                  style={{
-                    position: 'absolute',
-                    width: '100%',
-                    top: 0
-                  }}>
-                  
-                      {nextPlaceholder}
-                    </div>
+                <div className="absolute left-3 top-2 right-4">
+                  <div className="min-h-[120px] whitespace-pre-wrap text-lg leading-8 text-text-muted opacity-75">
+                    {visiblePlaceholder}
+                    <span className="ml-0.5 inline-block h-5 w-px translate-y-1 align-top animate-pulse bg-text-muted" />
                   </div>
                 </div>
               </div>
@@ -650,16 +643,19 @@ const Index = () => {
             </div>
           </div>
           
-          <div className="flex items-center justify-between mt-6">
+          <div className="flex items-center justify-between gap-3 mt-6">
             <Button
             type="button"
             variant="outline"
-            size="icon"
             onClick={() => setIsDesignModuleOpen((prev) => !prev)}
-            className="h-9 w-9 rounded-full border-border-light bg-white/95 hover:bg-white shadow-sm"
-            aria-label="Open design context panel">
-            
-              <Plus className={`w-4.5 h-4.5 transition-transform duration-300 ${isDesignModuleOpen ? "rotate-45" : ""}`} />
+            className="h-9 rounded-full border-border-light bg-white/95 px-1.5 pr-3 hover:bg-white shadow-sm"
+            aria-label={isDesignModuleOpen ? "Kullanılabilirlik testi panelini kapat" : "Kullanılabilirlik testi panelini aç"}>
+              <span className="mr-2 flex h-6 w-6 items-center justify-center rounded-full border border-border-light bg-surface text-text-primary">
+                <Plus className={`h-4 w-4 transition-transform duration-300 ${isDesignModuleOpen ? "rotate-45" : ""}`} />
+              </span>
+              <span className="text-xs font-medium text-text-secondary sm:text-sm">
+                Kullanılabilirlik Testi
+              </span>
             </Button>
             <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading || isUploadingScreens} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
               {loading || isUploadingScreens ? 'Oluşturuluyor...' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />

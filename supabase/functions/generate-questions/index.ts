@@ -1,9 +1,22 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  buildFallbackQuestions,
+  isWarmupSectionTitle,
+  sanitizeGeneratedQuestions,
+} from "../_shared/question-quality.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const clampQuestionCount = (count: unknown) => {
+  if (typeof count !== 'number' || !Number.isFinite(count)) {
+    return 1;
+  }
+
+  return Math.max(1, Math.min(3, Math.floor(count)));
 };
 
 const parseQuestionsFromText = (generatedText: string): string[] => {
@@ -36,97 +49,33 @@ const parseQuestionsFromText = (generatedText: string): string[] => {
     .map((line: string) => line.replace(/^[-*]\s*/, '').trim());
 };
 
-const normalizeQuestion = (question: string) =>
-  question
-    .toLocaleLowerCase('tr-TR')
-    .replace(/\s+/g, ' ')
-    .trim();
+const buildQuestionPrompt = (
+  sectionTitle: string,
+  sectionId: string,
+  sectionIndex: number | undefined,
+  projectDescription: string,
+  existingQuestions: string[],
+  count: number,
+) => {
+  const warmupSection = sectionIndex === 0 || isWarmupSectionTitle(sectionTitle);
 
-const isLikelyLeadingQuestion = (question: string) => {
-  const normalized = normalizeQuestion(question);
+  return `Proje: ${projectDescription}
 
-  const directLeadingPatterns = [
-    /oldu mu\??$/,
-    /geldi mi\??$/,
-    /verdi mi\??$/,
-    /yaşad[ıi]n[ıi]z mı\??$/,
-    /yaşad[ıi]ğ[ıi]n[ıi]z bir .* oldu mu\??$/,
-    /fark ettiniz mi\??$/,
-    /zorland[ıi]n[ıi]z mı\??$/,
-    /memnun musunuz\??$/,
-    /ikna edici/,
-    /güven ver/,
-    /karışıklık/,
-  ];
+Bölüm: "${sectionTitle}" (ID: ${sectionId}, Sıra: ${typeof sectionIndex === "number" ? sectionIndex + 1 : "bilinmiyor"})
 
-  if (directLeadingPatterns.some((pattern) => pattern.test(normalized))) {
-    return true;
-  }
-
-  const assumptiveStarts = [
-    'hangi sorun',
-    'hangi problem',
-    'hangi endişe',
-    'hangi tereddüt',
-    'nerede zorland',
-    'neden zorland',
-    'hangi noktada zorland',
-    'neden karıştı',
-    'hangi bölüm yetersiz',
-    'hangi bölüm eksik',
-  ];
-
-  return assumptiveStarts.some((pattern) => normalized.startsWith(pattern));
-};
-
-const sanitizeQuestions = (questions: string[]) => {
-  const uniqueQuestions = Array.from(new Set(
-    questions
-      .map((question) => question.trim())
-      .filter((question) => question.length > 0)
-  ));
-
-  const valid = uniqueQuestions.filter((question) => !isLikelyLeadingQuestion(question));
-  const rejected = uniqueQuestions.filter((question) => isLikelyLeadingQuestion(question));
-
-  return { valid, rejected };
-};
-
-const getFallbackQuestions = (sectionTitle: string) => {
-  const normalizedSectionTitle = sectionTitle.toLocaleLowerCase('tr-TR');
-
-  if (normalizedSectionTitle.includes('ilk izlenim')) {
-    return [
-      'Bu ekranı ilk gördüğünüzde dikkatinizi en çok ne çekti?',
-      'Burada size ne anlatılmak istendiğini kendi cümlelerinizle nasıl tarif edersiniz?',
-      'İlk bakışta size net gelen ve belirsiz kalan noktalar nelerdi?',
-    ];
-  }
-
-  if (normalizedSectionTitle.includes('son düşünce')) {
-    return [
-      'Bu deneyimi genel olarak nasıl özetlersiniz?',
-      'Sizin için en önemli nokta neydi?',
-      'Bu deneyimi geliştirmek için nereden başlamayı önerirsiniz?',
-    ];
-  }
-
-  return [
-    'Bu bölümde dikkatinizi en çok ne çekti?',
-    'Burada yaşadığınız deneyimi kendi cümlelerinizle anlatır mısınız?',
-    'Bu bölüm size neyi düşündürdü?',
-  ];
-};
-
-const buildQuestionPrompt = (sectionTitle: string, sectionId: string, projectDescription: string, existingQuestions: string[]) => `Proje: ${projectDescription}
-
-Bölüm: "${sectionTitle}" (ID: ${sectionId})
+${warmupSection ? `Bu bölüm görüşmenin ilk ısınma bölümüdür.
+- Katılımcıyı rahatlatan, düşük baskılı ve konuşmayı açan sorular üret.
+- İlk soru mutlaka katılımcının gününe veya o ana kadar ne yaptığına dokunsun.
+- Ürün değerlendirmesine doğrudan yüklenme; önce bağlam ve gündelik deneyim aç.` : `Bu bölüm görüşmenin ana araştırma bölümüdür.
+- Warm-up sorusu üretme.
+- Soruları bu bölümün araştırma odağına sadık, açık uçlu ve tek odaklı kur.`}
 
 Var olan sorular:
 ${existingQuestions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}
 
-Bu bölüm için 3 yeni, farklı ve yaratıcı soru üret. JSON formatında döndür:
-{"questions": ["soru1", "soru2", "soru3"]}`;
+Bu bölüm için ${count} yeni, farklı ve yaratıcı soru üret. JSON formatında döndür:
+{"questions": [${Array.from({ length: count }, (_, index) => `"soru${index + 1}"`).join(', ')}]}`;
+};
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -140,7 +89,9 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not set');
     }
 
-    const { sectionTitle, sectionId, projectDescription, existingQuestions = [], validateProject = false } = await req.json();
+    const { sectionTitle, sectionId, sectionIndex, projectDescription, existingQuestions = [], validateProject = false, count } = await req.json();
+    const requestedCount = clampQuestionCount(count);
+    const warmupSection = sectionIndex === 0 || isWarmupSectionTitle(sectionTitle);
 
     const systemPrompt = `Sen Türkiye'de çalışan deneyimli bir UX araştırmacısısın. Kullanıcı görüşmeleri, kullanılabilirlik testleri ve keşifsel araştırmalarda uzmanlaşmışsın.
 
@@ -153,6 +104,13 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 3. **Doğal Türkçe**: Günlük konuşma diline yakın ama profesyonel bir dil kullan. "Memnun musunuz?" yerine "Bu deneyimi kullanırken neler hissettin?" gibi
 4. **Empati ve Merak**: Kullanıcının hikayesini dinlemek isteyen samimi bir araştırmacı gibi sor
 
+## Soru Metodolojisi
+- Görüşme soruları genişten özele ilerlemeli
+- İlk bölüm warm-up ise katılımcıyı rahatlatan, gündelik ve düşük baskılı sorular üret
+- Warm-up bölümünün ilk sorusu mutlaka katılımcının gününe veya o ana kadar ne yaptığına değsin
+- Warm-up olmayan bölümlerde rapport yerine doğrudan araştırma odağına gir
+- Her soru tek bir amaca hizmet etsin
+
 ## Soru Kalitesi Kriterleri
 ✓ **Açık Uçlu**: "Evet/Hayır" yerine detaylı anlatımı teşvik etmeli
 ✓ **Özel ve İlgili**: Genel değil, projeye özgü olmalı
@@ -163,9 +121,10 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 ✓ **Nötr ve Yönlendirmesiz**: Kullanıcıya bir sorun, duygu veya yargı empoze etme
 
 ## Bölüm Türlerine Göre Yaklaşım
-- **Profesyonel Geçmiş**: "Bu alanda ne zamandır çalışıyorsun?", "Günlük iş akışında hangi araçları kullanıyorsun?"
+- **Isınma ve Bağlam**: "Bugün gününüz nasıl geçiyor, buraya gelmeden önce neler yapıyordunuz?", "Bu konunun günlük hayatınızda ne kadar yeri var?"
+- **Profesyonel Geçmiş / Bağlam**: "Bu alanda ne zamandır çalışıyorsun?", "Günlük iş akışında hangi araçları kullanıyorsun?"
 - **İlk İzlenimler**: "İlk gördüğünde aklına ne geldi?", "Dikkatini çeken ilk şey ne oldu?"
-- **Detaylı Keşif**: "Bu özelliği kullanırken hangi noktalarda zorlandın?", "Başka ürünlerle kıyasladığında ne fark ettin?"
+- **Detaylı Keşif**: "Bu özelliği kullanırken aklından neler geçti?", "Başka ürünlerle kıyasladığında sana ne farklı göründü?"
 - **Son Düşünceler**: "Bu deneyimi bir arkadaşına nasıl anlatırdın?", "Bir şeyi değiştirebilseydin ne yapardın?"
 
 ## Önemli
@@ -187,7 +146,7 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 
 Çıktıdan önce kendi kendine kontrol et: Her soru nötr, açık uçlu ve varsayımsız mı? Değilse yeniden yaz.`;
 
-    const userPrompt = buildQuestionPrompt(sectionTitle, sectionId, projectDescription, existingQuestions);
+    const userPrompt = buildQuestionPrompt(sectionTitle, sectionId, sectionIndex, projectDescription, existingQuestions, requestedCount);
 
     console.log('Generating questions for section:', sectionTitle);
 
@@ -275,17 +234,17 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
     console.log('Generated response:', generatedText);
 
     let questions = parseQuestionsFromText(generatedText);
-    let { valid, rejected } = sanitizeQuestions(questions);
+    let { valid, rejected } = sanitizeGeneratedQuestions(questions, { sectionTitle, sectionIndex });
 
-    if (valid.length < 3) {
+    if (valid.length < requestedCount) {
       console.log('Retrying question generation due to leading or weak questions:', rejected);
 
-      const retryPrompt = `${buildQuestionPrompt(sectionTitle, sectionId, projectDescription, existingQuestions)}
+      const retryPrompt = `${buildQuestionPrompt(sectionTitle, sectionId, sectionIndex, projectDescription, existingQuestions, requestedCount)}
 
 Aşağıdaki sorular leading, varsayımsız değil veya yeterince açık uçlu olmadığı için reddedildi:
 ${questions.map((question, index) => `${index + 1}. ${question}`).join('\n')}
 
-Sadece nötr, açık uçlu ve varsayımsız 3 soru üret. "Oldu mu?", "yaşadınız mı?", "karışıklık", "sorun", "problem", "güven verdi mi?" gibi kalıpları kullanma.`;
+Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warmupSection ? "Bu bölüm warm-up olduğu için sorular hafif, sohbet açıcı ve gündelik tonda olsun." : "Warm-up sorusu üretme."} "Oldu mu?", "yaşadınız mı?", "karışıklık", "sorun", "problem", "güven verdi mi?" gibi kalıpları kullanma.`;
 
       const retryResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
@@ -307,7 +266,7 @@ Sadece nötr, açık uçlu ve varsayımsız 3 soru üret. "Oldu mu?", "yaşadın
       if (retryResponse.ok) {
         const retryData = await retryResponse.json();
         questions = parseQuestionsFromText(retryData.choices[0].message.content);
-        ({ valid, rejected } = sanitizeQuestions(questions));
+        ({ valid, rejected } = sanitizeGeneratedQuestions(questions, { sectionTitle, sectionIndex }));
       }
     }
 
@@ -316,16 +275,16 @@ Sadece nötr, açık uçlu ve varsayımsız 3 soru üret. "Oldu mu?", "yaşadın
     }
 
     if (valid.length === 0) {
-      valid = getFallbackQuestions(sectionTitle);
+      valid = buildFallbackQuestions(sectionTitle, sectionIndex);
     }
 
-    if (valid.length < 3) {
-      valid = [...valid, ...getFallbackQuestions(sectionTitle)].slice(0, 3);
+    if (valid.length < requestedCount) {
+      valid = [...valid, ...buildFallbackQuestions(sectionTitle, sectionIndex)].slice(0, requestedCount);
     }
 
     console.log('Final questions:', valid);
 
-    return new Response(JSON.stringify({ questions: valid.slice(0, 3) }), {
+    return new Response(JSON.stringify({ questions: valid.slice(0, requestedCount) }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {

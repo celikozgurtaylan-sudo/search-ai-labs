@@ -9,12 +9,30 @@ const ELEVENLABS_TIMEOUT_MS = 12000;
 class TTSError extends Error {
   status: number;
   code: string;
+  providerStatus?: number;
+  quota?: {
+    remainingCredits?: number;
+    requiredCredits?: number;
+  };
 
-  constructor(message: string, status = 500, code = 'tts_error') {
+  constructor(
+    message: string,
+    status = 500,
+    code = 'tts_error',
+    options?: {
+      providerStatus?: number;
+      quota?: {
+        remainingCredits?: number;
+        requiredCredits?: number;
+      };
+    },
+  ) {
     super(message);
     this.name = 'TTSError';
     this.status = status;
     this.code = code;
+    this.providerStatus = options?.providerStatus;
+    this.quota = options?.quota;
   }
 }
 
@@ -67,11 +85,45 @@ async function generateWithElevenLabs(text: string) {
 
     if (!response.ok) {
       const errorText = await response.text();
+      let parsedError: any = null;
+
+      try {
+        parsedError = JSON.parse(errorText);
+      } catch {
+        parsedError = null;
+      }
+
+      const quotaStatus = parsedError?.detail?.status;
+      const quotaMessage = parsedError?.detail?.message;
+      const quotaMatch = typeof quotaMessage === 'string'
+        ? quotaMessage.match(/have\s+(\d+)\s+credits\s+remaining,\s+while\s+(\d+)\s+credits\s+are\s+required/i)
+        : null;
+
+      if (quotaStatus === 'quota_exceeded') {
+        throw new TTSError(
+          quotaMessage || 'ElevenLabs quota exceeded',
+          429,
+          'quota_exceeded',
+          {
+            providerStatus: response.status,
+            quota: quotaMatch
+              ? {
+                  remainingCredits: Number(quotaMatch[1]),
+                  requiredCredits: Number(quotaMatch[2]),
+                }
+              : undefined,
+          },
+        );
+      }
+
       const upstreamStatus = response.status >= 500 ? 502 : response.status;
       throw new TTSError(
         `ElevenLabs error ${response.status}: ${errorText}`,
         upstreamStatus,
         'elevenlabs_request_failed',
+        {
+          providerStatus: response.status,
+        },
       );
     }
 
@@ -129,6 +181,8 @@ serve(async (req) => {
         error: error instanceof Error ? error.message : 'Unknown error',
         code,
         provider: 'elevenlabs',
+        providerStatus: error instanceof TTSError ? error.providerStatus : undefined,
+        quota: error instanceof TTSError ? error.quota : undefined,
       }),
       {
         status,

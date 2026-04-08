@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { textToSpeech } from '@/services/textToSpeechService';
+import {
+  getTTSErrorMessage,
+  isQuotaExceededTTSError,
+  SequentialTTS,
+  shouldRetryTTSError,
+} from '@/services/textToSpeechService';
 
 interface AvatarSpeakerProps {
   questionText: string;
@@ -8,7 +13,14 @@ interface AvatarSpeakerProps {
   onSpeakingComplete: () => void;
 }
 
-type OrbState = 'preparing' | 'retrying' | 'blocked' | 'error' | 'speaking' | 'listening';
+type OrbState =
+  | 'preparing'
+  | 'retrying'
+  | 'blocked'
+  | 'error'
+  | 'speaking'
+  | 'listening'
+  | 'textOnly';
 
 const RETRY_DELAYS_MS = [250, 500, 1000, 1500];
 const MAX_AUTO_RETRIES = 3;
@@ -35,10 +47,9 @@ export const AvatarSpeaker = ({
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [manualStartRequired, setManualStartRequired] = useState(false);
   const [lastErrorMessage, setLastErrorMessage] = useState('');
-  const [retryNonce, setRetryNonce] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const objectUrlRef = useRef<string | null>(null);
+
   const playbackTokenRef = useRef(0);
+  const ttsRef = useRef<SequentialTTS | null>(null);
   const onSpeakingStartRef = useRef(onSpeakingStart);
   const onSpeakingCompleteRef = useRef(onSpeakingComplete);
   const listeningHintTimerRef = useRef<number | null>(null);
@@ -51,26 +62,19 @@ export const AvatarSpeaker = ({
     onSpeakingCompleteRef.current = onSpeakingComplete;
   }, [onSpeakingComplete]);
 
-  const revokeObjectUrl = () => {
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = null;
-    }
-  };
-
   const stopPlayback = () => {
     if (listeningHintTimerRef.current) {
       window.clearTimeout(listeningHintTimerRef.current);
       listeningHintTimerRef.current = null;
     }
 
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = '';
-      audioRef.current = null;
-    }
+    ttsRef.current?.stop();
+    ttsRef.current = null;
+  };
 
-    revokeObjectUrl();
+  const cancelPlayback = () => {
+    playbackTokenRef.current += 1;
+    stopPlayback();
   };
 
   const completeSpeaking = (token: number) => {
@@ -83,7 +87,18 @@ export const AvatarSpeaker = ({
     onSpeakingCompleteRef.current();
   };
 
-  useEffect(() => {
+  const enterTextOnlyMode = (token: number, message: string) => {
+    if (playbackTokenRef.current !== token) return;
+    stopPlayback();
+    setOrbState('textOnly');
+    setShowListeningHint(false);
+    setRetryAttempt(0);
+    setManualStartRequired(false);
+    setLastErrorMessage(message);
+    onSpeakingCompleteRef.current();
+  };
+
+  const startPlayback = async () => {
     if (!questionText) return;
 
     const token = playbackTokenRef.current + 1;
@@ -95,100 +110,84 @@ export const AvatarSpeaker = ({
     setLastErrorMessage('');
     stopPlayback();
 
-    let cancelled = false;
+    let attempt = 0;
 
-    const speak = async () => {
-      let attempt = 0;
+    while (playbackTokenRef.current === token) {
+      try {
+        let speechStarted = false;
+        const tts = new SequentialTTS(questionText);
+        ttsRef.current = tts;
 
-      while (!cancelled && playbackTokenRef.current === token) {
-        try {
-          setRetryAttempt(attempt);
-          setOrbState(attempt === 0 ? 'preparing' : 'retrying');
+        await new Promise<void>((resolve, reject) => {
+          tts.onSentencePlaybackStart = () => {
+            if (playbackTokenRef.current !== token) return;
+            setOrbState('speaking');
+            setManualStartRequired(false);
+            setLastErrorMessage('');
 
-          const audioBuffer = await textToSpeech(questionText);
-          if (cancelled || playbackTokenRef.current !== token) return;
-
-          const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
-          objectUrlRef.current = URL.createObjectURL(audioBlob);
-
-          const playbackResult = await new Promise<'played' | 'blocked'>((resolve, reject) => {
-            const audio = new Audio(objectUrlRef.current!);
-            let playbackStarted = false;
-            audio.preload = 'auto';
-            audioRef.current = audio;
-
-            audio.onplay = () => {
-              if (playbackTokenRef.current !== token) return;
-              playbackStarted = true;
-              setOrbState('speaking');
-              setManualStartRequired(false);
-              setLastErrorMessage('');
+            if (!speechStarted) {
+              speechStarted = true;
               onSpeakingStartRef.current();
-            };
+            }
+          };
 
-            audio.onended = () => {
-              audioRef.current = null;
-              revokeObjectUrl();
-              completeSpeaking(token);
-              resolve('played');
-            };
+          tts.onComplete = () => resolve();
+          tts.onError = (error) => reject(error);
 
-            audio.onerror = () => {
-              audioRef.current = null;
-              revokeObjectUrl();
-              reject(new Error(playbackStarted ? 'ElevenLabs playback was interrupted' : 'ElevenLabs playback failed to start'));
-            };
-
-            audio.play().catch((error) => {
-              if (isAutoplayBlockedError(error)) {
-                setOrbState('blocked');
-                setManualStartRequired(true);
-                setLastErrorMessage('Tarayici otomatik sesi engelledi. Soruyu manuel olarak baslatin.');
-                resolve('blocked');
-                return;
-              }
-
-              audioRef.current = null;
-              revokeObjectUrl();
-              reject(error);
-            });
+          void tts.start().catch((error) => {
+            reject(error instanceof Error ? error : new Error('ElevenLabs playback failed to start'));
           });
+        });
 
-          if (playbackResult === 'blocked') {
-            return;
-          }
-
+        if (playbackTokenRef.current !== token) {
           return;
-        } catch (error) {
-          if (cancelled || playbackTokenRef.current !== token) {
-            return;
-          }
-
-          const errorMessage = error instanceof Error ? error.message : 'ElevenLabs sesi su anda baglanamiyor.';
-          setLastErrorMessage(errorMessage);
-          console.error(`ElevenLabs playback attempt ${attempt + 1} failed:`, error);
-
-          if (attempt >= MAX_AUTO_RETRIES - 1) {
-            setOrbState('error');
-            return;
-          }
-
-          const delay = RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
-          setOrbState('retrying');
-          attempt += 1;
-          setRetryAttempt(attempt);
-          await wait(delay);
         }
-      }
-    };
 
-    void speak();
+        return;
+      } catch (error) {
+        if (playbackTokenRef.current !== token) {
+          return;
+        }
+
+        if (isAutoplayBlockedError(error)) {
+          setOrbState('blocked');
+          setManualStartRequired(true);
+          setLastErrorMessage('Tarayici otomatik sesi engelledi. Soruyu manuel olarak baslatin.');
+          return;
+        }
+
+        if (isQuotaExceededTTSError(error)) {
+          enterTextOnlyMode(token, getTTSErrorMessage(error));
+          return;
+        }
+
+        const errorMessage = getTTSErrorMessage(error);
+        setLastErrorMessage(errorMessage);
+        console.error(`ElevenLabs playback attempt ${attempt + 1} failed:`, error);
+
+        if (!shouldRetryTTSError(error) || attempt >= MAX_AUTO_RETRIES - 1) {
+          setOrbState('error');
+          return;
+        }
+
+        const delay = RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
+        setOrbState('retrying');
+        attempt += 1;
+        setRetryAttempt(attempt);
+        await wait(delay);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!questionText) return;
+
+    void startPlayback();
 
     return () => {
-      cancelled = true;
-      stopPlayback();
+      cancelPlayback();
     };
-  }, [questionText, retryNonce]);
+  }, [questionText]);
 
   useEffect(() => {
     if (listeningHintTimerRef.current) {
@@ -214,27 +213,12 @@ export const AvatarSpeaker = ({
     };
   }, [orbState, isUserResponding]);
 
-  const handleManualPlay = async () => {
-    const audio = audioRef.current;
-    if (!audio) {
-      setRetryNonce((current) => current + 1);
-      return;
-    }
-
-    setManualStartRequired(false);
-    setLastErrorMessage('');
-
-    try {
-      await audio.play();
-    } catch (error) {
-      setManualStartRequired(true);
-      setOrbState('blocked');
-      setLastErrorMessage('Ses halen baslatilamadi. Lutfen tekrar deneyin.');
-    }
+  const handleManualPlay = () => {
+    void startPlayback();
   };
 
   const handleRetry = () => {
-    setRetryNonce((current) => current + 1);
+    void startPlayback();
   };
 
   const isPreparing = orbState === 'preparing' || orbState === 'retrying';
@@ -243,20 +227,24 @@ export const AvatarSpeaker = ({
     ? 'Searcho konusuyor'
     : orbState === 'blocked'
       ? 'Searcho sesi bekliyor'
-      : orbState === 'error'
-        ? 'Searcho sesi baglanamadi'
-      : orbState === 'listening'
-        ? 'Searcho dinliyor'
-        : 'Searcho sesi baglaniyor';
+      : orbState === 'textOnly'
+        ? 'Searcho metin modunda'
+        : orbState === 'error'
+          ? 'Searcho sesi baglanamadi'
+          : orbState === 'listening'
+            ? 'Searcho dinliyor'
+            : 'Searcho sesi baglaniyor';
   const helperText = manualStartRequired
     ? lastErrorMessage
-    : orbState === 'error'
-      ? (lastErrorMessage || 'ElevenLabs sesine ulasilamadi. Tekrar deneyin.')
-    : orbState === 'retrying'
-      ? `ElevenLabs sesi baglaniyor. Deneme ${retryAttempt}.`
-    : showListeningHint
-      ? 'Hazir oldugunuzda yanit vermeye baslayin.'
-      : '';
+    : orbState === 'textOnly'
+      ? (lastErrorMessage || 'Ses kotasi doldu. Soru yazili olarak devam ediyor.')
+      : orbState === 'error'
+        ? (lastErrorMessage || 'ElevenLabs sesine ulasilamadi. Tekrar deneyin.')
+        : orbState === 'retrying'
+          ? `ElevenLabs sesi baglaniyor. Deneme ${retryAttempt}.`
+          : showListeningHint
+            ? 'Hazir oldugunuzda yanit vermeye baslayin.'
+            : '';
 
   return (
     <div className={`relative w-full max-w-2xl overflow-hidden rounded-[32px] border px-6 py-8 shadow-[0_24px_60px_rgba(15,23,42,0.10)] transition-all duration-500 ${
@@ -311,7 +299,7 @@ export const AvatarSpeaker = ({
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => void handleManualPlay()}
+                onClick={handleManualPlay}
                 className="rounded-full border border-brand-primary/30 bg-white px-4 py-2 text-sm font-medium text-brand-primary shadow-sm hover:border-brand-primary/50"
               >
                 Soruyu Sesli Baslat

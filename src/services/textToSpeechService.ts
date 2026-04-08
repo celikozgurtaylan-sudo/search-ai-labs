@@ -1,16 +1,66 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export interface TTSSentence {
+export interface TTSChunk {
   text: string;
   index: number;
-  audioData?: string;
 }
 
+export interface TTSQuotaInfo {
+  remainingCredits?: number;
+  requiredCredits?: number;
+}
+
+type FunctionErrorPayload = {
+  error?: string;
+  code?: string;
+  provider?: string;
+  providerStatus?: number;
+  quota?: TTSQuotaInfo;
+};
+
 const MAX_CACHE_ENTRIES = 16;
+const MAX_CHUNK_LENGTH = 180;
 const audioCache = new Map<string, ArrayBuffer>();
 const inFlightRequests = new Map<string, Promise<ArrayBuffer>>();
+let quotaCircuitError: TTSRequestError | null = null;
+
+export class TTSRequestError extends Error {
+  status?: number;
+  code: string;
+  provider?: string;
+  providerStatus?: number;
+  quota?: TTSQuotaInfo;
+
+  constructor(
+    message: string,
+    options: {
+      status?: number;
+      code?: string;
+      provider?: string;
+      providerStatus?: number;
+      quota?: TTSQuotaInfo;
+    } = {},
+  ) {
+    super(message);
+    this.name = "TTSRequestError";
+    this.status = options.status;
+    this.code = options.code ?? "tts_error";
+    this.provider = options.provider;
+    this.providerStatus = options.providerStatus;
+    this.quota = options.quota;
+  }
+}
 
 const cloneBuffer = (buffer: ArrayBuffer) => buffer.slice(0);
+
+const cloneTTSRequestError = (error: TTSRequestError) =>
+  new TTSRequestError(error.message, {
+    status: error.status,
+    code: error.code,
+    provider: error.provider,
+    providerStatus: error.providerStatus,
+    quota: error.quota ? { ...error.quota } : undefined,
+  });
 
 const rememberAudio = (text: string, audioBuffer: ArrayBuffer) => {
   if (audioCache.has(text)) {
@@ -39,48 +89,176 @@ const decodeAudio = (audioContent: string) => {
   return bytes.buffer;
 };
 
-const readFunctionErrorMessage = async (response?: Response) => {
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const parseQuotaInfo = (value: unknown): TTSQuotaInfo | undefined => {
+  if (!isObjectRecord(value)) {
+    return undefined;
+  }
+
+  const remainingCredits = typeof value.remainingCredits === "number" ? value.remainingCredits : undefined;
+  const requiredCredits = typeof value.requiredCredits === "number" ? value.requiredCredits : undefined;
+
+  if (remainingCredits === undefined && requiredCredits === undefined) {
+    return undefined;
+  }
+
+  return { remainingCredits, requiredCredits };
+};
+
+const normalizeText = (text: string) => text.trim().replace(/\s+/g, " ");
+
+const readFunctionErrorPayload = async (response?: Response): Promise<FunctionErrorPayload | null> => {
   if (!response) return null;
 
   try {
-    const contentType = response.headers.get("Content-Type")?.split(";")[0].trim();
     const responseClone = response.clone();
+    const contentType = responseClone.headers.get("Content-Type")?.split(";")[0].trim();
 
     if (contentType === "application/json") {
       const payload = await responseClone.json();
-      if (typeof payload?.error === "string" && payload.error.trim()) {
-        const codeSuffix = typeof payload?.code === "string" ? ` [${payload.code}]` : "";
-        return `${payload.error}${codeSuffix}`;
+      if (!isObjectRecord(payload)) {
+        return null;
       }
+
+      return {
+        error: typeof payload.error === "string" ? payload.error : undefined,
+        code: typeof payload.code === "string" ? payload.code : undefined,
+        provider: typeof payload.provider === "string" ? payload.provider : undefined,
+        providerStatus: typeof payload.providerStatus === "number" ? payload.providerStatus : undefined,
+        quota: parseQuotaInfo(payload.quota),
+      };
     }
 
-    const responseText = await responseClone.text();
-    return responseText.trim() || null;
+    const responseText = (await responseClone.text()).trim();
+    return responseText ? { error: responseText } : null;
   } catch {
     return null;
   }
 };
 
-const formatFunctionError = async (error: unknown, response?: Response) => {
+const buildTTSRequestError = async (error: unknown, response?: Response) => {
+  const payload = await readFunctionErrorPayload(response);
   const fallbackMessage = error instanceof Error ? error.message : "Unknown TTS error";
-  const detailedMessage = await readFunctionErrorMessage(response);
+  const message = payload?.error?.trim() || fallbackMessage;
 
-  if (detailedMessage) {
-    return `Turkish TTS request failed (${response?.status ?? "unknown"}): ${detailedMessage}`;
-  }
-
-  if (response?.status) {
-    return `Turkish TTS request failed (${response.status}): ${fallbackMessage}`;
-  }
-
-  return `Turkish TTS request failed: ${fallbackMessage}`;
+  return new TTSRequestError(message, {
+    status: response?.status,
+    code: payload?.code || (error instanceof Error ? error.name : "tts_error"),
+    provider: payload?.provider,
+    providerStatus: payload?.providerStatus,
+    quota: payload?.quota,
+  });
 };
 
-const loadTextToSpeech = async (text: string): Promise<ArrayBuffer> => {
-  const normalizedText = text.trim();
-  if (!normalizedText) {
-    throw new Error('Cannot synthesize empty text');
+const throwIfQuotaCircuitOpen = () => {
+  if (quotaCircuitError) {
+    throw cloneTTSRequestError(quotaCircuitError);
   }
+};
+
+const splitByBoundary = (segment: string, splitter: RegExp) => {
+  const parts = segment
+    .split(splitter)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return parts.length > 1 ? parts : [segment.trim()];
+};
+
+const mergePartsWithinLimit = (parts: string[], maxLength: number) => {
+  const merged: string[] = [];
+  let current = "";
+
+  for (const part of parts) {
+    const candidate = current ? `${current} ${part}` : part;
+    if (current && candidate.length > maxLength) {
+      merged.push(current);
+      current = part;
+      continue;
+    }
+
+    current = candidate;
+  }
+
+  if (current) {
+    merged.push(current);
+  }
+
+  return merged;
+};
+
+const splitByWords = (segment: string, maxLength: number) => {
+  if (segment.length <= maxLength) {
+    return [segment];
+  }
+
+  const chunks: string[] = [];
+  const words = segment.split(/\s+/).filter(Boolean);
+  let current = "";
+
+  for (const word of words) {
+    if (word.length > maxLength) {
+      if (current) {
+        chunks.push(current);
+        current = "";
+      }
+
+      for (let offset = 0; offset < word.length; offset += maxLength) {
+        chunks.push(word.slice(offset, offset + maxLength));
+      }
+      continue;
+    }
+
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && candidate.length > maxLength) {
+      chunks.push(current);
+      current = word;
+      continue;
+    }
+
+    current = candidate;
+  }
+
+  if (current) {
+    chunks.push(current);
+  }
+
+  return chunks;
+};
+
+const splitLongSegment = (segment: string, maxLength: number) => {
+  let segments = [segment.trim()];
+  const splitters = [/(?<=[.!?])\s+/u, /(?<=[,;:])\s+/u];
+
+  for (const splitter of splitters) {
+    segments = segments.flatMap((part) => {
+      if (part.length <= maxLength) {
+        return [part];
+      }
+
+      const splitParts = splitByBoundary(part, splitter);
+      if (splitParts.length === 1) {
+        return [part];
+      }
+
+      return mergePartsWithinLimit(splitParts, maxLength);
+    });
+  }
+
+  return segments.flatMap((part) => splitByWords(part, maxLength));
+};
+
+const getFirstChunkText = (text: string) => splitIntoSentences(text)[0]?.text;
+
+const loadTextToSpeech = async (text: string): Promise<ArrayBuffer> => {
+  const normalizedText = normalizeText(text);
+  if (!normalizedText) {
+    throw new TTSRequestError("Cannot synthesize empty text", { code: "empty_text" });
+  }
+
+  throwIfQuotaCircuitOpen();
 
   const cachedAudio = audioCache.get(normalizedText);
   if (cachedAudio) {
@@ -93,20 +271,26 @@ const loadTextToSpeech = async (text: string): Promise<ArrayBuffer> => {
   }
 
   const request = (async () => {
-    const { data, error, response } = await supabase.functions.invoke('turkish-tts', {
+    const { data, error, response } = await supabase.functions.invoke("turkish-tts", {
       body: { text: normalizedText },
     });
 
     if (error) {
-      throw new Error(await formatFunctionError(error, response));
+      const ttsError = await buildTTSRequestError(error, response);
+      if (isQuotaExceededTTSError(ttsError)) {
+        quotaCircuitError = cloneTTSRequestError(ttsError);
+      }
+      throw ttsError;
     }
 
     if (!data?.audioContent) {
-      throw new Error('No audio content received');
+      throw new TTSRequestError("No audio content received", { code: "missing_audio_content" });
     }
 
-    if (data?.source && data.source !== 'elevenlabs') {
-      throw new Error(`Unexpected TTS provider: ${data.source}`);
+    if (data?.source && data.source !== "elevenlabs") {
+      throw new TTSRequestError(`Unexpected TTS provider: ${data.source}`, {
+        code: "unexpected_tts_provider",
+      });
     }
 
     const audioBuffer = decodeAudio(data.audioContent);
@@ -123,23 +307,55 @@ const loadTextToSpeech = async (text: string): Promise<ArrayBuffer> => {
   }
 };
 
-export const splitIntoSentences = (text: string): TTSSentence[] => {
-  const parts = text.split(/([.!?]+)/);
-  const sentences: TTSSentence[] = [];
-
-  for (let i = 0; i < parts.length; i += 2) {
-    const sentence = parts[i]?.trim();
-    const punctuation = parts[i + 1] || '';
-
-    if (sentence) {
-      sentences.push({
-        text: sentence + punctuation,
-        index: sentences.length,
-      });
-    }
+export const splitIntoSentences = (text: string): TTSChunk[] => {
+  const normalizedText = normalizeText(text);
+  if (!normalizedText) {
+    return [];
   }
 
-  return sentences;
+  return splitLongSegment(normalizedText, MAX_CHUNK_LENGTH).map((segment, index) => ({
+    text: segment,
+    index,
+  }));
+};
+
+export const isQuotaExceededTTSError = (error: unknown): error is TTSRequestError =>
+  error instanceof TTSRequestError && error.code === "quota_exceeded";
+
+export const shouldRetryTTSError = (error: unknown) => {
+  if (!(error instanceof TTSRequestError)) {
+    return true;
+  }
+
+  if (isQuotaExceededTTSError(error) || error.code === "missing_elevenlabs_key") {
+    return false;
+  }
+
+  if (typeof error.status === "number" && error.status >= 500) {
+    return true;
+  }
+
+  if (typeof error.providerStatus === "number" && error.providerStatus >= 500) {
+    return true;
+  }
+
+  return error.code === "FunctionsFetchError" || error.code === "elevenlabs_timeout";
+};
+
+export const getTTSErrorMessage = (error: unknown) => {
+  if (
+    isQuotaExceededTTSError(error) &&
+    typeof error.quota?.remainingCredits === "number" &&
+    typeof error.quota?.requiredCredits === "number"
+  ) {
+    return `Ses kotasi doldu. ${error.quota.remainingCredits} kredi kaldi, bu soru icin ${error.quota.requiredCredits} kredi gerekiyor. Soru yazili olarak devam ediyor.`;
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return "ElevenLabs sesi su anda baglanamiyor.";
 };
 
 export const textToSpeech = async (text: string): Promise<ArrayBuffer> => {
@@ -147,10 +363,17 @@ export const textToSpeech = async (text: string): Promise<ArrayBuffer> => {
 };
 
 export const prefetchTextToSpeech = async (text: string) => {
+  const firstChunk = getFirstChunkText(text);
+  if (!firstChunk || quotaCircuitError) {
+    return;
+  }
+
   try {
-    await loadTextToSpeech(text);
+    await loadTextToSpeech(firstChunk);
   } catch (error) {
-    console.warn('Failed to prefetch ElevenLabs audio:', error);
+    if (!isQuotaExceededTTSError(error)) {
+      console.warn("Failed to prefetch ElevenLabs audio:", error);
+    }
   }
 };
 
@@ -159,19 +382,26 @@ export const clearTextToSpeechCache = () => {
   inFlightRequests.clear();
 };
 
+export const resetTextToSpeechSessionState = () => {
+  clearTextToSpeechCache();
+  quotaCircuitError = null;
+};
+
 export const playAudio = async (
   audioBuffer: ArrayBuffer,
-  audioContext: AudioContext
+  audioContext: AudioContext,
+  onPlaybackStart?: () => void,
 ): Promise<void> => {
-  return new Promise(async (resolve, reject) => {
+  const decodedData = await audioContext.decodeAudioData(cloneBuffer(audioBuffer));
+
+  return await new Promise((resolve, reject) => {
     try {
-      const decodedData = await audioContext.decodeAudioData(audioBuffer);
       const source = audioContext.createBufferSource();
       source.buffer = decodedData;
       source.connect(audioContext.destination);
-
       source.onended = () => resolve();
       source.start(0);
+      onPlaybackStart?.();
     } catch (error) {
       reject(error);
     }
@@ -179,14 +409,16 @@ export const playAudio = async (
 };
 
 export class SequentialTTS {
-  private sentences: TTSSentence[] = [];
+  private sentences: TTSChunk[] = [];
   private currentIndex = 0;
   private audioContext: AudioContext | null = null;
   private isPlaying = false;
   private isPaused = false;
+  private activeSource: AudioBufferSourceNode | null = null;
 
-  onSentenceStart?: (sentence: TTSSentence) => void;
-  onSentenceEnd?: (sentence: TTSSentence) => void;
+  onSentenceStart?: (sentence: TTSChunk) => void;
+  onSentencePlaybackStart?: (sentence: TTSChunk) => void;
+  onSentenceEnd?: (sentence: TTSChunk) => void;
   onComplete?: () => void;
   onError?: (error: Error) => void;
 
@@ -205,11 +437,34 @@ export class SequentialTTS {
       this.audioContext = new AudioContext();
     }
 
-    if (this.audioContext.state === 'suspended') {
+    if (this.audioContext.state === "suspended") {
       await this.audioContext.resume();
     }
 
     await this.playNextSentence();
+  }
+
+  private async playBufferedSentence(audioBuffer: ArrayBuffer, sentence: TTSChunk) {
+    const decodedData = await this.audioContext!.decodeAudioData(cloneBuffer(audioBuffer));
+
+    await new Promise<void>((resolve, reject) => {
+      try {
+        const source = this.audioContext!.createBufferSource();
+        this.activeSource = source;
+        source.buffer = decodedData;
+        source.connect(this.audioContext!.destination);
+        source.onended = () => {
+          if (this.activeSource === source) {
+            this.activeSource = null;
+          }
+          resolve();
+        };
+        source.start(0);
+        this.onSentencePlaybackStart?.(sentence);
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
   private async playNextSentence() {
@@ -229,39 +484,55 @@ export class SequentialTTS {
 
       if (this.isPaused || !this.isPlaying) return;
 
-      await playAudio(audioBuffer, this.audioContext!);
+      await this.playBufferedSentence(audioBuffer, sentence);
+
+      if (this.isPaused || !this.isPlaying) return;
 
       this.onSentenceEnd?.(sentence);
       this.currentIndex += 1;
       await this.playNextSentence();
     } catch (error) {
-      console.error('Error playing sentence:', error);
+      console.error("Error playing sentence:", error);
       this.onError?.(error as Error);
       this.stop();
     }
   }
 
   pause() {
+    if (!this.isPlaying) return;
     this.isPaused = true;
+    this.activeSource?.stop();
   }
 
   resume() {
     if (!this.isPaused) return;
     this.isPaused = false;
-    void this.playNextSentence();
+    void this.resumePlayback();
+  }
+
+  private async resumePlayback() {
+    if (!this.audioContext) return;
+
+    if (this.audioContext.state === "suspended") {
+      await this.audioContext.resume();
+    }
+
+    await this.playNextSentence();
   }
 
   stop() {
     this.isPlaying = false;
     this.isPaused = false;
     this.currentIndex = 0;
+    this.activeSource?.stop();
+    this.activeSource = null;
   }
 
-  getCurrentSentence(): TTSSentence | null {
+  getCurrentSentence(): TTSChunk | null {
     return this.sentences[this.currentIndex] || null;
   }
 
-  getSentences(): TTSSentence[] {
+  getSentences(): TTSChunk[] {
     return this.sentences;
   }
 

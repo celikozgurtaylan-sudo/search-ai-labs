@@ -1,5 +1,11 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  buildFallbackQuestions,
+  ensureWarmupSection,
+  sanitizeGeneratedQuestions,
+  WARMUP_SECTION_TITLE,
+} from "../_shared/question-quality.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -91,20 +97,38 @@ Her mesajda su karari ver:
 
 **action: "CHAT"** — Dogrudan yanit ver:
 - Arastirma talebi belirsiz veya genel oldugunda → Sokratik sorular sor
-- Daha fazla baglam gerektiginde → 2-3 acik uclu soru sor
+- Daha fazla baglam gerektiginde → en fazla 1 kisa netlestirici soru sor
 - Genel sohbet oldugunda → Kisa ve yardimci yanit ver
 - researchPlan alani null olmali
 
-# SOKRATIK SORU SORMA TEKNIGI
-- Acik uclu sorular sor (evet/hayir degil)
-- Her soru bir oncekinin uzerine insa etsin
-- 2-3 odakli soru sor, fazla degil
-- Samimi ve merakli bir ton kullan
+# YANIT TONU
+- Kisa mesaja kisa yanit ver
+- Detayli mesaja yalnizca gerektigi kadar detayli yanit ver
+- Dogal, net ve insan gibi yaz
+- Asla yapay nezaket veya kurumsal giris kullanma
+- "Harika", "memnuniyet duyarim", "size yardimci olmak isterim", "birkac sorum olacak" gibi robotik kaliplardan kacın
+- Maddeli listeyi ancak kullanici gercekten birden fazla sey sordugunda veya liste acikca faydaliysa kullan
+
+# NETLESTIRICI SORU TEKNIGI
+- Acik uclu ama kisa sor
+- Tek mesajda en fazla 1 soru sor
+- Kullanici cok kisa yazdiysa tek bir kritik eksigi netlestir
+- Gereksiz soru zinciri kurma
+- Samimi ama duz bir ton kullan
+
+# SORU METODOLOJISI
+- Her researchPlan ilk bolum olarak mutlaka "${WARMUP_SECTION_TITLE}" bolumunu icermeli
+- Bu ilk bolum 2-3 kisa isınma / rapport sorusundan olusmali
+- Ilk soru mutlaka kullanicinin gunune veya o ana kadar ne yaptigina degmeli
+- Sonraki bolumler genisten ozele ilerlemeli: baglam/davranis -> ana deneyim/gorev -> degerlendirme/iyilestirme
+- Sorular tek odakli olmali; ayni soruda iki farkli seyi sorma
+- Sorular kullanicinin bir problem yasadigini varsaymamali
 
 # ARASTIRMA PLANI KURALLARI
 - chatResponse: Baglama uygun, spesifik bir yanit. Kullanicinin konusuna ozel giris yap.
 - researchPlan.title: Arastirma basligini olustur
 - researchPlan.sections: En az 3 bolum, her bolumde 2-4 soru
+- Ilk bolumun title'i mutlaka "${WARMUP_SECTION_TITLE}" olmali
 - Sorular acik uclu, kesfedici ve konuya ozel olmali
 - Section id'leri anlamli ingilizce kisaltmalar olmali (ornek: "onboarding_experience", "preferences", "improvements")
 
@@ -153,7 +177,7 @@ Kullanici: "arastirma yapmak istiyoruz"
 Yanit:
 {
   "action": "CHAT",
-  "chatResponse": "Arastirmaniz icin size yardimci olmak isterim! Daha iyi anlayabilmem icin birkaц soru sormak istiyorum:\\n\\n1. Hangi urun veya hizmet uzerinde arastirma yapmak istiyorsunuz?\\n2. Su anda kullanicilarinizdan aldiginiz geri bildirimler veya gozlemlediginiz sorunlar var mi?",
+  "chatResponse": "Hangi urun ya da akis icin arastirma yapmak istiyorsunuz?",
   "researchPlan": null
 }
 
@@ -356,7 +380,7 @@ const normalizeResearchPlan = (plan: any) => {
     .filter(Boolean)
     .slice(0, 4)
     .map((section: any, index: number) => {
-      const questions = Array.isArray(section?.questions)
+      const rawQuestions = Array.isArray(section?.questions)
         ? section.questions
             .map((question: string) => cleanText(question))
             .filter(Boolean)
@@ -364,6 +388,16 @@ const normalizeResearchPlan = (plan: any) => {
         : [];
 
       const rawTitle = cleanText(section?.title);
+      let { valid: questions } = sanitizeGeneratedQuestions(rawQuestions, {
+        sectionTitle: rawTitle,
+        sectionIndex: index,
+      });
+
+      if (questions.length < 2) {
+        questions = [...questions, ...buildFallbackQuestions(rawTitle, index)]
+          .slice(0, 4);
+      }
+
       const preferredTitle = rawTitle && !isGenericSectionTitle(rawTitle)
         ? rawTitle
         : inferSectionTitle(questions, index);
@@ -384,11 +418,11 @@ const normalizeResearchPlan = (plan: any) => {
     })
     .filter((section: any) => section.questions.length > 0);
 
-  return {
+  return ensureWarmupSection({
     ...plan,
     title: cleanText(plan.title, 'Kullanici Arastirmasi'),
     sections: normalizedSections,
-  };
+  });
 };
 
 const describeGuideContext = (guide: any) => {
@@ -536,24 +570,24 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
       title: "Ilk Gorev Algi ve Beklentiler",
       questions: [
         `${screenNames} ekranlarina baktiginizda ilk olarak ne yapmaniz gerektigini nasil anliyorsunuz?`,
-        `${primaryTask} gorevini tamamlarken hangi adim size en belirsiz veya zor gorunuyor?`,
-        `Bu akista ilerlerken neyin dogru gittigini ya da ters gittigini nasil anlarsiniz?`,
+        `${primaryTask} gorevini tamamlarken adimlari kendi cümlelerinizle nasil tarif edersiniz?`,
+        `Bu akista ilerlerken size neyin net, neyin daha fazla aciklama gerektirdigini anlatir misiniz?`,
       ],
     },
     {
       id: slugifySectionId("clarity_and_trust"),
       title: "Karar Verme ve Ekran Netligi",
       questions: [
-        `Bu ekranlarda hangi bilgi ya da ifade size yeterince acik gelmiyor?`,
-        `Karar vermeden once hangi noktada daha fazla guvence veya aciklama duymak istersiniz?`,
-        `Bu deneyimin ${targetUsers} icin guven verici olup olmadigini size ne hissettiriyor?`,
+        `Bu ekranlarda karar vermenize en cok hangi bilgi yardimci oluyor?`,
+        `Karar vermeden once biraz daha aciklama gormek isteyeceginiz bir nokta var mi, varsa neresi?`,
+        `Bu deneyimin ${targetUsers} icin nasil bir izlenim biraktigini anlatir misiniz?`,
       ],
     },
     {
       id: slugifySectionId("friction_and_improvements"),
       title: "Surtunme ve Iyilestirme Firsatlari",
       questions: [
-        `${riskAreas} basliginda sizi en cok endiselendiren an hangi ekran veya adim oluyor?`,
+        `${riskAreas} basligina baktiginizda dikkatinizi en cok hangi ekran veya adim cekiyor?`,
         `${successSignals} hedefine ulasmak icin bu deneyimde hangi degisiklikler en cok fark yaratir?`,
         `Bu gorevi daha hizli ve daha rahat tamamlayabilmeniz icin ilk neyi degistirirdiniz?`,
       ],
@@ -563,10 +597,10 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
   return {
     action: "PLAN",
     chatResponse: "Kullanilabilirlik testi baglamina gore arastirma planinizi olusturdum. Sorular gorev akisi, anlasilirlik, guven ve surtunme noktalarina odaklaniyor.",
-    researchPlan: {
+    researchPlan: ensureWarmupSection({
       title: `${titleBase} Kullanilabilirlik Arastirmasi`,
       sections,
-    },
+    }),
   };
 };
 

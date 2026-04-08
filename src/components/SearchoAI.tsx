@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { AudioTranscriber, AudioTranscriberMetrics } from '@/utils/AudioTranscriber';
 import { interviewService, InterviewProgress, InterviewQuestion, setInterviewSessionToken } from '@/services/interviewService';
-import { prefetchTextToSpeech } from '@/services/textToSpeechService';
+import { prefetchTextToSpeech, resetTextToSpeechSessionState } from '@/services/textToSpeechService';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
 import { AvatarSpeaker } from './AvatarSpeaker';
 
@@ -135,6 +135,10 @@ const SearchoAI = ({
   }, [projectContext?.sessionId]);
 
   useEffect(() => {
+    resetTextToSpeechSessionState();
+  }, [projectContext?.sessionId]);
+
+  useEffect(() => {
     onPreambleStateChange?.(showTurkishPreamble && isPreamblePhase);
   }, [isPreamblePhase, onPreambleStateChange, showTurkishPreamble]);
 
@@ -186,6 +190,19 @@ const SearchoAI = ({
   }, [cleanupResponseRecording]);
 
   const ensureMicrophoneStream = useCallback(async () => {
+    const cameraAudioTrack = cameraStream?.getAudioTracks().find((track) => isLiveTrack(track));
+    if (cameraAudioTrack) {
+      const existingTrack = microphoneStreamRef.current?.getAudioTracks().find((track) => isLiveTrack(track));
+      if (microphoneStreamRef.current && existingTrack) {
+        microphoneStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+
+      const clonedTrack = cameraAudioTrack.clone();
+      const streamFromCamera = new MediaStream([clonedTrack]);
+      microphoneStreamRef.current = streamFromCamera;
+      return streamFromCamera;
+    }
+
     const existingTrack = microphoneStreamRef.current?.getAudioTracks().find((track) => isLiveTrack(track));
     if (microphoneStreamRef.current && existingTrack) {
       return microphoneStreamRef.current;
@@ -210,7 +227,7 @@ const SearchoAI = ({
     });
 
     return await microphoneRequestRef.current;
-  }, []);
+  }, [cameraStream]);
 
   const startResponseRecording = useCallback(async (questionId: string, microphoneStream: MediaStream) => {
     const cameraTrack = cameraStream?.getVideoTracks().find((track) => isLiveTrack(track));
@@ -886,7 +903,7 @@ const SearchoAI = ({
                     <div>
                       <h3 className="text-2xl font-semibold text-foreground">Görüşme tamamlandı</h3>
                       <p className="mt-3 text-muted-foreground">
-                        Analiz arka planda hazırlanıyor. İsterseniz şimdi oturumu kapatabilirsiniz.
+                        Katılımınız için teşekkürler. İsterseniz şimdi oturumu kapatabilirsiniz.
                       </p>
                     </div>
                     <Button onClick={() => onSessionEnd?.('completed')} size="lg" className="bg-emerald-600 text-white hover:bg-emerald-700">
