@@ -217,6 +217,122 @@ export type Database = {
         }
         Relationships: []
       }
+      question_edit_events: {
+        Row: {
+          created_at: string
+          diff_summary: string | null
+          edit_source: string
+          edited_issues: Json
+          edited_quality_status: string
+          edited_question_text: string
+          id: string
+          original_issues: Json
+          original_quality_status: string
+          original_question_text: string
+          project_id: string
+          research_mode: string
+          section_index: number | null
+          section_title: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          diff_summary?: string | null
+          edit_source?: string
+          edited_issues?: Json
+          edited_quality_status: string
+          edited_question_text: string
+          id?: string
+          original_issues?: Json
+          original_quality_status: string
+          original_question_text: string
+          project_id: string
+          research_mode: string
+          section_index?: number | null
+          section_title?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          diff_summary?: string | null
+          edit_source?: string
+          edited_issues?: Json
+          edited_quality_status?: string
+          edited_question_text?: string
+          id?: string
+          original_issues?: Json
+          original_quality_status?: string
+          original_question_text?: string
+          project_id?: string
+          research_mode?: string
+          section_index?: number | null
+          section_title?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "question_edit_events_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      question_learning_memory: {
+        Row: {
+          applies_to_mode: string
+          avoid_phrases: Json
+          bad_example: string | null
+          better_example: string | null
+          confidence_score: number
+          created_at: string
+          id: string
+          last_seen_at: string
+          pattern_key: string
+          pattern_type: string
+          preferred_phrases: Json
+          section_kind: string
+          trigger_phrases: Json
+          updated_at: string
+          usage_count: number
+        }
+        Insert: {
+          applies_to_mode: string
+          avoid_phrases?: Json
+          bad_example?: string | null
+          better_example?: string | null
+          confidence_score?: number
+          created_at?: string
+          id?: string
+          last_seen_at?: string
+          pattern_key: string
+          pattern_type: string
+          preferred_phrases?: Json
+          section_kind?: string
+          trigger_phrases?: Json
+          updated_at?: string
+          usage_count?: number
+        }
+        Update: {
+          applies_to_mode?: string
+          avoid_phrases?: Json
+          bad_example?: string | null
+          better_example?: string | null
+          confidence_score?: number
+          created_at?: string
+          id?: string
+          last_seen_at?: string
+          pattern_key?: string
+          pattern_type?: string
+          preferred_phrases?: Json
+          section_kind?: string
+          trigger_phrases?: Json
+          updated_at?: string
+          usage_count?: number
+        }
+        Relationships: []
+      }
       study_participants: {
         Row: {
           completed_at: string | null
@@ -356,12 +472,16 @@ export type Database = {
           user_id: string
         }[]
       }
+      is_valid_participant_token: {
+        Args: { token_input: string }
+        Returns: boolean
+      }
       resolve_participant_invitation_access: {
         Args: { token_input: string }
         Returns: {
           access_state: string
-          message: string | null
-          participant_data: Json | null
+          message: string
+          participant_data: Json
           project_link_access: string
         }[]
       }
@@ -369,19 +489,19 @@ export type Database = {
         Args: { session_token_input: string }
         Returns: {
           access_state: string
-          message: string | null
-          participant_data: Json | null
-          project_data: Json | null
-          session_data: Json | null
+          message: string
+          participant_data: Json
+          project_data: Json
+          session_data: Json
         }[]
-      }
-      is_valid_participant_token: {
-        Args: { token_input: string }
-        Returns: boolean
       }
       update_participant_status_by_token: {
         Args: { new_status: string; token_input: string }
-        Returns: Json
+        Returns: {
+          message: string
+          participant_data: Json
+          success: boolean
+        }[]
       }
       validate_participant_token: {
         Args: { token_input: string }
