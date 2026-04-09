@@ -309,8 +309,8 @@ const SearchoAI = ({
 
     try {
       const recorder = mimeType
-        ? new MediaRecorder(recordingStream, { mimeType, videoBitsPerSecond: 2_500_000 })
-        : new MediaRecorder(recordingStream, { videoBitsPerSecond: 2_500_000 });
+        ? new MediaRecorder(recordingStream, { mimeType, videoBitsPerSecond: 400_000 })
+        : new MediaRecorder(recordingStream, { videoBitsPerSecond: 400_000 });
 
       responseChunksRef.current = [];
       responseRecordingTracksRef.current = tracks;
@@ -352,9 +352,10 @@ const SearchoAI = ({
         throw error;
       }
 
-      const { data: { publicUrl } } = supabase.storage.from('interview-videos').getPublicUrl(fileName);
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage.from('interview-videos').createSignedUrl(fileName, 60 * 60 * 24 * 365);
+      const videoUrl = signedUrlError ? fileName : signedUrlData.signedUrl;
       await interviewService.attachResponseMedia(projectContext.sessionId, responseId, {
-        videoUrl: publicUrl,
+        videoUrl,
         videoDuration: Math.round(media.durationMs),
         audioDuration: Math.round(media.durationMs),
         metadata: {
