@@ -337,12 +337,12 @@ const SearchoAI = ({
   }, [stopResponseRecording]);
 
   const uploadResponseMedia = useCallback(async (responseId: string, questionId: string, media: PendingResponseMedia) => {
-    if (!projectContext?.sessionId || !media.blob) {
+    if (!projectContext?.sessionId || !projectContext?.projectId || !media.blob) {
       return;
     }
 
     try {
-      const fileName = `${projectContext.sessionId}/${questionId}_${responseId}_${Date.now()}.webm`;
+      const fileName = `${projectContext.projectId}/${projectContext.sessionId}/${questionId}_${responseId}_${Date.now()}.webm`;
       const { error } = await supabase.storage.from('interview-videos').upload(fileName, media.blob, {
         contentType: media.blob.type || 'video/webm',
         upsert: false,
