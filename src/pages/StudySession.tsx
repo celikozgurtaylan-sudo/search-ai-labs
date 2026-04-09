@@ -634,9 +634,10 @@ const StudySession = () => {
       const constraintsQueue: MediaStreamConstraints[] = [
         {
           video: {
-            width: { ideal: 960 },
-            height: { ideal: 720 },
+            width: { ideal: 480 },
+            height: { ideal: 360 },
             facingMode: { ideal: "user" },
+            frameRate: { ideal: 15, max: 15 },
           },
           audio: {
             channelCount: 1,
@@ -647,8 +648,9 @@ const StudySession = () => {
         },
         {
           video: {
-            width: { ideal: 960 },
-            height: { ideal: 720 },
+            width: { ideal: 480 },
+            height: { ideal: 360 },
+            frameRate: { ideal: 15, max: 15 },
           },
           audio: {
             channelCount: 1,
