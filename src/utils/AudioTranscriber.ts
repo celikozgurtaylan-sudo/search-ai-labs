@@ -1,14 +1,14 @@
 import { supabase } from "@/integrations/supabase/client";
 
 const CALIBRATION_WINDOW_MS = 450;
-const MAX_WAIT_FOR_SPEECH_MS = 5000;
-const SILENCE_AFTER_SPEECH_MS = 2200;
+const MAX_WAIT_FOR_SPEECH_MS = 10000;
 const MIN_RECORDING_MS = 750;
 const MIN_AUDIO_BLOB_SIZE = 6000;
 const MIN_SPEECH_FRAMES = 2;
 const ABSOLUTE_ENTER_THRESHOLD = 4.2;
 const ABSOLUTE_STAY_THRESHOLD = 2.2;
 const SOFT_STAY_THRESHOLD_RATIO = 0.72;
+const CHUNK_STALL_AFTER_SPEECH_MS = 2500;
 const HALLUCINATION_PATTERNS = [
   /abone ol/i,
   /yorum yap/i,
@@ -27,7 +27,7 @@ export interface AudioTranscriberMetrics {
   peakLevel: number;
   recordingDurationMs: number;
   speechDetected: boolean;
-  stopReason: 'manual' | 'speech-ended' | 'no-speech' | 'cancelled';
+  stopReason: 'manual' | 'no-speech' | 'cancelled' | 'health-failure';
 }
 
 export class AudioTranscriber {
@@ -48,8 +48,10 @@ export class AudioTranscriber {
   private calibrationTotal = 0;
   private calibrationSamples = 0;
   private lastVoiceActivityAt = 0;
+  private lastChunkAt = 0;
   private analysisFrameId: number | null = null;
-  private stopReason: 'manual' | 'speech-ended' | 'no-speech' | 'cancelled' = 'manual';
+  private stopReason: 'manual' | 'no-speech' | 'cancelled' | 'health-failure' = 'manual';
+  private forcedErrorCode: string | null = null;
 
   onTranscriptionUpdate: (text: string) => void = () => {};
   onSpeechDetected: () => void = () => {};
@@ -96,12 +98,15 @@ export class AudioTranscriber {
       this.calibrationTotal = 0;
       this.calibrationSamples = 0;
       this.lastVoiceActivityAt = this.recordingStartedAt;
+      this.lastChunkAt = this.recordingStartedAt;
       this.stopReason = 'manual';
       this.discardRecording = false;
+      this.forcedErrorCode = null;
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           this.audioChunks.push(event.data);
+          this.lastChunkAt = performance.now();
         }
       };
 
@@ -127,7 +132,16 @@ export class AudioTranscriber {
     this.finish('cancelled');
   }
 
-  private finish(reason: 'manual' | 'speech-ended' | 'no-speech' | 'cancelled') {
+  reportHealthIssue(errorCode = 'RECORDING_HEALTH_FAILURE') {
+    if (!this.isRecording) {
+      return;
+    }
+
+    this.forcedErrorCode = errorCode;
+    this.finish('health-failure');
+  }
+
+  private finish(reason: 'manual' | 'no-speech' | 'cancelled' | 'health-failure') {
     if (!this.isRecording) {
       return;
     }
@@ -167,7 +181,13 @@ export class AudioTranscriber {
       this.analyser.getByteTimeDomainData(dataArray);
       const now = performance.now();
       const elapsed = now - this.recordingStartedAt;
+      const hasLiveAudioTrack = this.stream?.getAudioTracks().some((track) => track.readyState === 'live' && track.enabled !== false) ?? false;
       const level = this.calculateRmsLevel(dataArray);
+
+      if (!hasLiveAudioTrack) {
+        this.reportHealthIssue('MICROPHONE_DISCONNECTED');
+        return;
+      }
 
       this.totalLevel += level;
       this.levelSampleCount += 1;
@@ -203,13 +223,13 @@ export class AudioTranscriber {
         this.lastVoiceActivityAt = now;
       }
 
-      if (this.speechDetected && now - this.lastVoiceActivityAt >= SILENCE_AFTER_SPEECH_MS) {
-        this.finish('speech-ended');
+      if (!this.speechDetected && elapsed >= MAX_WAIT_FOR_SPEECH_MS) {
+        this.finish('no-speech');
         return;
       }
 
-      if (!this.speechDetected && elapsed >= MAX_WAIT_FOR_SPEECH_MS) {
-        this.finish('no-speech');
+      if (this.speechDetected && now - this.lastChunkAt >= CHUNK_STALL_AFTER_SPEECH_MS) {
+        this.reportHealthIssue('RECORDING_HEALTH_FAILURE');
         return;
       }
 
@@ -251,6 +271,16 @@ export class AudioTranscriber {
       return;
     }
 
+    if (this.stopReason === 'health-failure') {
+      this.onError(this.forcedErrorCode ?? 'RECORDING_HEALTH_FAILURE');
+      return;
+    }
+
+    if (this.stopReason === 'no-speech') {
+      this.onError('PREP_TIMEOUT');
+      return;
+    }
+
     if (this.audioChunks.length === 0) {
       this.onError('NO_SPEECH_DETECTED');
       return;
@@ -261,7 +291,6 @@ export class AudioTranscriber {
       const averageLevel = this.levelSampleCount > 0 ? this.totalLevel / this.levelSampleCount : 0;
 
       if (
-        this.stopReason === 'no-speech' ||
         !this.speechDetected ||
         recordingDuration < MIN_RECORDING_MS ||
         audioBlob.size < MIN_AUDIO_BLOB_SIZE ||
@@ -282,21 +311,21 @@ export class AudioTranscriber {
 
       if (error) {
         console.error('Transcription error:', error);
-        this.onError('Transcription failed');
+        this.onError('TRANSCRIPTION_FAILED');
         return;
       }
 
       const transcript = typeof data?.text === 'string' ? data.text.trim() : '';
 
       if (!transcript) {
-        this.onError('NO_SPEECH_DETECTED');
+        this.onError('TRANSCRIPTION_FAILED');
         return;
       }
 
       const isHallucination = HALLUCINATION_PATTERNS.some((pattern) => pattern.test(transcript));
       if (isHallucination) {
         console.warn('Ignoring likely hallucinated transcription:', transcript);
-        this.onError('NO_SPEECH_DETECTED');
+        this.onError('TRANSCRIPTION_FAILED');
         return;
       }
 

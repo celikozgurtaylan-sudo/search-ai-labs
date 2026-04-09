@@ -6,7 +6,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const MODEL = Deno.env.get("ORCHESTRATOR_MODEL") || "o4-mini-2025-04-16";
+const MODEL = Deno.env.get("ORCHESTRATOR_MODEL") || "gpt-4.1";
+const MAX_RECENT_TURNS = 6;
+const MAX_SUMMARY_ITEMS = 8;
+const MAX_SUMMARY_CHARS = 160;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -127,6 +130,214 @@ const sanitizeId = (value: string, fallback: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || fallback;
 
+const truncateText = (value: string, maxLength: number) =>
+  value.length > maxLength ? `${value.slice(0, maxLength - 1).trimEnd()}...` : value;
+
+const normalizeConversationHistory = (history: Array<Record<string, unknown>>) =>
+  asArray<Record<string, unknown>>(history)
+    .map((entry) => ({
+      role: entry.role === "assistant" ? "assistant" : "user",
+      content: asString(entry.content),
+    }))
+    .filter((entry) => entry.content.length > 0);
+
+const buildConversationWindow = (history: Array<Record<string, unknown>>, existingSummary = "") => {
+  const normalizedHistory = normalizeConversationHistory(history);
+  const recentHistory = normalizedHistory.slice(-MAX_RECENT_TURNS);
+  const olderHistory = normalizedHistory.slice(0, -MAX_RECENT_TURNS);
+  const derivedSummary = olderHistory
+    .slice(-MAX_SUMMARY_ITEMS)
+    .map((entry) =>
+      `${entry.role === "assistant" ? "Asistan" : "Kullanici"}: ${truncateText(entry.content, MAX_SUMMARY_CHARS)}`,
+    )
+    .join("\n");
+
+  return {
+    recentHistory,
+    summary: [asString(existingSummary), derivedSummary].filter(Boolean).join("\n").trim(),
+  };
+};
+
+const decodeEscapedCharacter = (nextChar: string) => {
+  switch (nextChar) {
+    case "n":
+      return "\n";
+    case "r":
+      return "";
+    case "t":
+      return "\t";
+    case '"':
+      return '"';
+    case "\\":
+      return "\\";
+    default:
+      return nextChar;
+  }
+};
+
+const extractPartialJsonStringField = (rawText: string, fieldName: string) => {
+  const marker = `"${fieldName}"`;
+  const markerIndex = rawText.indexOf(marker);
+  if (markerIndex === -1) return "";
+
+  const colonIndex = rawText.indexOf(":", markerIndex + marker.length);
+  if (colonIndex === -1) return "";
+
+  let cursor = colonIndex + 1;
+  while (cursor < rawText.length && /\s/.test(rawText[cursor])) {
+    cursor += 1;
+  }
+
+  if (rawText[cursor] !== '"') return "";
+  cursor += 1;
+
+  let value = "";
+  let escaping = false;
+
+  while (cursor < rawText.length) {
+    const currentChar = rawText[cursor];
+
+    if (escaping) {
+      value += decodeEscapedCharacter(currentChar);
+      escaping = false;
+      cursor += 1;
+      continue;
+    }
+
+    if (currentChar === "\\") {
+      escaping = true;
+      cursor += 1;
+      continue;
+    }
+
+    if (currentChar === '"') {
+      break;
+    }
+
+    value += currentChar;
+    cursor += 1;
+  }
+
+  return value;
+};
+
+const requestStructuredPlannerResponse = async (openaiApiKey: string, messages: Array<{ role: "system" | "user" | "assistant"; content: string }>) => {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openaiApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages,
+      response_format: RESPONSE_FORMAT,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI error: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  return payload?.choices?.[0]?.message?.content;
+};
+
+const requestStructuredPlannerResponseStream = async (
+  openaiApiKey: string,
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+  onJsonDelta?: (rawText: string) => void,
+) => {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openaiApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages,
+      response_format: RESPONSE_FORMAT,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI error: ${response.status}`);
+  }
+
+  if (!response.body) {
+    throw new Error("Planner streaming body is missing");
+  }
+
+  const decoder = new TextDecoder();
+  const reader = response.body.getReader();
+  let buffer = "";
+  let rawText = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+    let lineBreakIndex = buffer.indexOf("\n");
+    while (lineBreakIndex !== -1) {
+      const line = buffer.slice(0, lineBreakIndex).trim();
+      buffer = buffer.slice(lineBreakIndex + 1);
+
+      if (line.startsWith("data:")) {
+        const payload = line.slice(5).trim();
+        if (payload === "[DONE]") {
+          break;
+        }
+
+        const parsed = JSON.parse(payload);
+        const delta = parsed?.choices?.[0]?.delta?.content;
+        if (typeof delta === "string" && delta.length > 0) {
+          rawText += delta;
+          onJsonDelta?.(rawText);
+        }
+      }
+
+      lineBreakIndex = buffer.indexOf("\n");
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  return rawText;
+};
+
+const buildBriefContextPrompt = (brief: Record<string, unknown>) => {
+  const objective = asString(brief.objective) || "Belirtilmedi";
+  const audience = asString(brief.audience) || "Belirtilmedi";
+  const decisionScope = asString(brief.decisionScope) || "Belirtilmedi";
+  const constraints = asString(brief.constraints) || "Belirtilmedi";
+  const mustCover = asArray<string>(brief.mustCover).map((item) => asString(item)).filter(Boolean).join(", ") || "Belirtilmedi";
+  const themes = asArray<Record<string, unknown>>(brief.themes)
+    .map((theme) => `${asString(theme.title)}: ${asString(theme.goal)}`)
+    .filter(Boolean)
+    .join("\n") || "Yok";
+  const anchorQuestions = asArray<Record<string, unknown>>(brief.anchorQuestions)
+    .map((question) => asString(question.text))
+    .filter(Boolean)
+    .join("\n") || "Yok";
+
+  return `Mevcut brief durumu:
+Objective: ${objective}
+Audience: ${audience}
+Decision scope: ${decisionScope}
+Constraints: ${constraints}
+Must cover: ${mustCover}
+Themes:
+${themes}
+Anchor sorular:
+${anchorQuestions}
+
+Bu brief'i guncelle ve eksik kisimlari tamamla.`;
+};
+
 const normalizePlannerOutput = (raw: Record<string, unknown>) => {
   const rawBrief = isRecord(raw.brief) ? raw.brief : {};
   const normalizedThemes = asArray<Record<string, unknown>>(rawBrief.themes)
@@ -187,6 +398,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let requestedStream = false;
+
   try {
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiApiKey) {
@@ -198,8 +411,14 @@ serve(async (req) => {
       projectTitle = "",
       projectDescription = "",
       conversationHistory = [],
+      conversationSummary = "",
       existingBrief = null,
+      stream = false,
     } = await req.json();
+    requestedStream = stream === true;
+
+    const normalizedMessage = asString(message);
+    const { recentHistory, summary } = buildConversationWindow(conversationHistory, conversationSummary);
 
     const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
       { role: "system", content: SYSTEM_PROMPT },
@@ -210,83 +429,143 @@ Ilk proje aciklamasi: ${projectDescription || "Belirtilmedi"}`,
       },
     ];
 
-    if (isRecord(existingBrief)) {
+    if (summary) {
       messages.push({
-        role: "user",
-        content: `Mevcut brief durumu:
-${JSON.stringify(existingBrief, null, 2)}
-
-Yanit verirken bu brief'i guncelle ve eksik kisimlari tamamla.`,
+        role: "system",
+        content: `Konusmanin onceki ozeti:\n${summary}`,
       });
     }
 
-    for (const entry of asArray<Record<string, unknown>>(conversationHistory)) {
-      const role = entry.role === "assistant" ? "assistant" : "user";
-      const content = asString(entry.content);
-      if (!content) continue;
-      messages.push({ role, content });
+    if (isRecord(existingBrief)) {
+      messages.push({
+        role: "system",
+        content: buildBriefContextPrompt(existingBrief),
+      });
     }
 
-    messages.push({ role: "user", content: asString(message) });
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${openaiApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        response_format: RESPONSE_FORMAT,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`OpenAI error: ${response.status}`);
+    for (const entry of recentHistory) {
+      messages.push({
+        role: entry.role === "assistant" ? "assistant" : "user",
+        content: entry.content,
+      });
     }
 
-    const payload = await response.json();
-    const content = payload?.choices?.[0]?.message?.content;
+    messages.push({ role: "user", content: normalizedMessage });
 
-    if (typeof content !== "string") {
-      throw new Error("Planner returned an invalid payload");
-    }
+    const resolveFinalPayload = async (sendDelta?: (delta: string) => void) => {
+      let streamedReply = "";
+      const content = sendDelta
+        ? await requestStructuredPlannerResponseStream(openaiApiKey, messages, (rawText) => {
+            const nextReply = extractPartialJsonStringField(rawText, "reply");
+            if (!nextReply || nextReply.length <= streamedReply.length) {
+              return;
+            }
 
-    const parsed = normalizePlannerOutput(JSON.parse(content));
-    const nextConversationHistory = [
-      ...asArray<Record<string, unknown>>(conversationHistory)
-        .map((entry) => ({
-          role: entry.role === "assistant" ? "assistant" : "user",
-          content: asString(entry.content),
-        }))
-        .filter((entry) => entry.content.length > 0),
-      { role: "user", content: asString(message) },
-      { role: "assistant", content: parsed.reply },
-    ];
+            const delta = nextReply.slice(streamedReply.length);
+            streamedReply = nextReply;
+            sendDelta(delta);
+          })
+        : await requestStructuredPlannerResponse(openaiApiKey, messages);
 
-    const brief = {
-      mode: "ai_enhanced",
-      ...parsed.brief,
-      plannerTranscript: nextConversationHistory,
-      updatedAt: new Date().toISOString(),
-      readyAt: parsed.isReady ? new Date().toISOString() : null,
-    };
+      if (typeof content !== "string") {
+        throw new Error("Planner returned an invalid payload");
+      }
 
-    return new Response(
-      JSON.stringify({
+      const parsed = normalizePlannerOutput(JSON.parse(content));
+      const nextConversationHistory = [
+        ...normalizeConversationHistory(conversationHistory),
+        { role: "user", content: normalizedMessage },
+        { role: "assistant", content: parsed.reply },
+      ];
+
+      const brief = {
+        mode: "ai_enhanced",
+        ...parsed.brief,
+        plannerTranscript: nextConversationHistory,
+        updatedAt: new Date().toISOString(),
+        readyAt: parsed.isReady ? new Date().toISOString() : null,
+      };
+
+      return {
         reply: parsed.reply,
         contextReadiness: parsed.contextReadiness,
         isReady: parsed.isReady,
         brief,
         conversationHistory: nextConversationHistory,
-      }),
+        conversationSummary: buildConversationWindow(nextConversationHistory, "").summary,
+      };
+    };
+
+    if (requestedStream) {
+      const encoder = new TextEncoder();
+      const streamBody = new ReadableStream({
+        async start(controller) {
+          const sendEvent = (payload: Record<string, unknown>) =>
+            controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+
+          try {
+            const finalPayload = await resolveFinalPayload((delta) => {
+              if (delta) {
+                sendEvent({ event: "assistant_delta", delta });
+              }
+            });
+
+            sendEvent({ event: "final", data: finalPayload });
+          } catch (error) {
+            sendEvent({
+              event: "error",
+              error: error instanceof Error ? error.message : "Internal server error",
+            });
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(streamBody, {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-cache",
+        },
+      });
+    }
+
+    return new Response(
+      JSON.stringify(await resolveFinalPayload()),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );
   } catch (error) {
     console.error("[ai-enhanced-planner] Error:", error);
+
+    if (requestedStream) {
+      const encoder = new TextEncoder();
+      const streamBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              `${JSON.stringify({
+                event: "error",
+                error: error instanceof Error ? error.message : "Internal server error",
+              })}\n`,
+            ),
+          );
+          controller.close();
+        },
+      });
+
+      return new Response(streamBody, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-cache",
+        },
+      });
+    }
+
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : "Internal server error",

@@ -342,28 +342,8 @@ const Workspace = () => {
 
   useEffect(() => {
     if (researchMode !== "structured") return;
-    if (!discussionGuide || isButtonReady) return;
-
-    const calculateAnimationDuration = () => {
-      if (!discussionGuide?.sections) return 0;
-
-      let totalDuration = 2000;
-      discussionGuide.sections.forEach((section: any, sectionIndex: number) => {
-        totalDuration += section.questions.length * 800;
-        if (sectionIndex < discussionGuide.sections.length - 1) {
-          totalDuration += 400;
-        }
-      });
-
-      return totalDuration;
-    };
-
-    const timeoutId = window.setTimeout(() => {
-      setIsButtonReady(true);
-    }, calculateAnimationDuration() + 8000);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [discussionGuide, isButtonReady, researchMode]);
+    setIsButtonReady(Boolean(discussionGuide?.sections?.length) && !isGuideLoading);
+  }, [discussionGuide, isGuideLoading, researchMode]);
 
   useEffect(() => {
     if (currentStep === "run") {

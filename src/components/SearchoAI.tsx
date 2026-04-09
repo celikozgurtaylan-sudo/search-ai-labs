@@ -21,8 +21,12 @@ import TurkishPreambleDisplay from './TurkishPreambleDisplay';
 import { AvatarSpeaker } from './AvatarSpeaker';
 
 const RESPONSE_TIME_LIMIT_SECONDS = 120;
+const PRE_SPEECH_PREP_LIMIT_SECONDS = 10;
+const RECOVERY_GRACE_SECONDS = 30;
 const AUTO_SAVE_MIN_CHARACTERS = 8;
 const AUTO_SAVE_MIN_WORDS = 2;
+const TRANSCRIPTION_HEALTHCHECK_TTL_MS = 30_000;
+const TRANSCRIPTION_HEALTHCHECK_INTERVAL_MS = 10_000;
 
 type ResponseRecordingResult = {
   blob: Blob | null;
@@ -106,13 +110,20 @@ const SearchoAI = ({
   const [isReviewingTranscript, setIsReviewingTranscript] = useState(false);
   const [editableTranscript, setEditableTranscript] = useState('');
   const [responseTimeRemaining, setResponseTimeRemaining] = useState(RESPONSE_TIME_LIMIT_SECONDS);
+  const [prepTimeRemaining, setPrepTimeRemaining] = useState(PRE_SPEECH_PREP_LIMIT_SECONDS);
   const [responseTimerExpired, setResponseTimerExpired] = useState(false);
   const [responseTimerActive, setResponseTimerActive] = useState(false);
+  const [hasSpeechStartedForCurrentAttempt, setHasSpeechStartedForCurrentAttempt] = useState(false);
   const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
   const [isRecordingVideo, setIsRecordingVideo] = useState(false);
   const [isPreamblePhase, setIsPreamblePhase] = useState(true);
   const [showTurkishPreamble, setShowTurkishPreamble] = useState(true);
   const [showEndSessionConfirmation, setShowEndSessionConfirmation] = useState(false);
+  const [draftTranscript, setDraftTranscript] = useState('');
+  const [draftAudioDurationMs, setDraftAudioDurationMs] = useState(0);
+  const [responseRecoveryMessage, setResponseRecoveryMessage] = useState<string | null>(null);
+  const [resumeAfterFailure, setResumeAfterFailure] = useState(false);
+  const [hasUsedRecoveryGrace, setHasUsedRecoveryGrace] = useState(false);
 
   const audioTranscriberRef = useRef<AudioTranscriber | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
@@ -123,6 +134,9 @@ const SearchoAI = ({
   const responseRecordingStartedAtRef = useRef(0);
   const pendingResponseMediaRef = useRef<PendingResponseMedia | null>(null);
   const analysisTriggeredRef = useRef(false);
+  const transcriptionHealthMonitorRef = useRef<ReturnType<typeof window.setInterval> | null>(null);
+  const lastTranscriptionHealthCheckAtRef = useRef(0);
+  const transcriptionHealthCheckInFlightRef = useRef(false);
 
   useEffect(() => {
     setInterviewSessionToken(projectContext?.sessionToken ?? null);
@@ -152,6 +166,55 @@ const SearchoAI = ({
     responseRecordingStartedAtRef.current = 0;
     setIsRecordingVideo(false);
   }, []);
+
+  const clearTranscriptionHealthMonitor = useCallback(() => {
+    if (transcriptionHealthMonitorRef.current) {
+      window.clearInterval(transcriptionHealthMonitorRef.current);
+      transcriptionHealthMonitorRef.current = null;
+    }
+  }, []);
+
+  const ensureTranscriptionPipelineHealthy = useCallback(async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastTranscriptionHealthCheckAtRef.current < TRANSCRIPTION_HEALTHCHECK_TTL_MS) {
+      return true;
+    }
+
+    if (transcriptionHealthCheckInFlightRef.current) {
+      return true;
+    }
+
+    transcriptionHealthCheckInFlightRef.current = true;
+
+    try {
+      const { data, error } = await supabase.functions.invoke('speech-to-text', {
+        body: { healthcheck: true },
+      });
+
+      if (error || !data?.ok) {
+        return false;
+      }
+
+      lastTranscriptionHealthCheckAtRef.current = now;
+      return true;
+    } catch (error) {
+      console.error('Transcription pipeline health check failed:', error);
+      return false;
+    } finally {
+      transcriptionHealthCheckInFlightRef.current = false;
+    }
+  }, []);
+
+  const startTranscriptionHealthMonitor = useCallback(() => {
+    clearTranscriptionHealthMonitor();
+    transcriptionHealthMonitorRef.current = window.setInterval(() => {
+      void ensureTranscriptionPipelineHealthy(true).then((isHealthy) => {
+        if (!isHealthy) {
+          audioTranscriberRef.current?.reportHealthIssue('TRANSCRIPTION_SERVICE_UNAVAILABLE');
+        }
+      });
+    }, TRANSCRIPTION_HEALTHCHECK_INTERVAL_MS);
+  }, [clearTranscriptionHealthMonitor, ensureTranscriptionPipelineHealthy]);
 
   const stopResponseRecording = useCallback((discard = false): Promise<ResponseRecordingResult> => {
     const recorder = responseRecorderRef.current;
@@ -303,7 +366,69 @@ const SearchoAI = ({
     }
   }, [projectContext?.sessionId]);
 
+  const mergeTranscriptSegments = useCallback((baseText: string, nextText: string) => {
+    const normalizedBase = baseText.trim();
+    const normalizedNext = nextText.trim();
+
+    if (!normalizedBase) {
+      return normalizedNext;
+    }
+
+    if (!normalizedNext) {
+      return normalizedBase;
+    }
+
+    return `${normalizedBase}\n\n${normalizedNext}`;
+  }, []);
+
+  const persistDraftResponse = useCallback(async (transcript: string, durationMs: number) => {
+    if (!projectContext?.sessionId || !currentQuestion?.id || !transcript.trim()) {
+      return;
+    }
+
+    try {
+      await interviewService.saveResponse(projectContext.sessionId, {
+        questionId: currentQuestion.id,
+        participantId: projectContext.participantId,
+        transcription: transcript.trim(),
+        responseText: transcript.trim(),
+        audioDuration: Math.round(durationMs),
+        isComplete: false,
+        metadata: {
+          draftSavedAt: new Date().toISOString(),
+          questionText: currentQuestion.question_text,
+          responseMode: 'draft',
+        },
+      });
+    } catch (error) {
+      console.error('Failed to persist draft response:', error);
+    }
+  }, [currentQuestion?.id, currentQuestion?.question_text, projectContext?.participantId, projectContext?.sessionId]);
+
+  const enterRecoveryState = useCallback((message: string, options?: { resume?: boolean; allowGraceIfNeeded?: boolean }) => {
+    const shouldResume = options?.resume ?? false;
+    const allowGraceIfNeeded = options?.allowGraceIfNeeded ?? false;
+
+    if (allowGraceIfNeeded && responseTimeRemaining <= 0 && !hasUsedRecoveryGrace) {
+      setResponseTimeRemaining(RECOVERY_GRACE_SECONDS);
+      setHasUsedRecoveryGrace(true);
+    }
+
+    setIsListening(false);
+    setIsTranscribing(false);
+    setIsWaitingForAnswer(true);
+    setIsReviewingTranscript(false);
+    setResponseTimerActive(false);
+    setResponseTimerExpired(false);
+    setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
+    setHasSpeechStartedForCurrentAttempt(false);
+    setNeedsRetryRecording(true);
+    setResumeAfterFailure(shouldResume);
+    setResponseRecoveryMessage(message);
+  }, [hasUsedRecoveryGrace, responseTimeRemaining]);
+
   const applyInterviewState = useCallback((nextQuestion: InterviewQuestion | null, progress: InterviewProgress) => {
+    clearTranscriptionHealthMonitor();
     setCurrentQuestion(nextQuestion);
     setInterviewProgress(progress);
     onQuestionChange?.(nextQuestion, progress);
@@ -312,9 +437,16 @@ const SearchoAI = ({
     setResponseTimerActive(false);
     setResponseTimerExpired(false);
     setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
+    setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
+    setHasSpeechStartedForCurrentAttempt(false);
     setUserTranscript('');
     setEditableTranscript('');
     setIsReviewingTranscript(false);
+    setDraftTranscript('');
+    setDraftAudioDurationMs(0);
+    setResponseRecoveryMessage(null);
+    setResumeAfterFailure(false);
+    setHasUsedRecoveryGrace(false);
 
     if (nextQuestion?.question_text) {
       void prefetchTextToSpeech(nextQuestion.question_text);
@@ -332,7 +464,7 @@ const SearchoAI = ({
         description: 'Araştırma raporu arka planda güncellenecek.',
       });
     }
-  }, [onQuestionChange, projectContext?.projectId, projectContext?.sessionId, toast]);
+  }, [clearTranscriptionHealthMonitor, onQuestionChange, projectContext?.projectId, projectContext?.sessionId, toast]);
 
   const initializeInterviewQuestions = useCallback(async () => {
     const hasStructuredGuide = Boolean(projectContext?.discussionGuide);
@@ -393,8 +525,11 @@ const SearchoAI = ({
   useEffect(() => {
     if (!currentQuestion?.id) return;
     setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
+    setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
     setResponseTimerExpired(false);
     setResponseTimerActive(false);
+    setHasSpeechStartedForCurrentAttempt(false);
+    setHasUsedRecoveryGrace(false);
   }, [currentQuestion?.id]);
 
   useEffect(() => {
@@ -408,6 +543,22 @@ const SearchoAI = ({
     return () => window.clearInterval(timer);
   }, [currentQuestion, isReviewingTranscript, isSubmittingResponse, responseTimeRemaining, responseTimerActive]);
 
+  useEffect(() => {
+    if (!currentQuestion || !isListening || responseTimerActive || hasSpeechStartedForCurrentAttempt || isReviewingTranscript || isSubmittingResponse) {
+      return;
+    }
+
+    if (prepTimeRemaining <= 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setPrepTimeRemaining((previous) => Math.max(0, previous - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [currentQuestion, hasSpeechStartedForCurrentAttempt, isListening, isReviewingTranscript, isSubmittingResponse, prepTimeRemaining, responseTimerActive]);
+
   const finishCurrentAnswer = useCallback(() => {
     if (!audioTranscriberRef.current) {
       return;
@@ -415,8 +566,9 @@ const SearchoAI = ({
 
     setIsListening(false);
     setResponseTimerActive(false);
+    clearTranscriptionHealthMonitor();
     audioTranscriberRef.current.stop();
-  }, []);
+  }, [clearTranscriptionHealthMonitor]);
 
   useEffect(() => {
     if (!currentQuestion || responseTimeRemaining > 0 || responseTimerExpired || !responseTimerActive) return;
@@ -494,7 +646,7 @@ const SearchoAI = ({
         participantId: projectContext.participantId,
         transcription: normalizedTranscript,
         responseText: normalizedTranscript,
-        audioDuration: Math.round(mediaToPersist.durationMs),
+        audioDuration: Math.round(Math.max(mediaToPersist.durationMs, draftAudioDurationMs)),
         metadata: {
           timestamp: new Date().toISOString(),
           questionText: activeQuestion.question_text,
@@ -502,9 +654,14 @@ const SearchoAI = ({
           isFollowUp: activeQuestion.is_follow_up,
           questionMetadata: activeQuestion.metadata ?? {},
           autoSaved: true,
+          usedDraftTranscript: draftTranscript.trim().length > 0,
         },
       });
 
+      setDraftTranscript('');
+      setDraftAudioDurationMs(0);
+      setResponseRecoveryMessage(null);
+      setResumeAfterFailure(false);
       applyInterviewState(data.nextQuestion, data.progress);
 
       if (mediaToPersist.blob && data.response?.id) {
@@ -524,9 +681,13 @@ const SearchoAI = ({
     } finally {
       setIsSubmittingResponse(false);
     }
-  }, [applyInterviewState, currentQuestion, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, toast, uploadResponseMedia]);
+  }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, toast, uploadResponseMedia]);
 
-  const startListening = useCallback(async () => {
+  const startListening = useCallback(async (options?: { resetDuration?: boolean; preserveDraft?: boolean }) => {
+    const resetDuration = options?.resetDuration ?? false;
+    const preserveDraft = options?.preserveDraft ?? true;
+    const nextDraftTranscript = preserveDraft ? draftTranscript : '';
+
     if (!currentQuestion?.id || isSubmittingResponse) {
       return;
     }
@@ -536,25 +697,60 @@ const SearchoAI = ({
       audioTranscriberRef.current = null;
     }
 
+    clearTranscriptionHealthMonitor();
     await discardPendingResponseMedia();
 
+    if (resetDuration) {
+      setDraftTranscript('');
+      setDraftAudioDurationMs(0);
+      setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
+      setHasUsedRecoveryGrace(false);
+    }
+
+    if (!preserveDraft) {
+      setDraftTranscript('');
+      setDraftAudioDurationMs(0);
+    }
+
     setNeedsRetryRecording(false);
-    setUserTranscript('');
-    setEditableTranscript('');
+    setResumeAfterFailure(false);
+    setResponseRecoveryMessage(null);
+    setUserTranscript(nextDraftTranscript);
+    setEditableTranscript(nextDraftTranscript);
     setIsReviewingTranscript(false);
     setIsTranscribing(true);
     setIsListening(true);
     setIsWaitingForAnswer(true);
     setResponseTimerExpired(false);
     setResponseTimerActive(false);
+    setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
+    setHasSpeechStartedForCurrentAttempt(false);
 
     try {
       const microphoneStream = await ensureMicrophoneStream();
+      const isTranscriptionHealthy = await ensureTranscriptionPipelineHealthy();
+      if (!isTranscriptionHealthy) {
+        setIsListening(false);
+        setIsTranscribing(false);
+        enterRecoveryState('Transcript servisi şu anda hazır değil. Yanıtınızın boşa gitmemesi için kayıt başlatılmadı.', {
+          resume: true,
+          allowGraceIfNeeded: false,
+        });
+        toast({
+          title: 'Transcript servisi kullanılamıyor',
+          description: 'Birkaç saniye sonra tekrar deneyin.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       await startResponseRecording(currentQuestion.id, microphoneStream);
 
       const transcriber = new AudioTranscriber();
       transcriber.onSpeechDetected = () => {
+        setHasSpeechStartedForCurrentAttempt(true);
         setResponseTimerActive(true);
+        startTranscriptionHealthMonitor();
       };
       transcriber.onDebugMetrics = (metrics: AudioTranscriberMetrics) => {
         if (import.meta.env.DEV) {
@@ -563,17 +759,24 @@ const SearchoAI = ({
       };
       transcriber.onComplete = async (finalText: string) => {
         audioTranscriberRef.current = null;
+        clearTranscriptionHealthMonitor();
         setIsListening(false);
         setIsTranscribing(false);
         setIsWaitingForAnswer(false);
         setResponseTimerActive(false);
         setNeedsRetryRecording(false);
-
-        const normalizedTranscript = finalText.trim();
-        setUserTranscript(normalizedTranscript);
+        setResumeAfterFailure(false);
+        setResponseRecoveryMessage(null);
 
         const recording = await stopResponseRecording(false);
+        const normalizedTranscript = mergeTranscriptSegments(draftTranscript, finalText.trim());
+        const totalDurationMs = draftAudioDurationMs + recording.durationMs;
+        setDraftTranscript(normalizedTranscript);
+        setDraftAudioDurationMs(totalDurationMs);
+        setUserTranscript(normalizedTranscript);
+
         pendingResponseMediaRef.current = { ...recording, questionId: currentQuestion.id };
+        await persistDraftResponse(normalizedTranscript, totalDurationMs);
 
         setEditableTranscript(normalizedTranscript);
         setIsReviewingTranscript(true);
@@ -586,22 +789,51 @@ const SearchoAI = ({
       };
       transcriber.onError = async (error: string) => {
         audioTranscriberRef.current = null;
+        clearTranscriptionHealthMonitor();
         setIsTranscribing(false);
         setIsListening(false);
         setResponseTimerActive(false);
+        setHasSpeechStartedForCurrentAttempt(false);
 
         await discardPendingResponseMedia();
 
-        if (error === 'NO_SPEECH_DETECTED') {
-          setUserTranscript('');
-          setEditableTranscript('');
-          setIsReviewingTranscript(false);
-          setIsWaitingForAnswer(true);
-          setNeedsRetryRecording(true);
-          setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
+        if (error === 'PREP_TIMEOUT' || error === 'NO_SPEECH_DETECTED') {
+          setUserTranscript(draftTranscript);
+          setEditableTranscript(draftTranscript);
+          enterRecoveryState('10 saniye içinde konuşma başlamadı. Aynı soruda yeniden deneyebilirsiniz.', {
+            resume: false,
+            allowGraceIfNeeded: false,
+          });
           toast({
             title: 'Ses algılanmadı',
-            description: 'Lütfen yanıtınızı net bir şekilde sesli olarak verin.',
+            description: 'Yanıta başlamak için 10 saniye içinde konuşmanız gerekiyor.',
+          });
+          return;
+        }
+
+        const isSystemFailure = [
+          'TRANSCRIPTION_FAILED',
+          'RECORDING_HEALTH_FAILURE',
+          'TRANSCRIPTION_SERVICE_UNAVAILABLE',
+          'MICROPHONE_DISCONNECTED',
+        ].includes(error);
+
+        if (isSystemFailure) {
+          setUserTranscript(draftTranscript);
+          setEditableTranscript(draftTranscript);
+          enterRecoveryState(
+            responseTimeRemaining <= 0 && !hasUsedRecoveryGrace
+              ? 'Kayıt ya da transcript zincirinde sorun algılandı. Aynı soruda devam etmeniz için 30 saniyelik ek süre tanındı.'
+              : 'Kayıt ya da transcript zincirinde sorun algılandı. Yanıtınızın boşa gitmemesi için kayıt durduruldu; aynı soruda kaldığınız yerden devam edebilirsiniz.',
+            {
+              resume: true,
+              allowGraceIfNeeded: true,
+            },
+          );
+          toast({
+            title: 'Kayıt durduruldu',
+            description: 'Yanıt kaybını önlemek için aynı soruda devam moduna alındınız.',
+            variant: 'destructive',
           });
           return;
         }
@@ -611,25 +843,48 @@ const SearchoAI = ({
           description: 'Ses kaydı başarısız oldu. Tekrar deneyin.',
           variant: 'destructive',
         });
-        setIsWaitingForAnswer(true);
-        setNeedsRetryRecording(true);
+        enterRecoveryState('Ses kaydı başarısız oldu. Aynı soruda yeniden deneyebilirsiniz.', {
+          resume: true,
+          allowGraceIfNeeded: false,
+        });
       };
 
       audioTranscriberRef.current = transcriber;
       await transcriber.start(microphoneStream);
     } catch (error) {
       console.error('Failed to start listening:', error);
+      clearTranscriptionHealthMonitor();
       setIsListening(false);
       setIsTranscribing(false);
-      setIsWaitingForAnswer(true);
-      setNeedsRetryRecording(true);
+      enterRecoveryState('Mikrofon başlatılamadı. Aynı soruda yeniden deneyebilirsiniz.', {
+        resume: true,
+        allowGraceIfNeeded: false,
+      });
       toast({
         title: 'Mikrofon Hatası',
         description: 'Mikrofon başlatılamadı. Lütfen tekrar deneyin.',
         variant: 'destructive',
       });
     }
-  }, [currentQuestion, discardPendingResponseMedia, ensureMicrophoneStream, isSubmittingResponse, startResponseRecording, stopResponseRecording, submitCurrentResponse, toast]);
+  }, [
+    clearTranscriptionHealthMonitor,
+    currentQuestion,
+    discardPendingResponseMedia,
+    draftAudioDurationMs,
+    draftTranscript,
+    ensureMicrophoneStream,
+    ensureTranscriptionPipelineHealthy,
+    enterRecoveryState,
+    hasUsedRecoveryGrace,
+    isSubmittingResponse,
+    mergeTranscriptSegments,
+    persistDraftResponse,
+    responseTimeRemaining,
+    startResponseRecording,
+    startTranscriptionHealthMonitor,
+    stopResponseRecording,
+    toast,
+  ]);
 
   const reRecordAnswer = useCallback(async () => {
     setIsReviewingTranscript(false);
@@ -637,10 +892,17 @@ const SearchoAI = ({
     setEditableTranscript('');
     setIsWaitingForAnswer(true);
     setNeedsRetryRecording(false);
+    setResponseRecoveryMessage(null);
+    setResumeAfterFailure(false);
+    setDraftTranscript('');
+    setDraftAudioDurationMs(0);
     setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
+    setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
     setResponseTimerExpired(false);
     setResponseTimerActive(false);
-    await startListening();
+    setHasSpeechStartedForCurrentAttempt(false);
+    setHasUsedRecoveryGrace(false);
+    await startListening({ resetDuration: true, preserveDraft: false });
   }, [startListening]);
 
   const confirmAndSaveResponse = useCallback(async () => {
@@ -662,6 +924,7 @@ const SearchoAI = ({
     }
 
     try {
+      clearTranscriptionHealthMonitor();
       if (audioTranscriberRef.current) {
         audioTranscriberRef.current.cancel();
         audioTranscriberRef.current = null;
@@ -685,7 +948,7 @@ const SearchoAI = ({
         variant: 'destructive',
       });
     }
-  }, [applyInterviewState, currentQuestion, discardPendingResponseMedia, projectContext?.sessionId, toast]);
+  }, [applyInterviewState, clearTranscriptionHealthMonitor, currentQuestion, discardPendingResponseMedia, projectContext?.sessionId, toast]);
 
   const toggleMicrophone = useCallback(() => {
     if (isListening || isTranscribing) {
@@ -698,6 +961,7 @@ const SearchoAI = ({
 
   useEffect(() => {
     return () => {
+      clearTranscriptionHealthMonitor();
       if (audioTranscriberRef.current) {
         audioTranscriberRef.current.cancel();
         audioTranscriberRef.current = null;
@@ -708,7 +972,7 @@ const SearchoAI = ({
       microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
       microphoneStreamRef.current = null;
     };
-  }, [stopResponseRecording]);
+  }, [clearTranscriptionHealthMonitor, stopResponseRecording]);
 
   const getSessionDuration = () => {
     if (!sessionStartTime) return '00:00';
@@ -718,17 +982,29 @@ const SearchoAI = ({
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  const getResponseTimerLabel = () => {
-    const minutes = Math.floor(responseTimeRemaining / 60);
-    const seconds = responseTimeRemaining % 60;
+  const formatTimerLabel = (totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  const responseTimerTone = responseTimeRemaining <= 10
-    ? 'text-red-600'
-    : responseTimeRemaining <= 30
-      ? 'text-amber-600'
-      : 'text-foreground';
+  const isInPrepWindow = isListening && !hasSpeechStartedForCurrentAttempt && !responseTimerActive;
+  const responseTimerLabel = formatTimerLabel(isInPrepWindow ? prepTimeRemaining : responseTimeRemaining);
+  const responseTimerHeading = isInPrepWindow ? 'Hazırlık süresi' : 'Yanıt süresi';
+  const responseTimerDescription = isInPrepWindow
+    ? '10 sn içinde konuşmaya başlayın. İlk sesinizle 2 dk başlar.'
+    : 'Konuşmaya başladıktan sonra 2 dk boyunca yanıt verebilirsiniz.';
+  const responseTimerTone = isInPrepWindow
+    ? prepTimeRemaining <= 3
+      ? 'text-red-600'
+      : prepTimeRemaining <= 5
+        ? 'text-amber-600'
+        : 'text-foreground'
+    : responseTimeRemaining <= 10
+      ? 'text-red-600'
+      : responseTimeRemaining <= 30
+        ? 'text-amber-600'
+        : 'text-foreground';
 
   if (!isActive) return null;
 
@@ -800,14 +1076,14 @@ const SearchoAI = ({
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                            Yanit suresi
+                            {responseTimerHeading}
                           </p>
                           <p className="mt-1 text-sm text-muted-foreground">
-                            2 dk içerisinde cevaplayabilirsiniz.
+                            {responseTimerDescription}
                           </p>
                         </div>
                         <div className={`text-2xl font-semibold tabular-nums ${responseTimerTone}`}>
-                          {getResponseTimerLabel()}
+                          {responseTimerLabel}
                         </div>
                       </div>
                     </div>
@@ -885,15 +1161,27 @@ const SearchoAI = ({
                           <div className="flex flex-col items-center justify-center gap-3 min-h-[80px]">
                             <Mic className="h-8 w-8 text-gray-400 animate-pulse" />
                             <p className="text-base text-gray-600 font-medium text-center">
-                              Lütfen yanıtınızı sesli olarak verin...
+                              {responseRecoveryMessage ?? 'Lütfen yanıtınızı sesli olarak verin...'}
                             </p>
+                            {draftTranscript ? (
+                              <div className="w-full max-w-2xl rounded-xl bg-white/80 p-4 text-left shadow-sm">
+                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                  Şu ana kadar kaydedilen kısım
+                                </p>
+                                <p className="mt-2 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">
+                                  {draftTranscript}
+                                </p>
+                              </div>
+                            ) : null}
                             <div className="flex flex-wrap items-center justify-center gap-3">
-                              <Button onClick={finishCurrentAnswer} size="lg" className="bg-brand-primary text-white hover:bg-brand-primary-hover" disabled={!isListening && !isTranscribing}>
-                                Yanıtı Bitir
-                              </Button>
+                              {isListening || isTranscribing ? (
+                                <Button onClick={finishCurrentAnswer} size="lg" className="bg-brand-primary text-white hover:bg-brand-primary-hover">
+                                  Yanıtı Bitir
+                                </Button>
+                              ) : null}
                               {needsRetryRecording ? (
-                                <Button onClick={() => void reRecordAnswer()} size="lg" variant="outline">
-                                  Tekrar Kaydet
+                                <Button onClick={() => void startListening({ resetDuration: false, preserveDraft: true })} size="lg" variant="outline">
+                                  {resumeAfterFailure ? 'Kaldığın Yerden Devam Et' : 'Tekrar Kaydet'}
                                 </Button>
                               ) : null}
                               <Button onClick={() => void skipQuestion()} variant="outline" size="lg">

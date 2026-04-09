@@ -1,14 +1,19 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Send, User } from "lucide-react";
-import { supabase } from '@/integrations/supabase/client';
-import { SearchoMark } from "@/components/icons/SearchoMark";
+import {
+  buildCompactConversationPayload,
+  streamEdgeFunction,
+} from "@/lib/edgeFunctionStream";
 
 export interface ChatMessage {
   id: string;
   type: 'user' | 'ai';
   content: string;
   timestamp: Date;
+  status?: 'thinking' | 'streaming' | 'done' | 'error';
+  showThinking?: boolean;
+  showDot?: boolean;
   clarifications?: Array<{
     question: string;
     answer: string;
@@ -55,6 +60,10 @@ interface SendToLlmOptions {
   forcePlan?: boolean;
   forceGuideEditPlan?: boolean;
 }
+
+const THINKING_LABEL_DELAY_MS = 1000;
+const THINKING_DOT_DELAY_MS = 2200;
+const MIN_THINKING_VISIBLE_MS = 3200;
 
 const isInlineImageUrl = (value?: string) => typeof value === "string" && value.startsWith("data:image/");
 
@@ -154,8 +163,75 @@ const ChatPanel = ({
   );
 
   const endRef = useRef<HTMLDivElement | null>(null);
-  const isWritingResearchPlanRef = useRef(false);
   const hasTriggeredInitialMessageRef = useRef(initialMessages.length > 0 || initialConversationHistory.length > 0);
+  const assistantStageTimersRef = useRef<Record<string, number[]>>({});
+  const assistantStreamStateRef = useRef<Record<string, { createdAt: number; pending: string; revealTimerId?: number }>>({});
+
+  const clearAssistantStageTimers = useCallback((messageId: string) => {
+    const timers = assistantStageTimersRef.current[messageId];
+    if (!timers?.length) return;
+
+    timers.forEach((timerId) => window.clearTimeout(timerId));
+    delete assistantStageTimersRef.current[messageId];
+  }, []);
+
+  const scheduleAssistantStageTimers = useCallback((messageId: string) => {
+    clearAssistantStageTimers(messageId);
+
+    const thinkingTimer = window.setTimeout(() => {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === messageId && message.status === 'thinking' && message.content.trim().length === 0
+            ? { ...message, showThinking: true }
+            : message,
+        ),
+      );
+    }, THINKING_LABEL_DELAY_MS);
+
+    const dotTimer = window.setTimeout(() => {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === messageId && message.status === 'thinking' && message.content.trim().length === 0
+            ? { ...message, showThinking: true, showDot: true }
+            : message,
+        ),
+      );
+    }, THINKING_DOT_DELAY_MS);
+
+    assistantStageTimersRef.current[messageId] = [thinkingTimer, dotTimer];
+  }, [clearAssistantStageTimers]);
+
+  const clearAssistantStreamState = useCallback((messageId: string) => {
+    const state = assistantStreamStateRef.current[messageId];
+    if (state?.revealTimerId) {
+      window.clearTimeout(state.revealTimerId);
+    }
+    delete assistantStreamStateRef.current[messageId];
+  }, []);
+
+  const revealAssistantPendingContent = useCallback((messageId: string, status: 'streaming' | 'done', fallbackContent?: string) => {
+    clearAssistantStageTimers(messageId);
+    const state = assistantStreamStateRef.current[messageId];
+    const nextContent = fallbackContent ?? state?.pending ?? '';
+
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              content: nextContent,
+              status,
+              showThinking: false,
+              showDot: false,
+            }
+          : message,
+      ),
+    );
+
+    if (state) {
+      state.revealTimerId = undefined;
+    }
+  }, [clearAssistantStageTimers]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -169,6 +245,17 @@ const ChatPanel = ({
     onConversationHistoryUpdate?.(conversationHistory);
   }, [conversationHistory, onConversationHistoryUpdate]);
 
+  useEffect(() => {
+    return () => {
+      Object.keys(assistantStageTimersRef.current).forEach((messageId) => {
+        clearAssistantStageTimers(messageId);
+      });
+      Object.keys(assistantStreamStateRef.current).forEach((messageId) => {
+        clearAssistantStreamState(messageId);
+      });
+    };
+  }, [clearAssistantStageTimers, clearAssistantStreamState]);
+
   // Load initial message from localStorage if available
   useEffect(() => {
     if (projectData?.description && !hasTriggeredInitialMessageRef.current && !discussionGuide?.sections?.length) {
@@ -176,28 +263,6 @@ const ChatPanel = ({
       handleInitialMessage(projectData.description);
     }
   }, [discussionGuide?.sections?.length, projectData]);
-
-  const buildUsabilityContextBlock = () => {
-    const usability = projectData?.analysis?.usabilityTesting;
-    if (!usability) return "";
-
-    const screens = Array.isArray(projectData?.analysis?.designScreens)
-      ? projectData.analysis.designScreens
-          .map((screen: any, index: number) => `${index + 1}. ${screen.name || "Screen"} (${screen.source || "unknown"})`)
-          .join("\n")
-      : "Screen bilgisi yok";
-
-    return `\n\n[USABILITY_TESTING_CONTEXT]
-Bu proje ekran tabanli kullanilabilirlik testidir.
-Arastirma amaci: ${usability.objective || "Belirtilmedi"}
-Ana kullanici gorevi: ${usability.primaryTask || "Belirtilmedi"}
-Hedef kullanicilar: ${usability.targetUsers || "Belirtilmedi"}
-Basari kriterleri: ${usability.successSignals || "Belirtilmedi"}
-Riskli alanlar: ${usability.riskAreas || "Belirtilmedi"}
-Ekran listesi:
-${screens}
-Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik odaginda olustur.`;
-  };
 
   const getClarificationRecap = () => {
     const usability = projectData?.analysis?.usabilityTesting;
@@ -268,7 +333,6 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
 
   const handleInitialMessage = async (initialMessage: string) => {
     const initialPrompt = buildInitialPrompt(initialMessage);
-    const contextualInitialMessage = `${initialPrompt.outgoingMessage}${buildUsabilityContextBlock()}`;
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
@@ -279,7 +343,7 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
     };
     
     setMessages([userMessage]);
-    await sendToLLM(contextualInitialMessage, { forcePlan: initialPrompt.forcePlan });
+    await sendToLLM(initialPrompt.outgoingMessage, { forcePlan: initialPrompt.forcePlan });
   };
 
   const sendToLLM = async (messageText: string, options: SendToLlmOptions = {}) => {
@@ -291,118 +355,82 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
     }
 
     const researchContext = getResearchContext();
-    
-    // Add loading message
+    const assistantMessageId = `ai-stream-${Date.now()}`;
+    const compactConversation = buildCompactConversationPayload(conversationHistory);
+
     const loadingMessage: ChatMessage = {
-      id: `ai-loading-${Date.now()}`,
+      id: assistantMessageId,
       type: 'ai',
-      content: options.forceGuideEditPlan ? 'Plan güncelleniyor...' : 'Hazırlanıyor...',
-      timestamp: new Date()
+      content: '',
+      timestamp: new Date(),
+      status: 'thinking',
+      showThinking: false,
+      showDot: false,
     };
     setMessages(prev => [...prev, loadingMessage]);
+    assistantStreamStateRef.current[assistantMessageId] = {
+      createdAt: Date.now(),
+      pending: '',
+    };
+    scheduleAssistantStageTimers(assistantMessageId);
     
     try {
-      const { data, error } = await supabase.functions.invoke('turkish-chat', {
-        body: { 
+      const data = await streamEdgeFunction<any>({
+        functionName: 'turkish-chat',
+        body: {
           message: messageText,
-          conversationHistory: conversationHistory,
+          conversationHistory: compactConversation.conversationHistory,
+          conversationSummary: compactConversation.conversationSummary,
           researchContext,
           guideContext: discussionGuide,
           researchMode: projectData?.analysis?.researchMode ?? "structured",
           forcePlan: options.forcePlan === true,
           forceGuideEditPlan: options.forceGuideEditPlan === true,
-        }
+        },
+        onEvent: (event) => {
+          if (event.event === 'assistant_delta' && event.delta) {
+            const state = assistantStreamStateRef.current[assistantMessageId];
+            if (!state) return;
+
+            state.pending = `${state.pending}${event.delta}`;
+            const elapsed = Date.now() - state.createdAt;
+
+            if (elapsed >= MIN_THINKING_VISIBLE_MS) {
+              revealAssistantPendingContent(assistantMessageId, 'streaming');
+              return;
+            }
+
+            if (!state.revealTimerId) {
+              state.revealTimerId = window.setTimeout(() => {
+                revealAssistantPendingContent(assistantMessageId, 'streaming');
+              }, MIN_THINKING_VISIBLE_MS - elapsed);
+            }
+          }
+        },
       });
 
-      if (error) {
-        throw error;
+      setConversationHistory(data.conversationHistory || []);
+      const state = assistantStreamStateRef.current[assistantMessageId];
+      const finalReply = typeof data.reply === 'string' ? data.reply : (state?.pending ?? '');
+      if (state) {
+        state.pending = finalReply;
       }
 
-      setConversationHistory(data.conversationHistory || []);
+      const elapsed = state ? Date.now() - state.createdAt : MIN_THINKING_VISIBLE_MS;
+      if (elapsed < MIN_THINKING_VISIBLE_MS) {
+        await new Promise((resolve) => window.setTimeout(resolve, MIN_THINKING_VISIBLE_MS - elapsed));
+      }
 
-      // Handle research plan generation - MUST check this first to prevent showing chat response
+      revealAssistantPendingContent(assistantMessageId, 'done', finalReply);
+      clearAssistantStreamState(assistantMessageId);
+
       if (data.researchPlan && onResearchPlanGenerated) {
-        if (!shouldShowGuideSkeleton) {
-          onResearchPlanLoadingChange?.(true);
-        }
-
-        // Keep the loading message visible while questions are being typed
-        // Update it to show a different message
-        setMessages(prev => prev.map(msg =>
-          msg.id.includes('loading')
-            ? {
-                ...msg,
-                content: options.forceGuideEditPlan
-                  ? 'Plan güncelleniyor...'
-                  : 'Sorular hazırlanıyor...'
-              }
-            : msg
-        ));
-
-        // Trigger research panel with structured questions
         onResearchPlanGenerated(data.researchPlan);
         if (onResearchDetected) {
           onResearchDetected(true);
         }
-
-        // Calculate animation duration based on questions
-        const calculateAnimationDuration = () => {
-          if (!data.researchPlan?.sections) return 2000;
-
-          let totalDuration = 2000; // Base delay from StudyPanel
-
-          data.researchPlan.sections.forEach((section: any, sectionIndex: number) => {
-            // Each question has 800ms delay + typewriter time
-            totalDuration += section.questions.length * 800;
-            // Add 400ms buffer between sections
-            if (sectionIndex < data.researchPlan.sections.length - 1) {
-              totalDuration += 400;
-            }
-          });
-
-          return totalDuration;
-        };
-
-        const animationDuration = calculateAnimationDuration();
-
-        // Mark that we're writing research plan - prevents finally block from turning off loading
-        isWritingResearchPlanRef.current = true;
-
-        // After animations complete, replace loading with success message
-        setTimeout(() => {
-          setMessages(prev => {
-            const filtered = prev.filter(msg => !msg.id.includes('loading'));
-            const successMessage: ChatMessage = {
-              id: `ai-success-${Date.now()}`,
-              type: 'ai',
-              content: options.forceGuideEditPlan
-                ? 'Planı güncelledim. İstersen devam edelim.'
-                : 'Sorular hazır. İstersen birlikte revize edebiliriz.',
-              timestamp: new Date()
-            };
-            return [...filtered, successMessage];
-          });
-          isWritingResearchPlanRef.current = false;
-          onResearchPlanLoadingChange?.(false);
-          setIsLoading(false);
-        }, animationDuration);
-
-        // Early return - loading state stays on, controlled by setTimeout above
-        return;
       }
       
-      // Only add AI chat response if no research plan was generated
-      setMessages(prev => {
-        const filtered = prev.filter(msg => !msg.id.includes('loading'));
-        const assistantMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          type: 'ai',
-          content: data.reply,
-          timestamp: new Date()
-        };
-        return [...filtered, assistantMessage];
-      });
-
       if (shouldShowGuideSkeleton) {
         onResearchPlanLoadingChange?.(false);
       }
@@ -415,24 +443,22 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
     } catch (error) {
       console.error('Error sending message to LLM:', error);
       onResearchPlanLoadingChange?.(false);
-      
-      // Remove loading message and add error message
-      setMessages(prev => {
-        const filtered = prev.filter(msg => !msg.id.includes('loading'));
-        const errorMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          type: 'ai',
-          content: 'Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.',
-          timestamp: new Date()
-        };
-        return [...filtered, errorMessage];
-      });
+      clearAssistantStageTimers(assistantMessageId);
+      clearAssistantStreamState(assistantMessageId);
+
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMessageId
+          ? {
+              ...msg,
+              content: 'Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.',
+              status: 'error',
+              showThinking: false,
+              showDot: false,
+            }
+          : msg
+      ));
     } finally {
-      // Only turn off loading if we're not in the middle of writing research plan
-      // (research plan loading is controlled by its own setTimeout)
-      if (!isWritingResearchPlanRef.current) {
-        setIsLoading(false);
-      }
+      setIsLoading(false);
     }
   };
 
@@ -482,7 +508,6 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
     if (messages.length === 0) {
       return centered ? (
         <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-          <SearchoMark className="mb-5 h-12 w-12 text-brand-primary/70" />
           <h2 className="text-2xl font-semibold text-text-primary">Araştırma çerçevesini birlikte netleştirelim</h2>
           <p className="mt-3 max-w-2xl text-sm leading-7 text-text-secondary">
             Araştırmak istediğin konuyu birkaç cümleyle yaz. Searcho önce bağlamı anlayacak, sonra doğru anda planı açacak.
@@ -490,7 +515,6 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
         </div>
       ) : (
         <div className="py-8 text-center text-text-muted">
-          <SearchoMark className="mx-auto mb-4 h-12 w-12 text-brand-primary opacity-50" />
           <p>Merhaba! Size nasıl yardımcı olabilirim?</p>
           <p className="mt-2 text-sm">Sormak istediğiniz her şeyi yazabilirsiniz.</p>
         </div>
@@ -556,16 +580,39 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
       }
 
       return (
-        <div key={message.id} className="flex justify-start space-x-3">
-          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-primary-light text-brand-primary">
-            <SearchoMark className="h-4 w-4" />
-          </div>
-
+        <div key={message.id} className="flex justify-start">
           <div className={`flex-1 ${bubbleWidth}`}>
-            <div className="rounded-2xl border border-border bg-surface px-4 py-3 text-text-primary">
-              <p className="text-sm leading-relaxed whitespace-pre-line">
-                {message.content}
-              </p>
+            <div className="px-1 py-1 text-text-primary min-h-[44px]">
+              {message.content.trim().length > 0 ? (
+                <p className="text-sm leading-relaxed whitespace-pre-line">
+                  {message.content}
+                </p>
+              ) : message.showThinking || message.showDot ? (
+                <div className="space-y-2 py-1">
+                  <p
+                    className={`chat-thinking-shimmer origin-left text-sm font-medium transform-gpu transition-all duration-700 ${
+                      message.showThinking
+                        ? "translate-y-0 scale-100 opacity-100"
+                        : "translate-y-2 scale-[0.985] opacity-0"
+                    }`}
+                    style={{ transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
+                  >
+                    Düşünüyor...
+                  </p>
+                  <div
+                    className={`chat-thinking-dot origin-left text-[1.6rem] font-medium leading-none text-text-muted/80 transform-gpu transition-all duration-900 ${
+                      message.showDot
+                        ? "translate-y-0 scale-100 opacity-100"
+                        : "translate-y-2 scale-95 opacity-0"
+                    }`}
+                    style={{ transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
+                  >
+                    .
+                  </div>
+                </div>
+              ) : (
+                <div className="h-[38px]" />
+              )}
             </div>
             <p className="mt-1 ml-4 text-xs text-text-muted">
               {timestamp}
@@ -578,31 +625,17 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
 
   if (isCenteredLayout) {
     return (
-      <div className="h-full overflow-hidden bg-white">
+      <div className="h-full overflow-hidden bg-[rgba(121,76,255,0.045)]">
         <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 py-8">
           <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto min-h-0 scroll-smooth">
+            <div className="flex-1 overflow-y-auto min-h-0 scroll-smooth scrollbar-hide">
               <div className="min-h-full space-y-5 py-6">
                 {renderMessages(true)}
-                {isLoading && (
-                  <div className="flex justify-start space-x-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-primary-light text-brand-primary">
-                      <SearchoMark className="h-4 w-4" />
-                    </div>
-                    <div className="rounded-2xl border border-border bg-surface p-3 text-text-primary">
-                      <div className="flex space-x-1">
-                        <div className="h-2 w-2 animate-bounce rounded-full bg-text-secondary"></div>
-                        <div className="h-2 w-2 animate-bounce rounded-full bg-text-secondary" style={{ animationDelay: '0.1s' }}></div>
-                        <div className="h-2 w-2 animate-bounce rounded-full bg-text-secondary" style={{ animationDelay: '0.2s' }}></div>
-                      </div>
-                    </div>
-                  </div>
-                )}
                 <div ref={endRef} />
               </div>
             </div>
 
-            <div className="border-t border-border-light bg-white/95 pt-4 pb-[env(safe-area-inset-bottom)]">
+            <div className="border-t border-border-light bg-white/88 pt-4 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm">
               <div className="rounded-3xl border border-border-light bg-surface/30 p-3 shadow-sm">
                 <div className="flex items-end space-x-3">
                   <textarea
@@ -633,7 +666,7 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden bg-[rgba(121,76,255,0.045)]">
       <div className="border-b border-border-light p-4">
         <div className="flex items-center justify-between">
           <div className="flex-1">
@@ -643,26 +676,12 @@ Lutfen bu baglamla uyumlu sorular sor ve arastirma planini kullanilabilirlik oda
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 scroll-smooth space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 scroll-smooth space-y-4 scrollbar-hide">
         {renderMessages(false)}
-        {isLoading && (
-          <div className="flex justify-start space-x-3">
-            <div className="w-8 h-8 bg-brand-primary-light text-brand-primary rounded-full flex items-center justify-center">
-              <SearchoMark className="w-4 h-4" />
-            </div>
-            <div className="bg-surface text-text-primary border border-border p-3 rounded-2xl">
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-text-secondary rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                <div className="w-2 h-2 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-              </div>
-            </div>
-          </div>
-        )}
         <div ref={endRef} />
       </div>
 
-      <div className="flex-shrink-0 bg-white border-t border-border-light pb-[env(safe-area-inset-bottom)]">
+      <div className="flex-shrink-0 bg-white/88 border-t border-border-light pb-[env(safe-area-inset-bottom)] backdrop-blur-sm">
         <div className="p-4">
           <div className="flex items-end space-x-3">
             <textarea

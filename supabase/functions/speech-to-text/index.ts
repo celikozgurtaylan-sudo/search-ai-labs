@@ -42,7 +42,39 @@ serve(async (req) => {
   }
 
   try {
-    const { audio, language = 'tr' } = await req.json();
+    const { audio, language = 'tr', healthcheck = false } = await req.json();
+    const openAiApiKey = Deno.env.get('OPENAI_API_KEY');
+
+    if (!openAiApiKey) {
+      throw new Error('OPENAI_API_KEY is not configured');
+    }
+
+    if (healthcheck) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      try {
+        const response = await fetch('https://api.openai.com/v1/models/whisper-1', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${openAiApiKey}`,
+          },
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`OpenAI healthcheck error: ${errorText}`);
+        }
+
+        return new Response(
+          JSON.stringify({ ok: true, checkedAt: new Date().toISOString() }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
     
     if (!audio) {
       throw new Error('No audio data provided');
@@ -64,7 +96,7 @@ serve(async (req) => {
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+        'Authorization': `Bearer ${openAiApiKey}`,
       },
       body: formData,
     });

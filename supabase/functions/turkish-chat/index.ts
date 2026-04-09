@@ -30,7 +30,10 @@ const supabase = createClient(
 // One model to rule them all — o4-mini handles everything:
 // intent detection, Socratic questioning, and plan generation.
 // ============================================================
-const MODEL = Deno.env.get('ORCHESTRATOR_MODEL') || 'o4-mini-2025-04-16';
+const MODEL = Deno.env.get('ORCHESTRATOR_MODEL') || 'gpt-4.1';
+const MAX_RECENT_TURNS = 6;
+const MAX_SUMMARY_ITEMS = 8;
+const MAX_SUMMARY_CHARS = 160;
 
 // ============================================================
 // RESPONSE FORMAT — enforces structured JSON output
@@ -560,6 +563,100 @@ const mergeAdditiveGuideUpdate = (currentGuide: any, nextGuide: any, mode: Resea
   };
 };
 
+const truncateText = (value: string, maxLength: number) =>
+  value.length > maxLength ? `${value.slice(0, maxLength - 1).trimEnd()}...` : value;
+
+const normalizeConversationHistory = (history: Array<{ role: string; content: string }>) =>
+  (Array.isArray(history) ? history : [])
+    .map((entry) => ({
+      role: entry?.role === "assistant" ? "assistant" : "user",
+      content: cleanText(entry?.content || ""),
+    }))
+    .filter((entry) => entry.content.length > 0);
+
+const buildConversationWindow = (
+  history: Array<{ role: string; content: string }>,
+  existingSummary = "",
+) => {
+  const normalizedHistory = normalizeConversationHistory(history);
+  const recentHistory = normalizedHistory.slice(-MAX_RECENT_TURNS);
+  const olderHistory = normalizedHistory.slice(0, -MAX_RECENT_TURNS);
+  const derivedSummary = olderHistory
+    .slice(-MAX_SUMMARY_ITEMS)
+    .map((entry) =>
+      `${entry.role === "assistant" ? "Asistan" : "Kullanici"}: ${truncateText(entry.content, MAX_SUMMARY_CHARS)}`,
+    )
+    .join("\n");
+
+  return {
+    recentHistory,
+    summary: cleanText([cleanText(existingSummary), derivedSummary].filter(Boolean).join("\n"), ""),
+  };
+};
+
+const decodeEscapedCharacter = (nextChar: string) => {
+  switch (nextChar) {
+    case "n":
+      return "\n";
+    case "r":
+      return "";
+    case "t":
+      return "\t";
+    case '"':
+      return '"';
+    case "\\":
+      return "\\";
+    default:
+      return nextChar;
+  }
+};
+
+const extractPartialJsonStringField = (rawText: string, fieldName: string) => {
+  const marker = `"${fieldName}"`;
+  const markerIndex = rawText.indexOf(marker);
+  if (markerIndex === -1) return "";
+
+  const colonIndex = rawText.indexOf(":", markerIndex + marker.length);
+  if (colonIndex === -1) return "";
+
+  let cursor = colonIndex + 1;
+  while (cursor < rawText.length && /\s/.test(rawText[cursor])) {
+    cursor += 1;
+  }
+
+  if (rawText[cursor] !== '"') return "";
+  cursor += 1;
+
+  let value = "";
+  let escaping = false;
+
+  while (cursor < rawText.length) {
+    const currentChar = rawText[cursor];
+
+    if (escaping) {
+      value += decodeEscapedCharacter(currentChar);
+      escaping = false;
+      cursor += 1;
+      continue;
+    }
+
+    if (currentChar === "\\") {
+      escaping = true;
+      cursor += 1;
+      continue;
+    }
+
+    if (currentChar === '"') {
+      break;
+    }
+
+    value += currentChar;
+    cursor += 1;
+  }
+
+  return value;
+};
+
 const requestStructuredResponse = async (openaiApiKey: string, messages: any[]) => {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -582,6 +679,74 @@ const requestStructuredResponse = async (openaiApiKey: string, messages: any[]) 
 
   const data = await response.json();
   return data.choices[0].message.content;
+};
+
+const requestStructuredResponseStream = async (
+  openaiApiKey: string,
+  messages: any[],
+  onJsonDelta?: (rawText: string) => void,
+) => {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${openaiApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages,
+      response_format: RESPONSE_FORMAT,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[Searcho] Streaming API error:', errorText);
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  if (!response.body) {
+    throw new Error('Streaming response body is missing');
+  }
+
+  const decoder = new TextDecoder();
+  const reader = response.body.getReader();
+  let buffer = '';
+  let rawText = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+    let lineBreakIndex = buffer.indexOf('\n');
+    while (lineBreakIndex !== -1) {
+      const line = buffer.slice(0, lineBreakIndex).trim();
+      buffer = buffer.slice(lineBreakIndex + 1);
+
+      if (line.startsWith('data:')) {
+        const payload = line.slice(5).trim();
+        if (payload === '[DONE]') {
+          break;
+        }
+
+        const parsed = JSON.parse(payload);
+        const delta = parsed?.choices?.[0]?.delta?.content;
+        if (typeof delta === 'string' && delta.length > 0) {
+          rawText += delta;
+          onJsonDelta?.(rawText);
+        }
+      }
+
+      lineBreakIndex = buffer.indexOf('\n');
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  return rawText;
 };
 
 const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
@@ -656,6 +821,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let requestedStream = false;
+
   try {
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openaiApiKey) {
@@ -665,37 +832,55 @@ serve(async (req) => {
     const {
       message,
       conversationHistory = [],
+      conversationSummary = "",
       researchContext = null,
       guideContext = null,
       researchMode = null,
       forcePlan = false,
       forceGuideEditPlan = false,
+      stream = false,
     } = await req.json();
-    console.log(`[Searcho] Message: "${message.substring(0, 80)}..."`);
-    console.log(`[Searcho] Conversation depth: ${Math.floor(conversationHistory.length / 2)}`);
+    requestedStream = stream === true;
+    const normalizedMessage = cleanText(message || "");
+    const { recentHistory, summary } = buildConversationWindow(conversationHistory, conversationSummary);
+    console.log(`[Searcho] Message: "${normalizedMessage.substring(0, 80)}..."`);
+    console.log(`[Searcho] Conversation depth: ${Math.floor(recentHistory.length / 2)}`);
 
     const questionMode = resolveQuestionMode({
       researchMode: typeof researchMode === "string" ? researchMode : null,
       hasUsabilityContext: Boolean(researchContext?.usabilityTesting),
     });
-    const learningHints = await loadQuestionLearningHints(supabase, {
-      mode: questionMode,
-      sectionIndex: 0,
-      limit: 6,
-    });
-    const learningHintsPrompt = formatQuestionLearningHints(learningHints);
     const normalizedGuideContext = normalizeResearchPlan(guideContext, questionMode);
+    const shouldLoadLearningHints =
+      forcePlan ||
+      forceGuideEditPlan ||
+      Boolean(normalizedGuideContext?.sections?.length) ||
+      Boolean(researchContext?.usabilityTesting) ||
+      normalizeForMatch(normalizedMessage).includes('arastirma') ||
+      normalizeForMatch(normalizedMessage).includes('test') ||
+      normalizeForMatch(normalizedMessage).includes('soru');
+    const learningHints = shouldLoadLearningHints
+      ? await loadQuestionLearningHints(supabase, {
+          mode: questionMode,
+          sectionIndex: 0,
+          limit: 4,
+        })
+      : [];
+    const learningHintsPrompt = formatQuestionLearningHints(learningHints);
 
-    // Build messages — system prompt as first user message (reasoning models)
-    // then conversation history, then current message
     const messages: any[] = [
-      { role: 'user', content: SYSTEM_PROMPT },
-      { role: 'assistant', content: 'Anlasıldı. Searcho AI asistanı olarak hazırım. Kullanıcının mesajını bekliyor ve karar çerçeveme göre yanıt vereceğim.' }
+      { role: 'system', content: SYSTEM_PROMPT },
     ];
 
     if (learningHintsPrompt) {
-      messages.push({ role: "user", content: learningHintsPrompt });
-      messages.push({ role: "assistant", content: "Öğrenilmiş soru kalıplarını aldım. Yeni üretimlerde bunlara göre hareket edeceğim." });
+      messages.push({ role: "system", content: learningHintsPrompt });
+    }
+
+    if (summary) {
+      messages.push({
+        role: "system",
+        content: `Konusmanin onceki ozeti:\n${summary}`,
+      });
     }
 
     if (researchContext?.usabilityTesting) {
@@ -720,12 +905,11 @@ Ek yonlendirme: ${researchContext.usabilityTesting.guidancePrompt || 'Yok'}
 Screen listesi:
 ${usableScreens || 'Screen bilgisi yok'}`;
 
-      messages.push({ role: 'user', content: usabilityContextPrompt });
-      messages.push({ role: 'assistant', content: 'Usability test baglamini aldim. Sorularimi ekran kullanilabilirligi ekseninde kuracagim.' });
+      messages.push({ role: 'system', content: usabilityContextPrompt });
 
       if (forcePlan) {
         messages.push({
-          role: 'user',
+          role: 'system',
           content: `Bu ilk degerlendirme turu. Netlestirme sorulari sormadan dogrudan action=PLAN ile kullanilabilirlik odakli arastirma plani uret. researchPlan null olamaz.`,
         });
       }
@@ -733,126 +917,170 @@ ${usableScreens || 'Screen bilgisi yok'}`;
 
     if (normalizedGuideContext?.sections?.length) {
       messages.push({
-        role: 'user',
-        content: `${describeGuideContext(normalizedGuideContext, questionMode)}
+        role: 'system',
+        content: forceGuideEditPlan
+          ? `${describeGuideContext(normalizedGuideContext, questionMode)}
 
 Kurallar:
 - Eger kullanici mevcut arastirma plani, bolumleri veya sorulari uzerinde bir degisiklik istiyorsa action=PLAN don.
 - PLAN donerken sadece degisen parcayi degil, TAM ve GUNCEL researchPlan don.
 - Kullanici acikca sil, kaldir veya cikar demedikce mevcut bolumleri ve sorulari koru.
 - Mevcut section id'lerini korumaya calis.
-- Kullanici sadece belirli bir bolumu tweak etmek istiyorsa diger bolumleri aynen koru.`,
-      });
-      messages.push({
-        role: 'assistant',
-        content: 'Mevcut arastirma planini aldim. Plani guncellerken tum plani geri donecek ve belirtilmeyen bolumleri koruyacagim.',
+- Kullanici sadece belirli bir bolumu tweak etmek istiyorsa diger bolumleri aynen koru.`
+          : `Mevcut bir arastirma plani zaten var.
+Baslik: ${cleanText(normalizedGuideContext.title, "Arastirma Plani")}
+Bolum sayisi: ${normalizedGuideContext.sections.length}
+Bu plan uzerinde degisiklik acikca istenmedikce action=CHAT tercih et.`,
       });
     }
 
     if (forceGuideEditPlan && normalizedGuideContext?.sections?.length) {
       messages.push({
-        role: 'user',
+        role: 'system',
         content: 'Kullanici mevcut arastirma planini guncellemek istiyor. action=PLAN ile yanit ver. researchPlan null olamaz. Tam guncellenmis plani dondur.',
       });
     }
 
-    // Add conversation history
-    for (const msg of conversationHistory) {
+    for (const msg of recentHistory) {
       messages.push({
         role: msg.role === 'user' ? 'user' : 'assistant',
         content: msg.content
       });
     }
 
-    // Add current message
-    messages.push({ role: 'user', content: message });
+    messages.push({ role: 'user', content: normalizedMessage });
 
     console.log(`[Searcho] Calling ${MODEL} with ${messages.length} messages`);
+    const resolveFinalPayload = async (sendDelta?: (delta: string) => void) => {
+      let streamedReply = "";
+      const content = sendDelta
+        ? await requestStructuredResponseStream(openaiApiKey, messages, (rawText) => {
+            const nextReply = extractPartialJsonStringField(rawText, "chatResponse");
+            if (!nextReply || nextReply.length <= streamedReply.length) {
+              return;
+            }
 
-    // Single API call — o4-mini handles everything
-    let content = await requestStructuredResponse(openaiApiKey, messages);
+            const delta = nextReply.slice(streamedReply.length);
+            streamedReply = nextReply;
+            sendDelta(delta);
+          })
+        : await requestStructuredResponse(openaiApiKey, messages);
 
-    console.log(`[Searcho] Raw response: ${content.substring(0, 200)}...`);
+      console.log(`[Searcho] Raw response: ${content.substring(0, 200)}...`);
 
-    // Parse the structured response
-    let parsed;
-    try {
-      parsed = JSON.parse(content);
-    } catch (e) {
-      console.error('[Searcho] JSON parse failed:', e);
-      return new Response(JSON.stringify({
-        reply: 'Üzgünüm, yanıtı işlerken bir sorun yaşadım. Tekrar deneyebilir misiniz?',
-        isResearchRelated: false,
-        researchPlan: null,
-        conversationHistory: [
-          ...conversationHistory,
-          { role: 'user', content: message }
-        ]
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      let parsed;
+      try {
+        parsed = JSON.parse(content);
+      } catch (error) {
+        console.error('[Searcho] JSON parse failed:', error);
+        throw new Error('Model yaniti gecersiz JSON dondu');
+      }
+
+      if (forcePlan && (parsed.action !== 'PLAN' || parsed.researchPlan === null)) {
+        console.log('[Searcho] Model returned CHAT while PLAN was required, using fallback usability plan');
+        parsed = buildUsabilityFallbackPlan(normalizedMessage, researchContext);
+      }
+
+      const isResearchPlan = parsed.action === 'PLAN' && parsed.researchPlan !== null;
+
+      if (isResearchPlan) {
+        parsed.researchPlan = normalizeResearchPlan(parsed.researchPlan, questionMode);
+
+        if (forceGuideEditPlan && isAdditiveGuideEditRequest(normalizedMessage) && normalizedGuideContext?.sections?.length) {
+          parsed.researchPlan = mergeAdditiveGuideUpdate(normalizedGuideContext, parsed.researchPlan, questionMode);
+        }
+      }
+
+      console.log(`[Searcho] Action: ${parsed.action}, Plan: ${isResearchPlan}`);
+      if (isResearchPlan) {
+        console.log(`[Searcho] Plan title: "${parsed.researchPlan.title}"`);
+        const qCount = parsed.researchPlan.sections?.reduce(
+          (acc: number, s: any) => acc + (s.questions?.length || 0), 0
+        ) || 0;
+        console.log(`[Searcho] Total questions: ${qCount}`);
+      }
+
+      const nextConversationHistory = [
+        ...normalizeConversationHistory(conversationHistory),
+        { role: 'user', content: normalizedMessage },
+        { role: 'assistant', content: parsed.chatResponse }
+      ];
+      const nextConversationSummary = buildConversationWindow(nextConversationHistory, "").summary;
+
+      return {
+        reply: parsed.chatResponse,
+        isResearchRelated: isResearchPlan,
+        researchPlan: isResearchPlan ? parsed.researchPlan : null,
+        conversationHistory: nextConversationHistory,
+        conversationSummary: nextConversationSummary,
+      };
+    };
+
+    if (requestedStream) {
+      const encoder = new TextEncoder();
+      const streamBody = new ReadableStream({
+        async start(controller) {
+          const sendEvent = (payload: Record<string, unknown>) =>
+            controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+
+          try {
+            const finalPayload = await resolveFinalPayload((delta) => {
+              if (delta) {
+                sendEvent({ event: "assistant_delta", delta });
+              }
+            });
+
+            sendEvent({ event: "final", data: finalPayload });
+          } catch (error) {
+            sendEvent({
+              event: "error",
+              error: error instanceof Error ? error.message : "Internal server error",
+            });
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(streamBody, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Cache-Control': 'no-cache',
+        },
       });
     }
 
-    if (forcePlan && (parsed.action !== 'PLAN' || parsed.researchPlan === null)) {
-      console.log('[Searcho] Model returned CHAT while PLAN was required, using fallback usability plan');
-      parsed = buildUsabilityFallbackPlan(message, researchContext);
-    }
-
-    if (forceGuideEditPlan && normalizedGuideContext?.sections?.length && (parsed.action !== 'PLAN' || parsed.researchPlan === null)) {
-      console.log('[Searcho] Model returned CHAT while guide edit PLAN was required, retrying with stronger instruction');
-
-      content = await requestStructuredResponse(openaiApiKey, [
-        ...messages,
-        {
-          role: 'assistant',
-          content: typeof parsed.chatResponse === 'string' ? parsed.chatResponse : 'Plani guncelliyorum.',
-        },
-        {
-          role: 'user',
-          content: 'Yaniti yeniden uret. Bu istek mevcut arastirma planini guncelleme istegi. action=PLAN don. researchPlan null olamaz. Mevcut plandaki belirtilmeyen bolumleri ve sorulari koru, sadece gereken yerleri guncelle ve TAM plani dondur.',
-        },
-      ]);
-
-      parsed = JSON.parse(content);
-    }
-
-    const isResearchPlan = parsed.action === 'PLAN' && parsed.researchPlan !== null;
-
-    if (isResearchPlan) {
-      parsed.researchPlan = normalizeResearchPlan(parsed.researchPlan, questionMode);
-
-      if (forceGuideEditPlan && isAdditiveGuideEditRequest(message) && normalizedGuideContext?.sections?.length) {
-        parsed.researchPlan = mergeAdditiveGuideUpdate(normalizedGuideContext, parsed.researchPlan, questionMode);
-      }
-    }
-
-    console.log(`[Searcho] Action: ${parsed.action}, Plan: ${isResearchPlan}`);
-    if (isResearchPlan) {
-      console.log(`[Searcho] Plan title: "${parsed.researchPlan.title}"`);
-      const qCount = parsed.researchPlan.sections?.reduce(
-        (acc: number, s: any) => acc + (s.questions?.length || 0), 0
-      ) || 0;
-      console.log(`[Searcho] Total questions: ${qCount}`);
-    }
-
-    // Return in the format ChatPanel.tsx expects
-    return new Response(JSON.stringify({
-      reply: parsed.chatResponse,
-      isResearchRelated: isResearchPlan,
-      researchPlan: isResearchPlan ? parsed.researchPlan : null,
-      conversationHistory: [
-        ...conversationHistory,
-        { role: 'user', content: message },
-        { role: 'assistant', content: parsed.chatResponse }
-      ]
-    }), {
+    const finalPayload = await resolveFinalPayload();
+    return new Response(JSON.stringify(finalPayload), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
     console.error('[Searcho] Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+
+    if (requestedStream) {
+      const encoder = new TextEncoder();
+      const streamBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(`${JSON.stringify({ event: "error", error: errorMessage })}\n`));
+          controller.close();
+        },
+      });
+
+      return new Response(streamBody, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Cache-Control': 'no-cache',
+        },
+      });
+    }
+
     return new Response(JSON.stringify({
-      error: error instanceof Error ? error.message : 'Internal server error',
+      error: errorMessage,
       reply: 'Üzgünüm, şu anda bir hata oluştu. Lütfen tekrar deneyin.'
     }), {
       status: 500,

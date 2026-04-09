@@ -5,8 +5,56 @@
 @tailwind components;
 @tailwind utilities;
 
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+@keyframes thinking-text-shimmer {
+  0% {
+    background-position: 220% 50%;
+  }
+  100% {
+    background-position: -40% 50%;
+  }
+}
+
+@keyframes thinking-dot-breathe {
+  0%, 100% {
+    opacity: 0.22;
+    transform: translateY(0) scale(0.9);
+  }
+  50% {
+    opacity: 0.95;
+    transform: translateY(-1px) scale(1.22);
+  }
+}
+
+.chat-thinking-shimmer {
+  background-image: linear-gradient(
+    110deg,
+    hsl(var(--text-secondary) / 0.8) 0%,
+    hsl(var(--text-secondary) / 0.8) 38%,
+    hsl(var(--brand-primary) / 0.55) 46%,
+    hsl(var(--foreground) / 0.96) 50%,
+    hsl(var(--brand-primary) / 0.55) 54%,
+    hsl(var(--text-secondary) / 0.8) 62%,
+    hsl(var(--text-secondary) / 0.8) 100%
+  );
+  background-size: 220% 100%;
+  background-position: 220% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinking-text-shimmer 4.8s linear infinite;
+}
+
+.chat-thinking-dot {
+  animation: thinking-dot-breathe 2.4s ease-in-out infinite;
 }
 
 /* Search AI Design System - Clean, minimal, Notion-meets-Figma aesthetic */
