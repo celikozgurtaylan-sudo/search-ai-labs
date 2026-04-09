@@ -627,7 +627,7 @@ const Workspace = () => {
                 onGuideUpdate={() => {}}
                 onParticipantsUpdate={(nextParticipants) => {
                   setParticipants(nextParticipants);
-                  if (nextParticipants.length > 0 && currentStep === "guide") {
+                  if (nextParticipants.length > 0 && (currentStep as string) === "guide") {
                     setCurrentStep("recruit");
                   }
                   void loadResearchState();

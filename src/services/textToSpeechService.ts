@@ -327,21 +327,23 @@ export const shouldRetryTTSError = (error: unknown): boolean => {
     return true;
   }
 
-  const ttsError = error as TTSRequestError;
-
-  if (isQuotaExceededTTSError(ttsError) || ttsError.code === "missing_elevenlabs_key") {
+  if (isQuotaExceededTTSError(error)) {
     return false;
   }
 
-  if (typeof ttsError.status === "number" && ttsError.status >= 500) {
+  if (error.code === "missing_elevenlabs_key") {
+    return false;
+  }
+
+  if (typeof error.status === "number" && error.status >= 500) {
     return true;
   }
 
-  if (typeof ttsError.providerStatus === "number" && ttsError.providerStatus >= 500) {
+  if (typeof error.providerStatus === "number" && error.providerStatus >= 500) {
     return true;
   }
 
-  return ttsError.code === "FunctionsFetchError" || ttsError.code === "elevenlabs_timeout";
+  return error.code === "FunctionsFetchError" || error.code === "elevenlabs_timeout";
 };
 
 export const getTTSErrorMessage = (error: unknown) => {
