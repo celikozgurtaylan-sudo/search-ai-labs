@@ -82,7 +82,7 @@ export const normalizeAIEnhancedBrief = (value: unknown): AIEnhancedBrief | null
     anchorQuestions,
     plannerTranscript: asArray<Record<string, unknown>>(value.plannerTranscript)
       .map((entry) => ({
-        role: entry.role === "assistant" ? "assistant" : "user",
+        role: (entry.role === "assistant" ? "assistant" : "user") as "assistant" | "user",
         content: asString(entry.content),
       }))
       .filter((entry) => entry.content.length > 0),

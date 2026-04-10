@@ -861,7 +861,7 @@ export async function generateAndPersistProjectReport(
 
   const sessionDurations = completedSessions
     .map((session: any) => durationBetween(session.started_at, session.ended_at))
-    .filter((value): value is number => value !== null && value > 0);
+    .filter((value: any): value is number => value !== null && value > 0);
 
   const sessionRefById = new Map<string, string>();
   completedSessions.forEach((session: any, index: number) => {

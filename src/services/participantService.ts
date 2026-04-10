@@ -128,7 +128,7 @@ export const participantService = {
       return null;
     }
 
-    return data as ParticipantInvitationAccessResult | null;
+    return data as unknown as ParticipantInvitationAccessResult | null;
   },
 
   generateInvitationToken(): string {
@@ -206,7 +206,7 @@ export const participantService = {
       return null;
     }
 
-    return data as SessionAccessResult | null;
+    return data as unknown as SessionAccessResult | null;
   },
 
   async getSessionByToken(token: string): Promise<StudySession | null> {

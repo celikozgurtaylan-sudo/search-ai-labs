@@ -618,7 +618,7 @@ export const ensureWarmupSection = (plan: any) => {
   const extractedWarmup = warmupIndex >= 0 ? sections.splice(warmupIndex, 1)[0] : null;
   const warmupQuestions = dedupeQuestions([
     ...buildWarmupQuestions(),
-    ...((Array.isArray(extractedWarmup?.questions) ? extractedWarmup.questions : []).map((question) => cleanQuestion(question))),
+    ...((Array.isArray(extractedWarmup?.questions) ? extractedWarmup.questions : []).map((question: any) => cleanQuestion(question))),
   ]).slice(0, 3);
 
   const warmupSection = {
