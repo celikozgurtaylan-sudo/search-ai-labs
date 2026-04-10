@@ -1,0 +1,28 @@
+project_id = "ueucxoyvktdnmxkxxbvd"
+
+[functions.speech-to-text]
+verify_jwt = false
+
+[functions.turkish-chat]
+verify_jwt = false
+
+[functions.analyze-project]
+verify_jwt = true
+
+[functions.generate-questions]
+verify_jwt = true
+
+[functions.send-invitation-email]
+verify_jwt = false
+
+[functions.interview-manager]
+verify_jwt = false
+
+[functions.interview-analysis]
+verify_jwt = false
+
+[functions.turkish-tts]
+verify_jwt = false
+
+[functions.text-to-speech]
+verify_jwt = false

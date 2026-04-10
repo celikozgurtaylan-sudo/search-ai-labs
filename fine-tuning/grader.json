@@ -1,0 +1,1 @@
+{"type":"score_model","name":"plan_quality","model":"gpt-4.1-mini-2025-04-14","input":[{"role":"system","content":"Score this Turkish UX research plan from 0.0 to 1.0. Reply ONLY a number."},{"role":"user","content":"Request: {{item.input}} Output: {{sample.output_text}}"}],"pass_threshold":0.5}

@@ -1,0 +1,691 @@
+@import url("https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes thinking-text-shimmer {
+  0% {
+    background-position: 220% 50%;
+  }
+  100% {
+    background-position: -40% 50%;
+  }
+}
+
+@keyframes thinking-dot-breathe {
+  0%, 100% {
+    opacity: 0.22;
+    transform: translateY(0) scale(0.9);
+  }
+  50% {
+    opacity: 0.95;
+    transform: translateY(-1px) scale(1.22);
+  }
+}
+
+.chat-thinking-shimmer {
+  background-image: linear-gradient(
+    110deg,
+    hsl(var(--text-secondary) / 0.8) 0%,
+    hsl(var(--text-secondary) / 0.8) 38%,
+    hsl(var(--brand-primary) / 0.55) 46%,
+    hsl(var(--foreground) / 0.96) 50%,
+    hsl(var(--brand-primary) / 0.55) 54%,
+    hsl(var(--text-secondary) / 0.8) 62%,
+    hsl(var(--text-secondary) / 0.8) 100%
+  );
+  background-size: 220% 100%;
+  background-position: 220% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinking-text-shimmer 4.8s linear infinite;
+}
+
+.chat-thinking-dot {
+  animation: thinking-dot-breathe 2.4s ease-in-out infinite;
+}
+
+/* Search AI Design System - Clean, minimal, Notion-meets-Figma aesthetic */
+
+@layer base {
+  :root {
+    /* Base colors - Clean white canvas */
+    --background: 0 0% 96%;
+    --foreground: 0 0% 9%;
+
+    /* Surface colors */
+    --canvas: 0 0% 100%;
+    --surface: 0 0% 98%;
+    --surface-hover: 0 0% 96%;
+
+    /* Card system */
+    --card: 0 0% 98%;
+    --card-foreground: 0 0% 9%;
+    --card-border: 0 0% 90%;
+
+    /* Typography hierarchy */
+    --text-primary: 0 0% 9%;
+    --text-secondary: 0 0% 45%;
+    --text-muted: 0 0% 60%;
+    --text-disabled: 0 0% 75%;
+
+    /* Brand colors - Soft purple accent system */
+    --brand-primary: 263 77% 43%;
+    --brand-primary-hover: 263 77% 38%;
+    --brand-primary-light: 263 77% 94%;
+    --brand-secondary: 263 25% 50%;
+
+    /* Status colors */
+    --success: 263 77% 43%;
+    --success-light: 263 77% 94%;
+    --warning: 38 92% 50%;
+    --warning-light: 38 92% 95%;
+    --error: 0 84% 60%;
+    --error-light: 0 84% 97%;
+
+    /* Interactive elements */
+    --interactive: 263 77% 43%;
+    --interactive-hover: 263 77% 38%;
+    --interactive-light: 263 77% 94%;
+
+    /* Borders and dividers */
+    --border: 0 0% 83%;
+    --border-light: 0 0% 95%;
+    --border-strong: 0 0% 80%;
+
+    /* Shadows */
+    --shadow-subtle: 0 0% 0% / 0.05;
+    --shadow-medium: 0 0% 0% / 0.1;
+    --shadow-strong: 0 0% 0% / 0.15;
+
+    /* Legacy shadcn compatibility */
+    --primary: 243 75% 58%;
+    --primary-foreground: 225 100% 96%;
+    --secondary: 0 0% 32%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 63%;
+    --muted-foreground: 0 0% 9%;
+    --accent: 250 100% 97%;
+    --accent-foreground: 258 89% 66%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 85% 97%;
+    --popover: 0 0% 89%;
+    --popover-foreground: 0 0% 9%;
+    --input: 0 0% 83%;
+    --ring: 243 75% 58%;
+
+    --radius: 1.25rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 0 0% 9%;
+
+    --sidebar-primary: 243 75% 58%;
+
+    --sidebar-primary-foreground: 225 100% 96%;
+
+    --sidebar-accent: 0 0% 32%;
+
+    --sidebar-accent-foreground: 0 0% 98%;
+
+    --sidebar-border: 0 0% 83%;
+
+    --sidebar-ring: 243 75% 58%;
+
+    --chart-1: 234 89% 73%;
+
+    --chart-2: 255 91% 76%;
+
+    --chart-3: 270 95% 75%;
+
+    --chart-4: 238 83% 66%;
+
+    --chart-5: 0 0% 45%;
+
+    --sidebar: 0 0% 98%;
+
+    --font-sans: 'Lato', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+
+    --font-serif: 'EB Garamond', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+
+    --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+
+    --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+
+    --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+
+    --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+
+    --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+
+    --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.1);
+
+    --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 4px 6px -1px hsl(0 0% 0% / 0.1);
+
+    --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
+
+    --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+
+    --tracking-normal: 0em;
+
+    --spacing: 0.25rem;
+  }
+
+  .dark {
+    --background: 0 0% 9%;
+    --foreground: 0 0% 98%;
+
+    --card: 0 0% 14%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 0 0% 25%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 234 89% 73%;
+    --primary-foreground: 243 47% 20%;
+
+    --secondary: 0 0% 45%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 0 0% 45%;
+    --muted-foreground: 0 0% 98%;
+
+    --accent: 261 72% 22%;
+    --accent-foreground: 255 91% 76%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 85% 97%;
+
+    --border: 0 0% 32%;
+    --input: 0 0% 32%;
+    --ring: 234 89% 73%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 234 89% 73%;
+    --sidebar-primary-foreground: 243 47% 20%;
+    --sidebar-accent: 255 91% 76%;
+    --sidebar-accent-foreground: 261 72% 22%;
+    --sidebar-border: 0 0% 32%;
+    --sidebar-ring: 234 89% 73%;
+    --chart-1: 229 93% 81%;
+    --chart-2: 252 94% 85%;
+    --chart-3: 269 97% 85%;
+    --chart-4: 234 89% 73%;
+    --chart-5: 0 0% 45%;
+    --sidebar: 0 0% 14%;
+    --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+    --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+    --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+    --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+    --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.1);
+    --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 4px 6px -1px hsl(0 0% 0% / 0.1);
+    --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
+    --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    cursor: default;
+  }
+
+  a,
+  button,
+  summary,
+  select,
+  [role="button"],
+  [role="link"],
+  [role="menuitem"],
+  [role="switch"],
+  [role="checkbox"],
+  [role="radio"],
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    cursor: pointer;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  [contenteditable="true"] {
+    cursor: text;
+  }
+}
+
+/* Searcho AI Animation Classes */
+@keyframes pulse-gradient {
+  0%, 100% { 
+    background-size: 100% 100%;
+  }
+  50% { 
+    background-size: 120% 120%;
+  }
+}
+
+.animation-delay-75 {
+  animation-delay: 75ms;
+}
+
+.animation-delay-150 {
+  animation-delay: 150ms;
+}
+
+/* Landing page motion system */
+@keyframes scrollDownOut {
+  0% {
+    transform: rotateX(0deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotateX(92deg) scale(0.98);
+    opacity: 0;
+  }
+}
+
+@keyframes scrollUpIn {
+  0% {
+    transform: rotateX(-92deg) scale(0.98);
+    opacity: 0;
+  }
+  100% {
+    transform: rotateX(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes landingFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes landingOrbFloat {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(16px, -10px, 0) scale(1.08);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes landingGridShift {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(20px);
+  }
+}
+
+@keyframes landingAgentGlowPulse {
+  0%,
+  100% {
+    opacity: 0.18;
+  }
+  50% {
+    opacity: 0.32;
+  }
+}
+
+@keyframes landingAgentBorderTravel {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+
+.animate-scroll-down-out {
+  transform-origin: center center;
+  animation: scrollDownOut 0.72s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-scroll-up-in {
+  transform-origin: center center;
+  animation: scrollUpIn 0.72s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.landing-placeholder-stack {
+  perspective: 900px;
+  transform-style: preserve-3d;
+}
+
+.landing-placeholder-stack > div {
+  backface-visibility: hidden;
+}
+
+.landing-page {
+  position: relative;
+  isolation: isolate;
+}
+
+.landing-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.landing-orb {
+  position: absolute;
+  filter: blur(48px);
+  opacity: 0.38;
+  border-radius: 9999px;
+  animation: landingOrbFloat 16s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.landing-orb--one {
+  width: min(34vw, 420px);
+  height: min(34vw, 420px);
+  top: -8rem;
+  left: -8rem;
+  background: radial-gradient(circle at 30% 30%, hsl(var(--brand-primary-light)) 0%, hsl(var(--interactive-light)) 55%, transparent 80%);
+}
+
+.landing-orb--two {
+  width: min(32vw, 390px);
+  height: min(32vw, 390px);
+  top: 20%;
+  right: -9rem;
+  background: radial-gradient(circle at 70% 30%, hsl(185 85% 90%) 0%, hsl(var(--brand-primary-light)) 58%, transparent 78%);
+  animation-delay: 2.4s;
+}
+
+.landing-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.1;
+  background-image: linear-gradient(to right, hsl(var(--border-light)) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--border-light)) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(circle at top, black 12%, transparent 74%);
+  animation: landingGridShift 18s linear infinite alternate;
+}
+
+.landing-fade-in {
+  opacity: 0;
+  animation: landingFadeUp 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.landing-fade-in--1 {
+  animation-delay: 90ms;
+}
+
+.landing-fade-in--2 {
+  animation-delay: 220ms;
+}
+
+.landing-fade-in--3 {
+  animation-delay: 340ms;
+}
+
+.landing-fade-in--4 {
+  animation-delay: 460ms;
+}
+
+.landing-fade-in--5 {
+  animation-delay: 580ms;
+}
+
+.landing-fade-in--6 {
+  animation-delay: 700ms;
+}
+
+.landing-input-card {
+  transition: box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1), transform 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing-input-card--agent-active {
+  border-color: hsl(272 68% 82% / 0.42);
+}
+
+.landing-input-card--usability-active {
+  border-color: hsl(42 84% 74% / 0.48);
+  box-shadow:
+    0 18px 36px hsl(42 72% 70% / 0.08),
+    0 0 0 1px hsl(42 82% 74% / 0.08);
+}
+
+.landing-input-card--usability-hover {
+  border-color: hsl(42 82% 76% / 0.42);
+}
+
+.landing-input-card--agent-smash {
+  transform: translateY(4px) scale(0.968);
+  box-shadow:
+    0 3px 10px hsl(var(--shadow-medium) / 0.85),
+    inset 0 2px 0 hsl(0 0% 100% / 0.6),
+    inset 0 -8px 18px hsl(0 0% 0% / 0.04);
+}
+
+.landing-agent-border-overlay {
+  position: absolute;
+  inset: -2px;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 220ms ease;
+  border-radius: inherit;
+}
+
+.landing-agent-border-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid hsl(274 74% 80% / 0.34);
+  box-shadow:
+    0 0 0 1px hsl(274 74% 80% / 0.06),
+    0 0 14px hsl(278 92% 72% / 0.06);
+}
+
+.landing-agent-border-overlay--warm::before {
+  border-color: hsl(42 86% 74% / 0.34);
+  box-shadow:
+    0 0 0 1px hsl(42 86% 74% / 0.05),
+    0 0 14px hsl(42 92% 68% / 0.06);
+}
+
+.landing-agent-border-overlay--active {
+  opacity: 1;
+}
+
+.landing-agent-border-overlay--card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 88px;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(278 95% 78% / 0.1) 18%,
+    hsl(0 0% 100% / 0.95) 50%,
+    hsl(278 95% 74% / 0.28) 78%,
+    transparent 100%
+  );
+  filter: blur(8px);
+  offset-path: inset(0 round 1rem);
+  offset-distance: 0%;
+  offset-rotate: 0deg;
+  opacity: 0;
+}
+
+.landing-agent-border-overlay--warm.landing-agent-border-overlay--card::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(42 86% 76% / 0.08) 18%,
+    hsl(50 100% 97% / 0.92) 50%,
+    hsl(42 86% 70% / 0.22) 78%,
+    transparent 100%
+  );
+}
+
+.landing-agent-border-overlay--active::after {
+  opacity: 1;
+  animation:
+    landingAgentBorderTravel 4.1s linear infinite,
+    landingAgentGlowPulse 2.8s ease-in-out infinite;
+}
+
+.landing-input-card:hover {
+  border-color: hsl(var(--brand-primary) / 0.25);
+  box-shadow: 0 18px 36px hsl(var(--shadow-medium));
+  transform: translateY(-3px);
+}
+
+.landing-input-card--agent-smash:hover {
+  transform: translateY(4px) scale(0.968);
+  box-shadow:
+    0 3px 10px hsl(var(--shadow-medium) / 0.85),
+    inset 0 2px 0 hsl(0 0% 100% / 0.6),
+    inset 0 -8px 18px hsl(0 0% 0% / 0.04);
+}
+
+.landing-input-card--agent-active:hover {
+  border-color: hsl(272 68% 82% / 0.42);
+}
+
+.landing-input-card--usability-active:hover {
+  border-color: hsl(42 84% 74% / 0.48);
+}
+
+.landing-input-card--usability-hover:hover {
+  border-color: hsl(42 82% 76% / 0.42);
+}
+
+.landing-usability-button {
+  transition:
+    border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing-usability-button--hovering {
+  border-color: hsl(42 84% 74% / 0.56) !important;
+  background-color: hsl(48 100% 98%) !important;
+  box-shadow:
+    0 8px 18px hsl(42 78% 72% / 0.1),
+    0 0 0 1px hsl(42 84% 74% / 0.08);
+}
+
+.landing-usability-button--active {
+  border-color: hsl(42 84% 74% / 0.72) !important;
+  background-color: hsl(48 100% 98%) !important;
+  box-shadow:
+    0 10px 24px hsl(42 78% 72% / 0.14),
+    0 0 0 1px hsl(42 84% 74% / 0.12);
+}
+
+.landing-usability-button__icon--hovering {
+  border-color: hsl(42 74% 76% / 0.58);
+  background-color: hsl(48 100% 97%);
+  color: hsl(34 52% 45%);
+}
+
+.landing-usability-button__icon--active {
+  border-color: hsl(42 74% 74% / 0.7);
+  background-color: hsl(48 100% 97%);
+  color: hsl(32 58% 40%);
+}
+
+.landing-usability-button__label--hovering {
+  color: hsl(34 44% 48%);
+}
+
+.landing-usability-button__label--active {
+  color: hsl(31 48% 42%);
+}
+
+.landing-textarea {
+  transition: background-color 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing-textarea:focus {
+  background-color: hsl(var(--surface));
+}
+
+.landing-cta-button {
+  transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing-cta-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px hsl(var(--brand-primary) / 0.2);
+}
+
+.landing-template-card {
+  opacity: 0;
+  transform: translateY(12px);
+  animation: landingFadeUp 880ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.landing-template-card:hover {
+  transform: translateY(-5px);
+}
+
+.landing-template-icon {
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing-template-card:hover .landing-template-icon {
+  transform: translateY(-1px) scale(1.05);
+  box-shadow: 0 8px 16px hsl(var(--shadow-medium));
+}
+
+@media (max-width: 768px) {
+  .landing-orb--one {
+    left: -10rem;
+    top: -9rem;
+  }
+
+  .landing-orb--two {
+    right: -11rem;
+    top: 28%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-orb,
+  .landing-grid,
+  .landing-fade-in,
+  .landing-template-card,
+  .animate-scroll-down-out,
+  .animate-scroll-up-in,
+  .landing-input-card--agent-smash,
+  .landing-agent-border-overlay--active::after {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+}
