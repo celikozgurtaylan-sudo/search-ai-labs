@@ -218,6 +218,40 @@ const StudyPanel = ({
     return researchMode === "ai_enhanced" ? "ai_enhanced" : "structured";
   };
 
+  const resolveUsabilityContext = () => {
+    const persistedProject = localStorage.getItem("searchai-project");
+    if (!persistedProject) {
+      return null;
+    }
+
+    try {
+      const parsedProject = JSON.parse(persistedProject);
+      const usabilityTesting = parsedProject?.analysis?.usabilityTesting;
+      const designScreens = Array.isArray(parsedProject?.analysis?.designScreens)
+        ? parsedProject.analysis.designScreens
+        : [];
+
+      if (!usabilityTesting && designScreens.length === 0) {
+        return null;
+      }
+
+      return {
+        objective: typeof usabilityTesting?.objective === "string" ? usabilityTesting.objective : "",
+        primaryTask: typeof usabilityTesting?.primaryTask === "string" ? usabilityTesting.primaryTask : "",
+        targetUsers: typeof usabilityTesting?.targetUsers === "string" ? usabilityTesting.targetUsers : "",
+        successSignals: typeof usabilityTesting?.successSignals === "string" ? usabilityTesting.successSignals : "",
+        riskAreas: typeof usabilityTesting?.riskAreas === "string" ? usabilityTesting.riskAreas : "",
+        guidancePrompt: typeof usabilityTesting?.guidancePrompt === "string" ? usabilityTesting.guidancePrompt : "",
+        designScreens: designScreens.map((screen: any, index: number) => ({
+          name: typeof screen?.name === "string" && screen.name.trim() ? screen.name.trim() : `Screen ${index + 1}`,
+        })),
+      };
+    } catch (error) {
+      console.error("Stored project parsing failed for usability context:", error);
+      return null;
+    }
+  };
+
   const recordQuestionEditLearning = async ({
     sectionTitle,
     sectionIndex,
@@ -767,6 +801,7 @@ const StudyPanel = ({
           count: 1,
           validateProject: false,
           mode: resolveQuestionMode(),
+          usabilityContext: resolveUsabilityContext(),
         }
       });
 

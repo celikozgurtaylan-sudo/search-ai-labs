@@ -54,6 +54,22 @@ const toBase64Audio = (arrayBuffer: ArrayBuffer) => {
   return btoa(binary);
 };
 
+const normalizeTextForSpeech = (value: string) => {
+  const collapsedWhitespace = value
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/([.!?])(?=[^\s])/g, '$1 ')
+    .trim();
+
+  if (!collapsedWhitespace) {
+    return '';
+  }
+
+  return /[.!?…]$/.test(collapsedWhitespace)
+    ? collapsedWhitespace
+    : `${collapsedWhitespace}?`;
+};
+
 async function generateWithElevenLabs(text: string) {
   if (!elevenlabsApiKey) {
     throw new TTSError('ElevenLabs API key not configured', 500, 'missing_elevenlabs_key');
@@ -74,10 +90,10 @@ async function generateWithElevenLabs(text: string) {
         text,
         model_id: ELEVENLABS_MODEL,
         voice_settings: {
-          stability: 0.42,
-          similarity_boost: 0.78,
-          style: 0.1,
-          use_speaker_boost: true,
+          stability: 0.68,
+          similarity_boost: 0.72,
+          style: 0.04,
+          use_speaker_boost: false,
         },
       }),
       signal: controller.signal,
@@ -155,15 +171,20 @@ serve(async (req) => {
       throw new Error('Text is required for TTS generation');
     }
 
-    console.log('Generating Turkish TTS for text:', text.substring(0, 50) + '...');
+    const normalizedText = normalizeTextForSpeech(String(text));
+    if (!normalizedText) {
+      throw new Error('Text is required for TTS generation');
+    }
+
+    console.log('Generating Turkish TTS for text:', normalizedText.substring(0, 50) + '...');
     console.log('Using fixed ElevenLabs voice:', DEFAULT_VOICE);
 
-    const audioContent = await generateWithElevenLabs(text);
+    const audioContent = await generateWithElevenLabs(normalizedText);
 
     return new Response(
       JSON.stringify({
         audioContent,
-        text,
+        text: normalizedText,
         source: 'elevenlabs',
         voiceId: DEFAULT_VOICE,
       }),

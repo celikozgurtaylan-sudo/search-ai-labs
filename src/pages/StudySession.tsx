@@ -142,6 +142,30 @@ const StudySession = () => {
     setCameraValidationMessage(message);
   };
 
+  const releaseMediaDevices = ({ preserveGate = false, message = null }: { preserveGate?: boolean; message?: string | null } = {}) => {
+    stopCameraStream(cameraStreamRef.current);
+    cameraStreamRef.current = null;
+
+    setCameraStream(null);
+    setCameraEnabled(false);
+    setCameraPreviewReady(false);
+    setCameraStreamVerified(false);
+    setMicrophoneVerified(false);
+    if (!preserveGate) {
+      setCameraGateCompleted(false);
+    }
+    setCameraValidationState(message ? 'failed' : 'idle');
+    setCameraValidationMessage(message);
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    if (cameraGateVideoRef.current) {
+      cameraGateVideoRef.current.srcObject = null;
+    }
+  };
+
   const isLiveVideoTrack = (track?: MediaStreamTrack | null) =>
     Boolean(track && track.readyState === 'live' && track.enabled !== false);
 
@@ -758,6 +782,7 @@ const StudySession = () => {
 
   const handleCompleteSession = (reason: 'manual' | 'completed' = 'manual') => {
     localStorage.removeItem('participant-session');
+    releaseMediaDevices();
     setSessionCompletionReason(reason);
     setSessionStatus('completed');
   };
@@ -872,7 +897,7 @@ const StudySession = () => {
 
       {/* Main Content */}
       <div className="min-h-screen">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 pt-2 pb-6 md:px-6">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 pt-2 pb-6 md:px-6 xl:h-[calc(100vh-1rem)] xl:overflow-hidden xl:pb-4">
           {showDesignPanels && (
             <div className="shrink-0 rounded-[28px] border border-border-light bg-white/96 p-4 backdrop-blur">
               <div className="mb-4 flex items-center justify-between gap-3">
@@ -907,10 +932,10 @@ const StudySession = () => {
             </div>
           )}
 
-          <div className={`grid gap-4 ${showDesignPanels ? "xl:grid-cols-[minmax(320px,0.92fr)_minmax(0,1.08fr)]" : ""}`}>
+          <div className={`grid flex-1 gap-4 xl:min-h-0 ${showDesignPanels ? "xl:grid-cols-[minmax(320px,0.92fr)_minmax(0,1.08fr)]" : ""}`}>
             {showDesignPanels && activeScreen && (
-              <div className="xl:sticky xl:top-6 xl:self-start">
-                <div className="overflow-hidden rounded-[32px] border border-border-light bg-white shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
+              <div className="xl:min-h-0 xl:self-stretch">
+                <div className="flex h-full flex-col overflow-hidden rounded-[32px] border border-border-light bg-white shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
                   <div className="border-b border-border-light bg-[linear-gradient(180deg,rgba(124,77,255,0.06),rgba(255,255,255,0.96))] px-5 py-4">
                     <div className="flex items-center justify-between gap-4">
                       <div>
@@ -935,7 +960,7 @@ const StudySession = () => {
                     </div>
                   </div>
 
-                  <div className="flex min-h-[480px] items-center justify-center bg-[radial-gradient(circle_at_top,rgba(124,77,255,0.10),transparent_38%),linear-gradient(180deg,#f8f7ff_0%,#f2f4f8_100%)] p-5 md:min-h-[620px] md:p-8">
+                  <div className="flex min-h-[420px] flex-1 items-center justify-center bg-[radial-gradient(circle_at_top,rgba(124,77,255,0.10),transparent_38%),linear-gradient(180deg,#f8f7ff_0%,#f2f4f8_100%)] p-5 md:min-h-[520px] md:p-8 xl:min-h-0">
                     {activeScreen.source === "figma-link" ? (
                       <a
                         href={activeScreen.url}
@@ -950,7 +975,7 @@ const StudySession = () => {
                       <img
                         src={activeScreen.url}
                         alt={activeScreen.name || "Design screen"}
-                        className="max-h-[72vh] w-auto max-w-full rounded-[28px] border border-border-light bg-white object-contain shadow-[0_30px_80px_rgba(15,23,42,0.12)]"
+                        className="h-auto max-h-[72vh] w-auto max-w-full rounded-[28px] border border-border-light bg-white object-contain shadow-[0_30px_80px_rgba(15,23,42,0.12)] xl:max-h-full"
                       />
                     )}
                   </div>
@@ -959,7 +984,7 @@ const StudySession = () => {
             )}
 
             {sessionId && projectData && (
-              <div className="min-w-0">
+              <div className="min-w-0 xl:min-h-0">
                 <SearchoAI
                   isActive={sessionStatus === 'active' && cameraGateCompleted}
                   cameraStream={cameraStream}
@@ -981,6 +1006,7 @@ const StudySession = () => {
                     setCurrentInterviewQuestion(question);
                     setCurrentInterviewProgress(progress);
                   }}
+                  onMediaReleaseRequested={() => releaseMediaDevices({ preserveGate: true })}
                 />
               </div>
             )}

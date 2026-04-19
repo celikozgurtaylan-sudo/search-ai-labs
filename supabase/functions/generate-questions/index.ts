@@ -62,6 +62,63 @@ const parseQuestionsFromText = (generatedText: string): string[] => {
     .map((line: string) => line.replace(/^[-*]\s*/, '').trim());
 };
 
+type UsabilityContext = {
+  objective: string;
+  primaryTask: string;
+  targetUsers: string;
+  successSignals: string;
+  riskAreas: string;
+  guidancePrompt: string;
+  screenNames: string[];
+};
+
+const cleanInput = (value: unknown) =>
+  typeof value === "string" ? value.trim() : "";
+
+const sanitizeUsabilityContext = (value: any): UsabilityContext | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const screenNames = Array.isArray(value.designScreens)
+    ? value.designScreens
+        .map((screen: any, index: number) => cleanInput(screen?.name) || `Screen ${index + 1}`)
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
+
+  const sanitized: UsabilityContext = {
+    objective: cleanInput(value.objective),
+    primaryTask: cleanInput(value.primaryTask),
+    targetUsers: cleanInput(value.targetUsers),
+    successSignals: cleanInput(value.successSignals),
+    riskAreas: cleanInput(value.riskAreas),
+    guidancePrompt: cleanInput(value.guidancePrompt),
+    screenNames,
+  };
+
+  const hasContext = Object.values(sanitized).some((entry) =>
+    Array.isArray(entry) ? entry.length > 0 : entry.length > 0
+  );
+
+  return hasContext ? sanitized : null;
+};
+
+const buildUsabilityContextPrompt = (context: UsabilityContext | null) => {
+  if (!context) {
+    return "";
+  }
+
+  return `Kullanılabilirlik testi bağlamı:
+- Araştırma amacı: ${context.objective || "Belirtilmedi"}
+- Ana görev: ${context.primaryTask || "Belirtilmedi"}
+- Hedef kullanıcılar: ${context.targetUsers || "Belirtilmedi"}
+- Başarı sinyalleri: ${context.successSignals || "Belirtilmedi"}
+- Riskli alanlar: ${context.riskAreas || "Belirtilmedi"}
+- Ekranlar: ${context.screenNames.length > 0 ? context.screenNames.join(", ") : "Belirtilmedi"}
+- Ek yönlendirme: ${context.guidancePrompt || "Yok"}`;
+};
+
 const buildQuestionPrompt = (
   sectionTitle: string,
   sectionId: string,
@@ -71,19 +128,27 @@ const buildQuestionPrompt = (
   count: number,
   mode: ResearchQuestionMode,
   learningHintsPrompt: string,
+  usabilityContextPrompt: string,
 ) => {
   const warmupSection = sectionIndex === 0 || isWarmupSectionTitle(sectionTitle);
+  const isUsabilityMode = mode === "usability";
 
   return `Proje: ${projectDescription}
 
 Bölüm: "${sectionTitle}" (ID: ${sectionId}, Sıra: ${typeof sectionIndex === "number" ? sectionIndex + 1 : "bilinmiyor"})
 
-${warmupSection ? `Bu bölüm görüşmenin ilk ısınma bölümüdür.
+${usabilityContextPrompt ? `${usabilityContextPrompt}
+
+` : ""}${warmupSection ? `Bu bölüm görüşmenin ilk ısınma bölümüdür.
 - Katılımcıyı rahatlatan, düşük baskılı ve konuşmayı açan sorular üret.
 - İlk soru mutlaka katılımcının gününe veya o ana kadar ne yaptığına dokunsun.
 - Ürün değerlendirmesine doğrudan yüklenme; önce bağlam ve gündelik deneyim aç.` : `Bu bölüm görüşmenin ana araştırma bölümüdür.
 - Warm-up sorusu üretme.
-- Soruları bu bölümün araştırma odağına sadık, açık uçlu ve tek odaklı kur.`}
+- Soruları bu bölümün araştırma odağına sadık, açık uçlu ve tek odaklı kur.
+${isUsabilityMode ? `- Her soruyu somut bir ekran, görev adımı, karar anı, bilgi mesajı veya kullanıcı hareketine bağla.
+- "Bu deneyim sizde nasıl bir izlenim bırakıyor?" gibi bağlamdan kopuk, jenerik soru yazma.
+- Mümkünse ana göreve, ekran listesine veya kullanıcının o adımda ne yapmaya çalıştığına yaslan.
+- Katılımcının gördüğü şeyi keşfet; ama kavramı onun adına önce sen etiketleme.` : ""}`}
 
 Var olan sorular:
 ${existingQuestions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}
@@ -115,12 +180,14 @@ serve(async (req) => {
       validateProject = false,
       count,
       mode,
+      usabilityContext = null,
     } = await req.json();
     const requestedCount = clampQuestionCount(count);
     const warmupSection = sectionIndex === 0 || isWarmupSectionTitle(sectionTitle);
+    const sanitizedUsabilityContext = sanitizeUsabilityContext(usabilityContext);
     const resolvedMode = resolveQuestionMode({
       researchMode: typeof mode === "string" ? mode : null,
-      hasUsabilityContext: typeof mode === "string" && mode === "usability",
+      hasUsabilityContext: (typeof mode === "string" && mode === "usability") || Boolean(sanitizedUsabilityContext),
     });
     const learningHints = await loadQuestionLearningHints(supabase, {
       mode: resolvedMode,
@@ -151,6 +218,8 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 - "Kendi cümlelerinizle" gibi gereksiz paraphrase kalıplarını kullanma
 - Kullanıcının anlamını senin çerçevelediğin "nasıl anlıyorsunuz" gibi kalıplardan kaçın
 - Özellikle usability bağlamında UI öğesini önce sen isimlendirip sonra anlamını sorma
+- Usability modunda warm-up dışındaki her soru gerçek ekran, görev akışı veya karar anıyla temas etsin
+- Usability modunda jenerik ve her projeye uyabilecek boş soru kalıplarını reddet
 
 ## Soru Kalitesi Kriterleri
 ✓ **Açık Uçlu**: "Evet/Hayır" yerine detaylı anlatımı teşvik etmeli
@@ -203,6 +272,7 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
       requestedCount,
       resolvedMode,
       learningHintsPrompt,
+      buildUsabilityContextPrompt(sanitizedUsabilityContext),
     );
 
     console.log('Generating questions for section:', sectionTitle);
@@ -297,7 +367,17 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
     if (valid.length < requestedCount) {
       console.log('Retrying question generation due to leading or weak questions:', rejected);
 
-      const retryPrompt = `${buildQuestionPrompt(sectionTitle, sectionId, sectionIndex, projectDescription, existingQuestions, requestedCount, resolvedMode, learningHintsPrompt)}
+      const retryPrompt = `${buildQuestionPrompt(
+        sectionTitle,
+        sectionId,
+        sectionIndex,
+        projectDescription,
+        existingQuestions,
+        requestedCount,
+        resolvedMode,
+        learningHintsPrompt,
+        buildUsabilityContextPrompt(sanitizedUsabilityContext),
+      )}
 
 Aşağıdaki sorular leading, varsayımsız değil veya yeterince açık uçlu olmadığı için reddedildi:
 ${questions.map((question, index) => `${index + 1}. ${question}`).join('\n')}

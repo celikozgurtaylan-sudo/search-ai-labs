@@ -21,6 +21,36 @@ const HALLUCINATION_PATTERNS = [
   /bildirim zil/i,
 ];
 
+type SpeechToTextErrorPayload = {
+  error?: string;
+  code?: string;
+};
+
+const readSpeechToTextErrorPayload = async (response?: Response): Promise<SpeechToTextErrorPayload | null> => {
+  if (!response) {
+    return null;
+  }
+
+  try {
+    const contentType = response.headers.get('Content-Type')?.split(';')[0].trim();
+    if (contentType !== 'application/json') {
+      return null;
+    }
+
+    const payload = await response.clone().json();
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    return {
+      error: typeof payload.error === 'string' ? payload.error : undefined,
+      code: typeof payload.code === 'string' ? payload.code : undefined,
+    };
+  } catch {
+    return null;
+  }
+};
+
 export interface AudioTranscriberMetrics {
   averageLevel: number;
   calibrationLevel: number;
@@ -302,23 +332,26 @@ export class AudioTranscriber {
       }
 
       const base64Audio = await this.blobToBase64(audioBlob);
-      const { data, error } = await supabase.functions.invoke('speech-to-text', {
+      const { data, error, response } = await supabase.functions.invoke('speech-to-text', {
         body: {
           audio: base64Audio,
           language: 'tr',
         },
       });
 
-      if (error) {
-        console.error('Transcription error:', error);
-        this.onError('TRANSCRIPTION_FAILED');
+      const errorPayload = await readSpeechToTextErrorPayload(response);
+      const errorCode = errorPayload?.code || (typeof data?.code === 'string' ? data.code : null);
+
+      if (error || errorCode === 'transcription_timeout') {
+        console.error('Transcription error:', error || errorPayload);
+        this.onError(errorCode === 'transcription_timeout' ? 'TRANSCRIPTION_TIMEOUT' : 'TRANSCRIPTION_FAILED');
         return;
       }
 
       const transcript = typeof data?.text === 'string' ? data.text.trim() : '';
 
       if (!transcript) {
-        this.onError('TRANSCRIPTION_FAILED');
+        this.onError(errorCode === 'empty_transcript' ? 'TRANSCRIPTION_EMPTY' : 'TRANSCRIPTION_FAILED');
         return;
       }
 

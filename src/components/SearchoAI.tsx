@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { CheckCircle2, Loader2, Mic, MicOff, PhoneOff, SkipForward, Sparkles } from 'lucide-react';
+import { CheckCircle2, Loader2, Mic, PhoneOff, Play, SkipForward, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
@@ -27,6 +27,7 @@ const AUTO_SAVE_MIN_CHARACTERS = 8;
 const AUTO_SAVE_MIN_WORDS = 2;
 const TRANSCRIPTION_HEALTHCHECK_TTL_MS = 30_000;
 const TRANSCRIPTION_HEALTHCHECK_INTERVAL_MS = 10_000;
+const PROCESSING_PHASE_TIMEOUT_MS = 20_000;
 
 type ResponseRecordingResult = {
   blob: Blob | null;
@@ -35,6 +36,21 @@ type ResponseRecordingResult = {
 
 type PendingResponseMedia = ResponseRecordingResult & {
   questionId: string;
+};
+
+type InterviewPhase =
+  | 'idle'
+  | 'asking'
+  | 'awaiting_start'
+  | 'recording'
+  | 'processing'
+  | 'review'
+  | 'recovering'
+  | 'completed';
+
+type CaptureStartOptions = {
+  preserveDraft?: boolean;
+  resetDuration?: boolean;
 };
 
 const blobToBase64 = (blob: Blob): Promise<string> =>
@@ -62,7 +78,7 @@ interface SearchoAIProps {
   projectContext?: {
     description: string;
     discussionGuide?: any;
-    researchMode?: "structured" | "ai_enhanced";
+    researchMode?: 'structured' | 'ai_enhanced';
     aiEnhancedBrief?: any;
     template?: string;
     sessionId?: string;
@@ -78,6 +94,7 @@ interface SearchoAIProps {
   onSessionEnd?: (reason?: 'manual' | 'completed') => void;
   onPreambleStateChange?: (isActive: boolean) => void;
   onQuestionChange?: (question: InterviewQuestion | null, progress: InterviewProgress) => void;
+  onMediaReleaseRequested?: () => void;
 }
 
 const isLiveTrack = (track?: MediaStreamTrack | null) => Boolean(track && track.readyState === 'live' && track.enabled !== false);
@@ -108,10 +125,10 @@ const SearchoAI = ({
   onSessionEnd,
   onPreambleStateChange,
   onQuestionChange,
+  onMediaReleaseRequested,
 }: SearchoAIProps) => {
   const { toast } = useToast();
 
-  const [isListening, setIsListening] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestion | null>(null);
@@ -122,11 +139,8 @@ const SearchoAI = ({
     percentage: 0,
   });
   const [questionsInitialized, setQuestionsInitialized] = useState(false);
-  const [isWaitingForAnswer, setIsWaitingForAnswer] = useState(false);
-  const [needsRetryRecording, setNeedsRetryRecording] = useState(false);
+  const [interviewPhase, setInterviewPhase] = useState<InterviewPhase>('idle');
   const [userTranscript, setUserTranscript] = useState('');
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [isReviewingTranscript, setIsReviewingTranscript] = useState(false);
   const [editableTranscript, setEditableTranscript] = useState('');
   const [responseTimeRemaining, setResponseTimeRemaining] = useState(RESPONSE_TIME_LIMIT_SECONDS);
   const [prepTimeRemaining, setPrepTimeRemaining] = useState(PRE_SPEECH_PREP_LIMIT_SECONDS);
@@ -156,6 +170,8 @@ const SearchoAI = ({
   const transcriptionHealthMonitorRef = useRef<ReturnType<typeof window.setInterval> | null>(null);
   const lastTranscriptionHealthCheckAtRef = useRef(0);
   const transcriptionHealthCheckInFlightRef = useRef(false);
+  const captureAttemptRef = useRef(0);
+  const processingWatchdogRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
   useEffect(() => {
     setInterviewSessionToken(projectContext?.sessionToken ?? null);
@@ -186,12 +202,30 @@ const SearchoAI = ({
     setIsRecordingVideo(false);
   }, []);
 
+  const releaseMicrophoneStream = useCallback(() => {
+    microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
+    microphoneStreamRef.current = null;
+  }, []);
+
   const clearTranscriptionHealthMonitor = useCallback(() => {
     if (transcriptionHealthMonitorRef.current) {
       window.clearInterval(transcriptionHealthMonitorRef.current);
       transcriptionHealthMonitorRef.current = null;
     }
   }, []);
+
+  const clearProcessingWatchdog = useCallback(() => {
+    if (processingWatchdogRef.current) {
+      window.clearTimeout(processingWatchdogRef.current);
+      processingWatchdogRef.current = null;
+    }
+  }, []);
+
+  const invalidateCaptureAttempt = useCallback(() => {
+    captureAttemptRef.current += 1;
+    clearProcessingWatchdog();
+    return captureAttemptRef.current;
+  }, [clearProcessingWatchdog]);
 
   const ensureTranscriptionPipelineHealthy = useCallback(async (force = false) => {
     const now = Date.now();
@@ -355,6 +389,26 @@ const SearchoAI = ({
     await stopResponseRecording(true);
   }, [stopResponseRecording]);
 
+  const shutdownActiveResponseCapture = useCallback((discardPendingMedia = true) => {
+    invalidateCaptureAttempt();
+    clearTranscriptionHealthMonitor();
+
+    if (audioTranscriberRef.current) {
+      audioTranscriberRef.current.cancel();
+      audioTranscriberRef.current = null;
+    }
+
+    pendingResponseMediaRef.current = null;
+
+    if (discardPendingMedia) {
+      void stopResponseRecording(true);
+    }
+
+    setResponseTimerActive(false);
+    setResponseTimerExpired(false);
+    setHasSpeechStartedForCurrentAttempt(false);
+  }, [clearTranscriptionHealthMonitor, invalidateCaptureAttempt, stopResponseRecording]);
+
   const uploadResponseMedia = useCallback(async (responseId: string, questionId: string, media: PendingResponseMedia) => {
     if (!projectContext?.sessionId || !media.blob) {
       return;
@@ -425,26 +479,43 @@ const SearchoAI = ({
       setHasUsedRecoveryGrace(true);
     }
 
-    setIsListening(false);
-    setIsTranscribing(false);
-    setIsWaitingForAnswer(true);
-    setIsReviewingTranscript(false);
+    setInterviewPhase('recovering');
     setResponseTimerActive(false);
     setResponseTimerExpired(false);
     setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
     setHasSpeechStartedForCurrentAttempt(false);
-    setNeedsRetryRecording(true);
     setResumeAfterFailure(shouldResume);
     setResponseRecoveryMessage(message);
   }, [hasUsedRecoveryGrace, responseTimeRemaining]);
 
+  const startProcessingWatchdog = useCallback((attemptId: number) => {
+    clearProcessingWatchdog();
+    processingWatchdogRef.current = window.setTimeout(() => {
+      if (captureAttemptRef.current !== attemptId) {
+        return;
+      }
+
+      shutdownActiveResponseCapture();
+      setUserTranscript(draftTranscript);
+      setEditableTranscript(draftTranscript);
+      enterRecoveryState('Yanıtınız işlenirken zaman aşımı oluştu. Aynı soruda tekrar deneyebilir veya kaldığınız yerden devam edebilirsiniz.', {
+        resume: true,
+        allowGraceIfNeeded: true,
+      });
+      toast({
+        title: 'İşleme zaman aşımına uğradı',
+        description: 'Yanıt akışı kurtarma moduna alındı. Aynı soruda yeniden deneyebilirsiniz.',
+        variant: 'destructive',
+      });
+    }, PROCESSING_PHASE_TIMEOUT_MS);
+  }, [clearProcessingWatchdog, draftTranscript, enterRecoveryState, shutdownActiveResponseCapture, toast]);
+
   const applyInterviewState = useCallback((nextQuestion: InterviewQuestion | null, progress: InterviewProgress) => {
     clearTranscriptionHealthMonitor();
+    clearProcessingWatchdog();
     setCurrentQuestion(nextQuestion);
     setInterviewProgress(progress);
     onQuestionChange?.(nextQuestion, progress);
-    setIsWaitingForAnswer(false);
-    setNeedsRetryRecording(false);
     setResponseTimerActive(false);
     setResponseTimerExpired(false);
     setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
@@ -452,7 +523,6 @@ const SearchoAI = ({
     setHasSpeechStartedForCurrentAttempt(false);
     setUserTranscript('');
     setEditableTranscript('');
-    setIsReviewingTranscript(false);
     setDraftTranscript('');
     setDraftAudioDurationMs(0);
     setResponseRecoveryMessage(null);
@@ -460,12 +530,18 @@ const SearchoAI = ({
     setHasUsedRecoveryGrace(false);
 
     if (nextQuestion?.question_text) {
+      setInterviewPhase('asking');
       void prefetchTextToSpeech(nextQuestion.question_text);
+      return;
     }
 
     if (progress.isComplete && !analysisTriggeredRef.current) {
       analysisTriggeredRef.current = true;
+      setInterviewPhase('completed');
       setCurrentQuestion(null);
+      shutdownActiveResponseCapture();
+      releaseMicrophoneStream();
+      onMediaReleaseRequested?.();
       toast({
         title: 'Görüşme Tamamlandı!',
         description: 'Tüm sorular yanıtlandı.',
@@ -474,12 +550,23 @@ const SearchoAI = ({
         title: 'Analiz Hazırlanıyor',
         description: 'Araştırma raporu arka planda güncellenecek.',
       });
+      return;
     }
-  }, [clearTranscriptionHealthMonitor, onQuestionChange, projectContext?.projectId, projectContext?.sessionId, toast]);
+
+    setInterviewPhase('idle');
+  }, [
+    clearProcessingWatchdog,
+    clearTranscriptionHealthMonitor,
+    onMediaReleaseRequested,
+    onQuestionChange,
+    releaseMicrophoneStream,
+    shutdownActiveResponseCapture,
+    toast,
+  ]);
 
   const initializeInterviewQuestions = useCallback(async () => {
     const hasStructuredGuide = Boolean(projectContext?.discussionGuide);
-    const hasAIEnhancedBrief = projectContext?.researchMode === "ai_enhanced" && Boolean(projectContext?.aiEnhancedBrief);
+    const hasAIEnhancedBrief = projectContext?.researchMode === 'ai_enhanced' && Boolean(projectContext?.aiEnhancedBrief);
 
     if (!projectContext?.sessionId || !projectContext?.projectId || (!hasStructuredGuide && !hasAIEnhancedBrief)) {
       console.error('Missing required data for interview initialization');
@@ -495,7 +582,7 @@ const SearchoAI = ({
       setQuestionsInitialized(true);
       toast({
         title: 'Görüşme Başlıyor',
-        description: projectContext?.researchMode === "ai_enhanced"
+        description: projectContext?.researchMode === 'ai_enhanced'
           ? 'AI enhanced görüşme akışı hazırlanıyor...'
           : 'Karşılama ve tanıtım ile başlıyoruz...',
       });
@@ -514,7 +601,7 @@ const SearchoAI = ({
       isActive &&
       projectContext?.sessionId &&
       projectContext?.projectId &&
-      (projectContext?.discussionGuide || (projectContext?.researchMode === "ai_enhanced" && projectContext?.aiEnhancedBrief)) &&
+      (projectContext?.discussionGuide || (projectContext?.researchMode === 'ai_enhanced' && projectContext?.aiEnhancedBrief)) &&
       !questionsInitialized
     ) {
       void initializeInterviewQuestions();
@@ -544,7 +631,7 @@ const SearchoAI = ({
   }, [currentQuestion?.id]);
 
   useEffect(() => {
-    if (!currentQuestion || !responseTimerActive || isReviewingTranscript || isSubmittingResponse) return;
+    if (!currentQuestion || interviewPhase !== 'recording' || !responseTimerActive || isSubmittingResponse) return;
     if (responseTimeRemaining <= 0) return;
 
     const timer = window.setInterval(() => {
@@ -552,10 +639,16 @@ const SearchoAI = ({
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [currentQuestion, isReviewingTranscript, isSubmittingResponse, responseTimeRemaining, responseTimerActive]);
+  }, [currentQuestion, interviewPhase, isSubmittingResponse, responseTimeRemaining, responseTimerActive]);
 
   useEffect(() => {
-    if (!currentQuestion || !isListening || responseTimerActive || hasSpeechStartedForCurrentAttempt || isReviewingTranscript || isSubmittingResponse) {
+    if (
+      !currentQuestion ||
+      interviewPhase !== 'recording' ||
+      responseTimerActive ||
+      hasSpeechStartedForCurrentAttempt ||
+      isSubmittingResponse
+    ) {
       return;
     }
 
@@ -568,21 +661,25 @@ const SearchoAI = ({
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [currentQuestion, hasSpeechStartedForCurrentAttempt, isListening, isReviewingTranscript, isSubmittingResponse, prepTimeRemaining, responseTimerActive]);
+  }, [currentQuestion, hasSpeechStartedForCurrentAttempt, interviewPhase, isSubmittingResponse, prepTimeRemaining, responseTimerActive]);
 
   const finishCurrentAnswer = useCallback(() => {
-    if (!audioTranscriberRef.current) {
+    if (!audioTranscriberRef.current || interviewPhase !== 'recording') {
       return;
     }
 
-    setIsListening(false);
+    const attemptId = captureAttemptRef.current;
+    setInterviewPhase('processing');
     setResponseTimerActive(false);
     clearTranscriptionHealthMonitor();
+    startProcessingWatchdog(attemptId);
     audioTranscriberRef.current.stop();
-  }, [clearTranscriptionHealthMonitor]);
+  }, [clearTranscriptionHealthMonitor, interviewPhase, startProcessingWatchdog]);
 
   useEffect(() => {
-    if (!currentQuestion || responseTimeRemaining > 0 || responseTimerExpired || !responseTimerActive) return;
+    if (!currentQuestion || responseTimeRemaining > 0 || responseTimerExpired || !responseTimerActive || interviewPhase !== 'recording') {
+      return;
+    }
 
     setResponseTimerExpired(true);
     setResponseTimerActive(false);
@@ -591,15 +688,15 @@ const SearchoAI = ({
       description: 'Kaydı tamamlayıp yanıtı şimdi işleyeceğiz.',
     });
     finishCurrentAnswer();
-  }, [currentQuestion, finishCurrentAnswer, responseTimeRemaining, responseTimerActive, responseTimerExpired, toast]);
+  }, [currentQuestion, finishCurrentAnswer, interviewPhase, responseTimeRemaining, responseTimerActive, responseTimerExpired, toast]);
 
   const getNextQuestion = useCallback(async () => {
     if (!projectContext?.sessionId) return;
 
     setUserTranscript('');
     setEditableTranscript('');
-    setIsReviewingTranscript(false);
-    setNeedsRetryRecording(false);
+    setResponseRecoveryMessage(null);
+    setResumeAfterFailure(false);
 
     try {
       const data = await interviewService.getNextQuestion(projectContext.sessionId);
@@ -620,7 +717,7 @@ const SearchoAI = ({
     await getNextQuestion();
     toast({
       title: 'Sorulara Geçiliyor',
-      description: projectContext?.researchMode === "ai_enhanced"
+      description: projectContext?.researchMode === 'ai_enhanced'
         ? 'Şimdi anchor omurgayla başlayan AI enhanced görüşmeye geçiyoruz.'
         : 'Şimdi yapılandırılmış görüşme sorularına başlıyoruz.',
     });
@@ -639,9 +736,9 @@ const SearchoAI = ({
     let mediaToPersist: PendingResponseMedia | null = pendingMedia;
 
     setIsSubmittingResponse(true);
-    setIsReviewingTranscript(false);
-    setIsWaitingForAnswer(false);
-    setNeedsRetryRecording(false);
+    setInterviewPhase('processing');
+    setResponseRecoveryMessage(null);
+    setResumeAfterFailure(false);
     setResponseTimerActive(false);
 
     try {
@@ -671,8 +768,6 @@ const SearchoAI = ({
 
       setDraftTranscript('');
       setDraftAudioDurationMs(0);
-      setResponseRecoveryMessage(null);
-      setResumeAfterFailure(false);
       applyInterviewState(data.nextQuestion, data.progress);
 
       if (mediaToPersist.blob && data.response?.id) {
@@ -683,7 +778,7 @@ const SearchoAI = ({
       pendingResponseMediaRef.current = mediaToPersist;
       setEditableTranscript(normalizedTranscript);
       setUserTranscript(normalizedTranscript);
-      setIsReviewingTranscript(true);
+      setInterviewPhase('review');
       toast({
         title: 'Hata',
         description: 'Yanıt kaydedilemedi. Düzeltip tekrar deneyin.',
@@ -692,14 +787,15 @@ const SearchoAI = ({
     } finally {
       setIsSubmittingResponse(false);
     }
-  }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, toast, uploadResponseMedia]);
+  }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, uploadResponseMedia]);
 
-  const startListening = useCallback(async (options?: { resetDuration?: boolean; preserveDraft?: boolean }) => {
-    const resetDuration = options?.resetDuration ?? false;
+  const beginAnswerCapture = useCallback(async (options?: CaptureStartOptions) => {
     const preserveDraft = options?.preserveDraft ?? true;
+    const resetDuration = options?.resetDuration ?? false;
     const nextDraftTranscript = preserveDraft ? draftTranscript : '';
+    const attemptId = invalidateCaptureAttempt();
 
-    if (!currentQuestion?.id || isSubmittingResponse) {
+    if (!currentQuestion?.id || isSubmittingResponse || interviewPhase === 'completed') {
       return;
     }
 
@@ -711,27 +807,25 @@ const SearchoAI = ({
     clearTranscriptionHealthMonitor();
     await discardPendingResponseMedia();
 
-    if (resetDuration) {
+    if (captureAttemptRef.current !== attemptId) {
+      return;
+    }
+
+    if (resetDuration || !preserveDraft) {
       setDraftTranscript('');
       setDraftAudioDurationMs(0);
+    }
+
+    if (resetDuration) {
       setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
       setHasUsedRecoveryGrace(false);
     }
 
-    if (!preserveDraft) {
-      setDraftTranscript('');
-      setDraftAudioDurationMs(0);
-    }
-
-    setNeedsRetryRecording(false);
     setResumeAfterFailure(false);
     setResponseRecoveryMessage(null);
     setUserTranscript(nextDraftTranscript);
     setEditableTranscript(nextDraftTranscript);
-    setIsReviewingTranscript(false);
-    setIsTranscribing(true);
-    setIsListening(true);
-    setIsWaitingForAnswer(true);
+    setInterviewPhase('recording');
     setResponseTimerExpired(false);
     setResponseTimerActive(false);
     setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
@@ -739,10 +833,16 @@ const SearchoAI = ({
 
     try {
       const microphoneStream = await ensureMicrophoneStream();
+      if (captureAttemptRef.current !== attemptId) {
+        return;
+      }
+
       const isTranscriptionHealthy = await ensureTranscriptionPipelineHealthy();
+      if (captureAttemptRef.current !== attemptId) {
+        return;
+      }
+
       if (!isTranscriptionHealthy) {
-        setIsListening(false);
-        setIsTranscribing(false);
         enterRecoveryState('Transcript servisi şu anda hazır değil. Yanıtınızın boşa gitmemesi için kayıt başlatılmadı.', {
           resume: true,
           allowGraceIfNeeded: false,
@@ -756,9 +856,17 @@ const SearchoAI = ({
       }
 
       await startResponseRecording(currentQuestion.id, microphoneStream);
+      if (captureAttemptRef.current !== attemptId) {
+        void stopResponseRecording(true);
+        return;
+      }
 
       const transcriber = new AudioTranscriber();
       transcriber.onSpeechDetected = () => {
+        if (captureAttemptRef.current !== attemptId) {
+          return;
+        }
+
         setHasSpeechStartedForCurrentAttempt(true);
         setResponseTimerActive(true);
         startTranscriptionHealthMonitor();
@@ -769,17 +877,22 @@ const SearchoAI = ({
         }
       };
       transcriber.onComplete = async (finalText: string) => {
+        if (captureAttemptRef.current !== attemptId) {
+          return;
+        }
+
         audioTranscriberRef.current = null;
         clearTranscriptionHealthMonitor();
-        setIsListening(false);
-        setIsTranscribing(false);
-        setIsWaitingForAnswer(false);
+        clearProcessingWatchdog();
         setResponseTimerActive(false);
-        setNeedsRetryRecording(false);
-        setResumeAfterFailure(false);
         setResponseRecoveryMessage(null);
+        setResumeAfterFailure(false);
 
         const recording = await stopResponseRecording(false);
+        if (captureAttemptRef.current !== attemptId || !currentQuestion?.id) {
+          return;
+        }
+
         const normalizedTranscript = mergeTranscriptSegments(draftTranscript, finalText.trim());
         const totalDurationMs = draftAudioDurationMs + recording.durationMs;
         setDraftTranscript(normalizedTranscript);
@@ -789,8 +902,12 @@ const SearchoAI = ({
         pendingResponseMediaRef.current = { ...recording, questionId: currentQuestion.id };
         await persistDraftResponse(normalizedTranscript, totalDurationMs);
 
+        if (captureAttemptRef.current !== attemptId) {
+          return;
+        }
+
         setEditableTranscript(normalizedTranscript);
-        setIsReviewingTranscript(true);
+        setInterviewPhase('review');
         toast({
           title: 'Yanıtı gözden geçirin',
           description: shouldRequireTranscriptReview(normalizedTranscript)
@@ -799,31 +916,53 @@ const SearchoAI = ({
         });
       };
       transcriber.onError = async (error: string) => {
+        if (captureAttemptRef.current !== attemptId) {
+          return;
+        }
+
         audioTranscriberRef.current = null;
         clearTranscriptionHealthMonitor();
-        setIsTranscribing(false);
-        setIsListening(false);
+        clearProcessingWatchdog();
         setResponseTimerActive(false);
         setHasSpeechStartedForCurrentAttempt(false);
 
         await discardPendingResponseMedia();
+        if (captureAttemptRef.current !== attemptId) {
+          return;
+        }
 
-        if (error === 'PREP_TIMEOUT' || error === 'NO_SPEECH_DETECTED') {
+        if (error === 'PREP_TIMEOUT') {
           setUserTranscript(draftTranscript);
           setEditableTranscript(draftTranscript);
-          enterRecoveryState('10 saniye içinde konuşma başlamadı. Aynı soruda yeniden deneyebilirsiniz.', {
+          enterRecoveryState('Soruyu duyduysanız şimdi konuşmaya başlayabilirsiniz. İlk 10 saniyede ses algılanmadı.', {
             resume: false,
             allowGraceIfNeeded: false,
           });
           toast({
-            title: 'Ses algılanmadı',
-            description: 'Yanıta başlamak için 10 saniye içinde konuşmanız gerekiyor.',
+            title: 'Konuşma başlamadı',
+            description: 'Yanıta başlamak için “Konuşmaya Başla” düğmesinden sonra 10 saniye içinde konuşmanız gerekiyor.',
+          });
+          return;
+        }
+
+        if (error === 'NO_SPEECH_DETECTED') {
+          setUserTranscript(draftTranscript);
+          setEditableTranscript(draftTranscript);
+          enterRecoveryState('Ses net algılanamadı. Aynı soruda yeniden kayıt alabilirsiniz.', {
+            resume: false,
+            allowGraceIfNeeded: false,
+          });
+          toast({
+            title: 'Ses algılanamadı',
+            description: 'Yanıtınız net algılanmadı. Mikrofonu kontrol edip tekrar deneyin.',
           });
           return;
         }
 
         const isSystemFailure = [
           'TRANSCRIPTION_FAILED',
+          'TRANSCRIPTION_TIMEOUT',
+          'TRANSCRIPTION_EMPTY',
           'RECORDING_HEALTH_FAILURE',
           'TRANSCRIPTION_SERVICE_UNAVAILABLE',
           'MICROPHONE_DISCONNECTED',
@@ -835,15 +974,15 @@ const SearchoAI = ({
           enterRecoveryState(
             responseTimeRemaining <= 0 && !hasUsedRecoveryGrace
               ? 'Kayıt ya da transcript zincirinde sorun algılandı. Aynı soruda devam etmeniz için 30 saniyelik ek süre tanındı.'
-              : 'Kayıt ya da transcript zincirinde sorun algılandı. Yanıtınızın boşa gitmemesi için kayıt durduruldu; aynı soruda kaldığınız yerden devam edebilirsiniz.',
+              : 'Kayıt ya da transcript zincirinde sorun algılandı. Yanıtınızın boşa gitmemesi için aynı soruda kurtarma moduna alındınız.',
             {
               resume: true,
               allowGraceIfNeeded: true,
             },
           );
           toast({
-            title: 'Kayıt durduruldu',
-            description: 'Yanıt kaybını önlemek için aynı soruda devam moduna alındınız.',
+            title: 'Yanıt kurtarma moduna alındı',
+            description: 'Aynı soruda kaldığınız yerden devam edebilir veya yeniden kayıt alabilirsiniz.',
             variant: 'destructive',
           });
           return;
@@ -863,10 +1002,12 @@ const SearchoAI = ({
       audioTranscriberRef.current = transcriber;
       await transcriber.start(microphoneStream);
     } catch (error) {
+      if (captureAttemptRef.current !== attemptId) {
+        return;
+      }
+
       console.error('Failed to start listening:', error);
       clearTranscriptionHealthMonitor();
-      setIsListening(false);
-      setIsTranscribing(false);
       enterRecoveryState('Mikrofon başlatılamadı. Aynı soruda yeniden deneyebilirsiniz.', {
         resume: true,
         allowGraceIfNeeded: false,
@@ -878,6 +1019,7 @@ const SearchoAI = ({
       });
     }
   }, [
+    clearProcessingWatchdog,
     clearTranscriptionHealthMonitor,
     currentQuestion,
     discardPendingResponseMedia,
@@ -887,6 +1029,8 @@ const SearchoAI = ({
     ensureTranscriptionPipelineHealthy,
     enterRecoveryState,
     hasUsedRecoveryGrace,
+    interviewPhase,
+    invalidateCaptureAttempt,
     isSubmittingResponse,
     mergeTranscriptSegments,
     persistDraftResponse,
@@ -898,11 +1042,8 @@ const SearchoAI = ({
   ]);
 
   const reRecordAnswer = useCallback(async () => {
-    setIsReviewingTranscript(false);
     setUserTranscript('');
     setEditableTranscript('');
-    setIsWaitingForAnswer(true);
-    setNeedsRetryRecording(false);
     setResponseRecoveryMessage(null);
     setResumeAfterFailure(false);
     setDraftTranscript('');
@@ -913,8 +1054,8 @@ const SearchoAI = ({
     setResponseTimerActive(false);
     setHasSpeechStartedForCurrentAttempt(false);
     setHasUsedRecoveryGrace(false);
-    await startListening({ resetDuration: true, preserveDraft: false });
-  }, [startListening]);
+    await beginAnswerCapture({ resetDuration: true, preserveDraft: false });
+  }, [beginAnswerCapture]);
 
   const confirmAndSaveResponse = useCallback(async () => {
     if (!editableTranscript.trim()) {
@@ -935,13 +1076,7 @@ const SearchoAI = ({
     }
 
     try {
-      clearTranscriptionHealthMonitor();
-      if (audioTranscriberRef.current) {
-        audioTranscriberRef.current.cancel();
-        audioTranscriberRef.current = null;
-      }
-
-      await discardPendingResponseMedia();
+      shutdownActiveResponseCapture();
       const data = await interviewService.skipQuestion(projectContext.sessionId, currentQuestion.id, {
         questionText: currentQuestion.question_text,
       });
@@ -959,19 +1094,11 @@ const SearchoAI = ({
         variant: 'destructive',
       });
     }
-  }, [applyInterviewState, clearTranscriptionHealthMonitor, currentQuestion, discardPendingResponseMedia, projectContext?.sessionId, toast]);
-
-  const toggleMicrophone = useCallback(() => {
-    if (isListening || isTranscribing) {
-      finishCurrentAnswer();
-      return;
-    }
-
-    void startListening();
-  }, [finishCurrentAnswer, isListening, isTranscribing, startListening]);
+  }, [applyInterviewState, currentQuestion, projectContext?.sessionId, shutdownActiveResponseCapture, toast]);
 
   useEffect(() => {
     return () => {
+      clearProcessingWatchdog();
       clearTranscriptionHealthMonitor();
       if (audioTranscriberRef.current) {
         audioTranscriberRef.current.cancel();
@@ -980,10 +1107,9 @@ const SearchoAI = ({
 
       void stopResponseRecording(true);
       pendingResponseMediaRef.current = null;
-      microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
-      microphoneStreamRef.current = null;
+      releaseMicrophoneStream();
     };
-  }, [clearTranscriptionHealthMonitor, stopResponseRecording]);
+  }, [clearProcessingWatchdog, clearTranscriptionHealthMonitor, releaseMicrophoneStream, stopResponseRecording]);
 
   const getSessionDuration = () => {
     if (!sessionStartTime) return '00:00';
@@ -999,23 +1125,211 @@ const SearchoAI = ({
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  const isInPrepWindow = isListening && !hasSpeechStartedForCurrentAttempt && !responseTimerActive;
-  const responseTimerLabel = formatTimerLabel(isInPrepWindow ? prepTimeRemaining : responseTimeRemaining);
-  const responseTimerHeading = isInPrepWindow ? 'Hazırlık süresi' : 'Yanıt süresi';
-  const responseTimerDescription = isInPrepWindow
-    ? '10 sn içinde konuşmaya başlayın. İlk sesinizle 2 dk başlar.'
-    : 'Konuşmaya başladıktan sonra 2 dk boyunca yanıt verebilirsiniz.';
-  const responseTimerTone = isInPrepWindow
-    ? prepTimeRemaining <= 3
-      ? 'text-red-600'
-      : prepTimeRemaining <= 5
-        ? 'text-amber-600'
-        : 'text-foreground'
-    : responseTimeRemaining <= 10
-      ? 'text-red-600'
-      : responseTimeRemaining <= 30
-        ? 'text-amber-600'
-        : 'text-foreground';
+  const isRecordingPhase = interviewPhase === 'recording';
+  const isAwaitingStartPhase = interviewPhase === 'awaiting_start';
+  const isProcessingPhase = interviewPhase === 'processing';
+  const isReviewPhase = interviewPhase === 'review';
+  const isRecoveringPhase = interviewPhase === 'recovering';
+  const isCompletedPhase = interviewPhase === 'completed' || interviewProgress.isComplete;
+  const isInPrepWindow = isRecordingPhase && !hasSpeechStartedForCurrentAttempt && !responseTimerActive;
+  const isUserResponding = isRecordingPhase || isReviewPhase || isProcessingPhase || isSubmittingResponse || Boolean(userTranscript);
+
+  const responseTimerLabel = isAwaitingStartPhase
+    ? 'Hazır'
+    : formatTimerLabel(isInPrepWindow ? prepTimeRemaining : responseTimeRemaining);
+  const responseTimerHeading = isAwaitingStartPhase
+    ? 'Konuşma başlangıcı'
+    : isInPrepWindow
+      ? 'Hazırlık süresi'
+      : 'Yanıt süresi';
+  const responseTimerDescription = isAwaitingStartPhase
+    ? 'Soruyu bitirdiğinizde aşağıdaki düğmeyle kaydı başlatın.'
+    : isInPrepWindow
+      ? '“Konuşmaya Başla” sonrasında 10 sn içinde ilk cümlenizi söyleyin. İlk sesinizle 2 dk başlar.'
+      : 'Konuşmaya başladıktan sonra 2 dk boyunca yanıt verebilirsiniz.';
+  const responseTimerTone = isAwaitingStartPhase
+    ? 'text-foreground'
+    : isInPrepWindow
+      ? prepTimeRemaining <= 3
+        ? 'text-red-600'
+        : prepTimeRemaining <= 5
+          ? 'text-amber-600'
+          : 'text-foreground'
+      : responseTimeRemaining <= 10
+        ? 'text-red-600'
+        : responseTimeRemaining <= 30
+          ? 'text-amber-600'
+          : 'text-foreground';
+
+  const renderResponsePanel = () => {
+    if (isSubmittingResponse) {
+      return (
+        <div className="rounded-2xl border-2 border-blue-300 bg-blue-50 p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+            <span className="text-sm font-bold uppercase tracking-wide text-blue-700">
+              Yanıt kaydediliyor
+            </span>
+          </div>
+          <div className="rounded-xl bg-white/80 p-4 text-base text-slate-700">
+            {userTranscript || 'Yanıtınız güvenli şekilde kaydediliyor...'}
+          </div>
+        </div>
+      );
+    }
+
+    if (interviewPhase === 'asking') {
+      return (
+        <div className="rounded-2xl border border-border/70 bg-muted/20 p-5">
+          <div className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Soru seslendiriliyor. Ses tamamlanınca “Konuşmaya Başla” düğmesi aktif olacak.
+          </div>
+        </div>
+      );
+    }
+
+    if (isAwaitingStartPhase) {
+      return (
+        <div className="rounded-2xl border-2 border-brand-primary/20 bg-[linear-gradient(180deg,rgba(124,77,255,0.08),rgba(255,255,255,0.96))] p-5 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-2">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-brand-primary">
+                Hazırsanız siz başlayın
+              </p>
+              <p className="text-sm leading-6 text-muted-foreground">
+                Soruyu duyduysanız yanıt kaydını manuel olarak başlatın. Hazırlık süresi düğmeye bastığınızda başlayacak.
+              </p>
+            </div>
+            <Button onClick={() => void beginAnswerCapture({ preserveDraft: true, resetDuration: false })} size="lg" className="gap-2 bg-brand-primary text-white hover:bg-brand-primary-hover">
+              <Play className="h-4 w-4" />
+              Konuşmaya Başla
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    if (isRecordingPhase) {
+      return (
+        <div className="rounded-2xl border-2 border-red-300 bg-gradient-to-r from-red-50 to-pink-50 p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="relative">
+              <div className="h-4 w-4 rounded-full bg-red-500 animate-pulse" />
+              <div className="absolute inset-0 h-4 w-4 rounded-full bg-red-500 animate-ping" />
+            </div>
+            <span className="text-sm font-bold uppercase tracking-wide text-red-700">
+              {isInPrepWindow ? 'Konuşma başlangıcı bekleniyor' : 'Kayıt alınıyor'}
+            </span>
+          </div>
+          <div className="rounded-xl bg-white/80 p-4">
+            <p className="text-base font-medium leading-relaxed text-slate-800">
+              {isInPrepWindow
+                ? 'İlk cümlenizi şimdi söyleyin. Ses algılandığında yanıt süresi başlayacak.'
+                : 'Yanıtınız kaydediliyor. Bitirdiğinizde “Yanıtı Bitir” düğmesini kullanın.'}
+            </p>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Button onClick={finishCurrentAnswer} className="bg-brand-primary text-white hover:bg-brand-primary-hover" size="lg">
+              Yanıtı Bitir
+            </Button>
+            <Button onClick={() => void skipQuestion()} variant="outline" size="lg">
+              <SkipForward className="mr-2 h-4 w-4" />
+              Atla
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    if (isProcessingPhase) {
+      return (
+        <div className="rounded-2xl border-2 border-sky-300 bg-sky-50 p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin text-sky-700" />
+            <span className="text-sm font-bold uppercase tracking-wide text-sky-700">
+              Yanıt işleniyor
+            </span>
+          </div>
+          <div className="rounded-xl bg-white/80 p-4 text-base leading-relaxed text-slate-700">
+            Kaydınız yazıya çevriliyor. Bu aşama tamamlanmazsa otomatik olarak kurtarma moduna geçeceğiz.
+          </div>
+        </div>
+      );
+    }
+
+    if (isReviewPhase) {
+      return (
+        <div className="rounded-2xl border-2 border-yellow-400 bg-gradient-to-r from-yellow-50 to-amber-50 p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <span className="text-sm font-bold uppercase tracking-wide text-yellow-800">
+              Yanıtı kontrol edin
+            </span>
+            <span className="text-xs text-yellow-700">
+              Devam etmeden önce yanıtınızı düzenleyebilir veya doğrudan kaydedebilirsiniz.
+            </span>
+          </div>
+          <Textarea
+            value={editableTranscript}
+            onChange={(event) => setEditableTranscript(event.target.value)}
+            className="min-h-[120px] w-full resize-none text-base font-medium leading-relaxed"
+            placeholder="Yanıtınızı buraya yazın..."
+          />
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Button onClick={() => void confirmAndSaveResponse()} className="bg-green-600 text-white hover:bg-green-700" size="lg">
+              Onayla ve Kaydet
+            </Button>
+            <Button onClick={() => void reRecordAnswer()} variant="outline" size="lg">
+              Tekrar Kaydet
+            </Button>
+            <Button onClick={() => void skipQuestion()} variant="outline" size="lg">
+              <SkipForward className="mr-2 h-4 w-4" />
+              Atla
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    if (isRecoveringPhase) {
+      return (
+        <div className="rounded-2xl border-2 border-dashed border-gray-300 bg-gradient-to-r from-gray-50 to-slate-50 p-5">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <Mic className="h-6 w-6 text-gray-500" />
+              <p className="text-base font-medium leading-relaxed text-gray-700">
+                {responseRecoveryMessage ?? 'Yanıt akışı aynı soruda kurtarma moduna alındı.'}
+              </p>
+            </div>
+            {draftTranscript ? (
+              <div className="rounded-xl bg-white/80 p-4 text-left shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Şu ana kadar kaydedilen kısım
+                </p>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                  {draftTranscript}
+                </p>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-3">
+              <Button onClick={() => void beginAnswerCapture({ resetDuration: false, preserveDraft: resumeAfterFailure })} size="lg" className="bg-brand-primary text-white hover:bg-brand-primary-hover">
+                {resumeAfterFailure ? 'Kaldığın Yerden Devam Et' : 'Tekrar Kaydet'}
+              </Button>
+              <Button onClick={() => void reRecordAnswer()} variant="outline" size="lg">
+                Baştan Kaydet
+              </Button>
+              <Button onClick={() => void skipQuestion()} variant="outline" size="lg">
+                <SkipForward className="mr-2 h-4 w-4" />
+                Atla
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
 
   if (!isActive) return null;
 
@@ -1024,46 +1338,46 @@ const SearchoAI = ({
   }
 
   return (
-    <div className="min-h-full flex flex-col bg-background">
+    <div className="flex min-h-full flex-col bg-background xl:h-full">
       {!showTurkishPreamble && (
         <>
-          <div className="flex-1 flex flex-col items-center px-0 py-0">
-            <div className="w-full max-w-4xl space-y-6">
-              <div className="text-center">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-muted text-sm">
-                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                  Soru {Math.min(interviewProgress.completed + 1, Math.max(interviewProgress.total, 1))} / {Math.max(interviewProgress.total, 1)}
-                </div>
-              </div>
-
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col xl:min-h-0">
               {currentQuestion && !isPreamblePhase ? (
-                <div className="space-y-6">
-                  <div className="flex justify-center">
+                <div className="flex flex-1 flex-col gap-4 xl:min-h-0">
+                  <div className="flex shrink-0 justify-center">
                     <AvatarSpeaker
                       key={currentQuestion.id}
                       questionText={currentQuestion.question_text}
-                      isUserResponding={isListening || isTranscribing || isReviewingTranscript || isSubmittingResponse || Boolean(userTranscript)}
+                      isUserResponding={isUserResponding}
                       onSpeakingStart={() => {
-                        setIsWaitingForAnswer(false);
+                        setInterviewPhase('asking');
                         void ensureMicrophoneStream();
                       }}
                       onSpeakingComplete={() => {
-                        void startListening();
+                        setInterviewPhase('awaiting_start');
                       }}
                     />
                   </div>
 
-                  <div className="bg-card rounded-xl p-6 shadow border">
-                    <div className="mb-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm font-semibold text-primary uppercase tracking-wide">
-                          Soru {interviewProgress.completed + 1} / {interviewProgress.total}
-                        </span>
+                  <div className="flex flex-1 flex-col overflow-hidden rounded-[28px] border bg-card p-5 shadow xl:min-h-0 xl:p-6">
+                    <div className="shrink-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">
+                            Soru {Math.min(interviewProgress.completed + 1, Math.max(interviewProgress.total, 1))} / {Math.max(interviewProgress.total, 1)}
+                          </p>
+                          {currentQuestion.section ? (
+                            <span className="mt-2 inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                              {currentQuestion.section}
+                            </span>
+                          ) : null}
+                        </div>
                         <span className="text-sm font-medium text-muted-foreground">
                           {Math.round(interviewProgress.percentage)}% Tamamlandı
                         </span>
                       </div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
                         <div
                           className="h-full bg-primary transition-all duration-500 ease-out"
                           style={{ width: `${interviewProgress.percentage}%` }}
@@ -1071,142 +1385,36 @@ const SearchoAI = ({
                       </div>
                     </div>
 
-                    {currentQuestion.section ? (
-                      <span className="inline-block px-3 py-1 text-xs font-medium text-primary bg-primary/10 rounded-full">
-                        {currentQuestion.section}
-                      </span>
-                    ) : null}
-
-                    <div className="space-y-2 mt-4">
-                      <h3 className="text-xl font-semibold text-foreground leading-relaxed">
-                        {currentQuestion.question_text}
-                      </h3>
-                    </div>
-
-                    <div className="mt-5 rounded-2xl border border-border/70 bg-muted/30 px-4 py-4">
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                            {responseTimerHeading}
-                          </p>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {responseTimerDescription}
-                          </p>
-                        </div>
-                        <div className={`text-2xl font-semibold tabular-nums ${responseTimerTone}`}>
-                          {responseTimerLabel}
+                    <div className="mt-5 flex flex-1 flex-col gap-5 xl:min-h-0">
+                      <div className="shrink-0 rounded-2xl border border-border/70 bg-muted/30 px-4 py-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                              {responseTimerHeading}
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {responseTimerDescription}
+                            </p>
+                          </div>
+                          <div className={`text-2xl font-semibold tabular-nums ${responseTimerTone}`}>
+                            {responseTimerLabel}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="mt-6 min-h-[120px]">
-                      {isSubmittingResponse ? (
-                        <div className="rounded-2xl border-2 border-blue-300 bg-blue-50 p-6 shadow-lg">
-                          <div className="flex items-center gap-3 mb-3">
-                            <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
-                            <span className="text-sm font-bold uppercase tracking-wide text-blue-700">
-                              Yanıt kaydediliyor
-                            </span>
-                          </div>
-                          <div className="rounded-xl bg-white/80 p-4 text-base text-slate-700">
-                            {userTranscript || 'Yanıtınız güvenli şekilde kaydediliyor...'}
-                          </div>
-                        </div>
-                      ) : isTranscribing ? (
-                        <div className="bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl p-6 border-2 border-red-300 shadow-lg">
-                          <div className="flex items-center gap-3 mb-3">
-                            <div className="relative">
-                              <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse" />
-                              <div className="absolute inset-0 w-4 h-4 bg-red-500 rounded-full animate-ping" />
-                            </div>
-                            <span className="text-sm font-bold text-red-700 uppercase tracking-wide">
-                              KAYIT YAPILIYOR
-                            </span>
-                          </div>
-                          <div className="bg-white/80 rounded-xl p-4 min-h-[60px]">
-                            <p className="text-lg font-medium text-gray-900 leading-relaxed">
-                              {userTranscript || 'Konuşmanız işleniyor...'}
-                            </p>
-                          </div>
-                          <div className="mt-4 flex gap-3">
-                            <Button onClick={finishCurrentAnswer} className="bg-brand-primary text-white hover:bg-brand-primary-hover" size="lg">
-                              Yanıtı Bitir
-                            </Button>
-                            <Button onClick={skipQuestion} variant="outline" size="lg">
-                              <SkipForward className="h-4 w-4 mr-2" />
-                              Atla
-                            </Button>
-                          </div>
-                        </div>
-                      ) : isReviewingTranscript ? (
-                        <div className="bg-gradient-to-r from-yellow-50 to-amber-50 rounded-2xl p-6 border-2 border-yellow-400 shadow-lg">
-                          <div className="flex items-center justify-between mb-3 gap-4">
-                            <span className="text-sm font-bold text-yellow-800 uppercase tracking-wide">
-                              Yanıtı kontrol edin
-                            </span>
-                            <span className="text-xs text-yellow-700">
-                              Devam etmeden once yanitinizi duzenleyebilir veya dogrudan kaydedebilirsiniz.
-                            </span>
-                          </div>
-                          <Textarea
-                            value={editableTranscript}
-                            onChange={(event) => setEditableTranscript(event.target.value)}
-                            className="w-full min-h-[100px] text-lg font-medium leading-relaxed resize-none"
-                            placeholder="Yanıtınızı buraya yazın..."
-                          />
-                          <div className="flex flex-wrap gap-3 mt-4">
-                            <Button onClick={() => void confirmAndSaveResponse()} className="bg-green-600 hover:bg-green-700 text-white" size="lg">
-                              Onayla ve Kaydet
-                            </Button>
-                            <Button onClick={() => void reRecordAnswer()} variant="outline" size="lg">
-                              Tekrar Kaydet
-                            </Button>
-                            <Button onClick={() => void skipQuestion()} variant="outline" size="lg">
-                              <SkipForward className="h-4 w-4 mr-2" />
-                              Atla
-                            </Button>
-                          </div>
-                        </div>
-                      ) : isWaitingForAnswer ? (
-                        <div className="bg-gradient-to-r from-gray-50 to-slate-50 rounded-2xl p-6 border-2 border-dashed border-gray-300">
-                          <div className="flex flex-col items-center justify-center gap-3 min-h-[80px]">
-                            <Mic className="h-8 w-8 text-gray-400 animate-pulse" />
-                            <p className="text-base text-gray-600 font-medium text-center">
-                              {responseRecoveryMessage ?? 'Lütfen yanıtınızı sesli olarak verin...'}
-                            </p>
-                            {draftTranscript ? (
-                              <div className="w-full max-w-2xl rounded-xl bg-white/80 p-4 text-left shadow-sm">
-                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                  Şu ana kadar kaydedilen kısım
-                                </p>
-                                <p className="mt-2 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">
-                                  {draftTranscript}
-                                </p>
-                              </div>
-                            ) : null}
-                            <div className="flex flex-wrap items-center justify-center gap-3">
-                              {isListening || isTranscribing ? (
-                                <Button onClick={finishCurrentAnswer} size="lg" className="bg-brand-primary text-white hover:bg-brand-primary-hover">
-                                  Yanıtı Bitir
-                                </Button>
-                              ) : null}
-                              {needsRetryRecording ? (
-                                <Button onClick={() => void startListening({ resetDuration: false, preserveDraft: true })} size="lg" variant="outline">
-                                  {resumeAfterFailure ? 'Kaldığın Yerden Devam Et' : 'Tekrar Kaydet'}
-                                </Button>
-                              ) : null}
-                              <Button onClick={() => void skipQuestion()} variant="outline" size="lg">
-                                <SkipForward className="h-4 w-4 mr-2" />
-                                Atla
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
+                      <div className="shrink-0">
+                        <h3 className="text-xl font-semibold leading-relaxed text-foreground">
+                          {currentQuestion.question_text}
+                        </h3>
+                      </div>
+
+                      <div className="flex-1 xl:min-h-0 xl:overflow-y-auto">
+                        {renderResponsePanel()}
+                      </div>
                     </div>
                   </div>
                 </div>
-              ) : interviewProgress.isComplete ? (
+              ) : isCompletedPhase ? (
                 <div className="relative overflow-hidden rounded-3xl border border-emerald-200 bg-[radial-gradient(circle_at_top,_rgba(52,211,153,0.18),_transparent_40%),linear-gradient(180deg,_#ffffff_0%,_#f0fdf4_100%)] p-10 text-center shadow-[0_24px_70px_rgba(16,185,129,0.12)]">
                   <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.55),transparent)] opacity-80" />
                   <div className="relative flex flex-col items-center gap-5">
@@ -1219,12 +1427,12 @@ const SearchoAI = ({
                     </div>
                     <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700">
                       <Sparkles className="h-4 w-4" />
-                      Oturum basariyla tamamlandi
+                      Oturum başarıyla tamamlandı
                     </div>
                     <div>
                       <h3 className="text-2xl font-semibold text-foreground">Görüşme tamamlandı</h3>
                       <p className="mt-3 text-muted-foreground">
-                        Katılımınız için teşekkürler. İsterseniz şimdi oturumu kapatabilirsiniz.
+                        Kamera ve mikrofon kapatıldı. İsterseniz şimdi oturumu kapatabilirsiniz.
                       </p>
                     </div>
                     <Button onClick={() => onSessionEnd?.('completed')} size="lg" className="bg-emerald-600 text-white hover:bg-emerald-700">
@@ -1236,57 +1444,37 @@ const SearchoAI = ({
             </div>
           </div>
 
-          <div className="border-t border-border bg-card/50 backdrop-blur-sm">
-            <div className="max-w-4xl mx-auto px-6 py-6 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <Button
-                  onClick={toggleMicrophone}
-                  variant={isListening || isTranscribing ? 'default' : 'outline'}
-                  size="lg"
-                  className={`gap-2 ${isListening || isTranscribing ? 'ring-2 ring-green-500 ring-offset-2' : ''}`}
-                  disabled={isReviewingTranscript || isSubmittingResponse || !currentQuestion}
-                >
-                  {isListening || isTranscribing ? (
-                    <>
-                      <Mic className="h-5 w-5" />
-                      <span className="hidden sm:inline">Yanıtı Bitir</span>
-                    </>
+          {!isCompletedPhase ? (
+            <div className="border-t border-border bg-card/50 backdrop-blur-sm">
+              <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-6 py-4">
+                <div className="flex items-center gap-3">
+                  {isRecordingVideo ? (
+                    <span className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                      Video kaydı alınıyor
+                    </span>
                   ) : (
-                    <>
-                      <MicOff className="h-5 w-5" />
-                      <span className="hidden sm:inline">Mikrofon</span>
-                    </>
+                    <span className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                      Görüşme aktif
+                    </span>
                   )}
+                </div>
+
+                <div className="font-mono text-sm text-muted-foreground">
+                  {getSessionDuration()}
+                </div>
+
+                <Button
+                  onClick={() => setShowEndSessionConfirmation(true)}
+                  variant="destructive"
+                  size="lg"
+                  className="gap-2"
+                >
+                  <PhoneOff className="h-5 w-5" />
+                  Oturumu Bitir
                 </Button>
-                {isRecordingVideo ? (
-                  <span className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                    Video kaydı alınıyor
-                  </span>
-                ) : null}
               </div>
-
-              <div className="text-sm text-muted-foreground font-mono">
-                {getSessionDuration()}
-              </div>
-
-              <Button
-                onClick={() => {
-                  if (interviewProgress.isComplete) {
-                    onSessionEnd?.('completed');
-                    return;
-                  }
-
-                  setShowEndSessionConfirmation(true);
-                }}
-                variant="destructive"
-                size="lg"
-                className="gap-2"
-              >
-                <PhoneOff className="h-5 w-5" />
-                {interviewProgress.isComplete ? 'Oturumu Tamamla' : 'Oturumu Bitir'}
-              </Button>
             </div>
-          </div>
+          ) : null}
 
           <AlertDialog open={showEndSessionConfirmation} onOpenChange={setShowEndSessionConfirmation}>
             <AlertDialogContent>
@@ -1312,10 +1500,10 @@ const SearchoAI = ({
           </AlertDialog>
 
           {import.meta.env.DEV ? (
-            <div className="bg-slate-900 text-white p-4 text-xs font-mono">
-              <div>Listening: {isListening ? '✅' : '❌'}</div>
-              <div>Transcribing: {isTranscribing ? '✅' : '❌'}</div>
+            <div className="bg-slate-900 p-4 text-xs font-mono text-white">
+              <div>Phase: {interviewPhase}</div>
               <div>Submitting: {isSubmittingResponse ? '✅' : '❌'}</div>
+              <div>Recording video: {isRecordingVideo ? '✅' : '❌'}</div>
             </div>
           ) : null}
         </>

@@ -115,6 +115,39 @@ const HEAVY_JARGON_PATTERNS = [
   "ui",
 ];
 
+const USABILITY_CONTEXT_ANCHOR_PATTERNS = [
+  "bu ekran",
+  "ekranda",
+  "ekrana",
+  "burada",
+  "bu adim",
+  "bu adım",
+  "adimda",
+  "adımda",
+  "bu noktada",
+  "gorev",
+  "görev",
+  "akis",
+  "akış",
+  "karar verirken",
+  "ilk gordugunuzde",
+  "ilk gördüğünüzde",
+  "ilk bakista",
+  "ilk bakışta",
+  "bu alan",
+  "buton",
+  "mesaj",
+  "form",
+];
+
+const GENERIC_USABILITY_PATTERNS = [
+  "bu deneyim sizde nasil bir izlenim birakiyor",
+  "bu deneyim sizde ne hissettiriyor",
+  "bu bolum sizde nasil bir izlenim birakiyor",
+  "burasi sizde nasil bir izlenim birakiyor",
+  "bu deneyimi nasil tarif edersiniz",
+];
+
 const METHODOLOGY_MUST_RULES_BY_CODE: Record<string, string> = {
   leading: "Katılımcıya sorun, duygu veya yargı empoze etme.",
   assumptive: "Katılımcının belirli bir deneyim yaşadığını peşinen varsayma.",
@@ -272,9 +305,9 @@ export const buildFallbackQuestions = (
 
   if (mode === "usability") {
     return [
-      "Bu bölümde size en net gelen şey ne oldu?",
-      "Burada ilk dikkatinizi çeken unsur neydi?",
-      "Bu adım sizde nasıl bir izlenim bıraktı?",
+      "Bu ekranda size en net gelen şey ne oldu?",
+      "Burada ilk olarak ne yapmanız gerektiğini nasıl yorumladınız?",
+      "Bu adımda kararınızı verirken hangi bilgi öne çıktı?",
     ];
   }
 
@@ -319,6 +352,12 @@ const hasStandaloneVe = (normalized: string) => /\bve\b/.test(normalized);
 
 const hasHeavyJargon = (normalized: string) =>
   HEAVY_JARGON_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
+
+const hasUsabilityContextAnchor = (normalized: string) =>
+  USABILITY_CONTEXT_ANCHOR_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
+
+const hasGenericUsabilityPrompt = (normalized: string) =>
+  GENERIC_USABILITY_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
 
 const getWordCount = (question: string) => cleanQuestion(question).split(/\s+/).filter(Boolean).length;
 
@@ -383,6 +422,7 @@ export const assessQuestionQuality = ({
   const clarity = wordCount >= 6 && wordCount <= 28 && cleanedQuestion.endsWith("?");
   const jargonFree = !hasHeavyJargon(normalized);
   const warmupFit = !warmupSection || hasWarmupQuestionTone(cleanedQuestion);
+  const usabilityContextFit = mode !== "usability" || warmupSection || (!hasGenericUsabilityPrompt(normalized) && hasUsabilityContextAnchor(normalized));
   const methodologyMatches = detectMethodologyMatches(normalized);
   const methodologyFit =
     methodologyMatches.forcedParaphraseMatches.length === 0 &&
@@ -462,6 +502,15 @@ export const assessQuestionQuality = ({
     });
   }
 
+  if (!usabilityContextFit) {
+    issues.push({
+      code: "usability_context",
+      label: "Bağlamdan kopuk",
+      detail: "Usability sorusu somut ekran, adım, görev veya karar anına yeterince bağlanmıyor.",
+      severity: "problematic",
+    });
+  }
+
   if (methodologyMatches.forcedParaphraseMatches.length > 0) {
     issues.push({
       code: "forced_paraphrase",
@@ -532,6 +581,7 @@ export const assessQuestionQuality = ({
       no_standalone_ve: { label: '"ve" içermiyor', passed: noStandaloneVe },
       clarity: { label: "Net", passed: clarity },
       warmup_fit: { label: "Isınma akışına uygun", passed: warmupFit },
+      usability_context: { label: "Usability bağlamına bağlı", passed: usabilityContextFit },
       methodology_fit: { label: "Metodolojiye uygun", passed: methodologyFit },
     },
   };
@@ -670,7 +720,7 @@ export const buildFallbackRewrite = ({
   }
 
   if (mode === "usability") {
-    return "Bu bölüm sizde nasıl bir izlenim bırakıyor?";
+    return "Bu ekranda bu adımda size en net gelen şey ne oldu?";
   }
 
   return "Bu deneyimi nasıl tarif edersiniz?";

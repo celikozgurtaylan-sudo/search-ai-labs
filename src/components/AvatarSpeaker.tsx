@@ -243,7 +243,7 @@ export const AvatarSpeaker = ({
         : orbState === 'retrying'
           ? `ElevenLabs sesi baglaniyor. Deneme ${retryAttempt}.`
           : showListeningHint
-            ? 'Hazir oldugunuzda yanit vermeye baslayin.'
+            ? 'Hazir oldugunuzda konusmaya baslamak icin asagidaki dugmeyi kullanin.'
             : '';
 
   return (

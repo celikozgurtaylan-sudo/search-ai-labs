@@ -256,7 +256,20 @@ const ChatPanel = ({
     };
   }, [clearAssistantStageTimers, clearAssistantStreamState]);
 
-  // Load initial message from localStorage if available
+  useEffect(() => {
+    if (messages.length === 0 && initialMessages.length > 0) {
+      setMessages(initialMessages);
+      hasTriggeredInitialMessageRef.current = true;
+    }
+  }, [initialMessages, messages.length]);
+
+  useEffect(() => {
+    if (conversationHistory.length === 0 && initialConversationHistory.length > 0) {
+      setConversationHistory(initialConversationHistory);
+      hasTriggeredInitialMessageRef.current = true;
+    }
+  }, [conversationHistory.length, initialConversationHistory]);
+
   useEffect(() => {
     if (projectData?.description && !hasTriggeredInitialMessageRef.current && !discussionGuide?.sections?.length) {
       hasTriggeredInitialMessageRef.current = true;
