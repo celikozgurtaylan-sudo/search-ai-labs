@@ -87,6 +87,12 @@ interface PersistedWorkspaceChatState {
   updatedAt: number;
 }
 
+interface RestoredWorkspaceChatState {
+  messages: ChatMessage[];
+  conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
+  updatedAt: number;
+}
+
 const getWorkspaceChatStorageKey = (projectId?: string | null) => {
   if (typeof projectId !== "string" || projectId.trim().length === 0) {
     return null;
@@ -219,37 +225,151 @@ const deserializeChatMessages = (messages: unknown, projectData: ProjectData | n
     }));
 };
 
-const restoreWorkspaceChatState = (projectData: ProjectData | null) => {
-  const storageKey = getWorkspaceChatStorageKey(projectData?.id);
-  if (!storageKey) {
+const getChatClarificationRecap = (projectData: ProjectData | null) => {
+  const usability = projectData?.analysis?.usabilityTesting;
+  if (!usability) return [];
+
+  return [
+    {
+      question: "Bu ekranlardan neyi anlamak istiyorsunuz?",
+      answer: usability.objective || "",
+    },
+    {
+      question: "Kullanıcının bu ekranlarda tamamlamasını beklediğiniz ana görev nedir?",
+      answer: usability.primaryTask || "",
+    },
+    {
+      question: "Hedef kullanıcı tipi",
+      answer: usability.targetUsers || "",
+    },
+    {
+      question: "Başarı kriteri",
+      answer: usability.successSignals || "",
+    },
+    {
+      question: "Özellikle test edilmesini istediğiniz riskli alanlar",
+      answer: usability.riskAreas || "",
+    },
+  ].filter((pair) => pair.answer.trim().length > 0);
+};
+
+const getChatAttachments = (projectData: ProjectData | null) => {
+  if (!Array.isArray(projectData?.analysis?.designScreens)) return [];
+
+  return projectData.analysis.designScreens
+    .filter((screen: any) => typeof screen?.url === "string" && screen.url.length > 0)
+    .map((screen: any) => ({
+      name: screen.name || "Screen",
+      source: screen.source || "unknown",
+      url: screen.url,
+    }));
+};
+
+const buildFallbackWorkspaceChatState = (projectData: ProjectData | null): RestoredWorkspaceChatState => {
+  const description = typeof projectData?.description === "string" ? projectData.description.trim() : "";
+  const hasResearchContext = Boolean(
+    description &&
+    (
+      projectData?.analysis?.isResearchRelated ||
+      Array.isArray(projectData?.analysis?.discussionGuide?.sections) ||
+      projectData?.analysis?.aiEnhancedBrief
+    ),
+  );
+
+  if (!hasResearchContext) {
     return {
-      messages: [] as ChatMessage[],
-      conversationHistory: [] as Array<{ role: "user" | "assistant"; content: string }>,
+      messages: [],
+      conversationHistory: [],
+      updatedAt: 0,
     };
   }
 
+  const timestampValue = typeof projectData?.timestamp === "number" ? projectData.timestamp : Date.now();
+
+  return {
+    messages: [
+      {
+        id: `seed-${projectData?.id || "project"}`,
+        type: "user",
+        content: description,
+        timestamp: new Date(timestampValue),
+        status: "done",
+        clarifications: getChatClarificationRecap(projectData),
+        attachments: getChatAttachments(projectData),
+      },
+    ],
+    conversationHistory: [{ role: "user", content: description }],
+    updatedAt: timestampValue,
+  };
+};
+
+const parsePersistedWorkspaceChatState = (
+  value: unknown,
+  projectData: ProjectData | null,
+): RestoredWorkspaceChatState | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<PersistedWorkspaceChatState>;
+  const messages = deserializeChatMessages(candidate.messages, projectData);
+  const conversationHistory = sanitizeConversationHistory(candidate.conversationHistory);
+  const updatedAt = typeof candidate.updatedAt === "number" ? candidate.updatedAt : 0;
+
+  if (messages.length === 0 && conversationHistory.length === 0) {
+    return null;
+  }
+
+  return {
+    messages,
+    conversationHistory,
+    updatedAt,
+  };
+};
+
+const buildPersistedWorkspaceChatPayload = (
+  messages: ChatMessage[],
+  conversationHistory: Array<{ role: "user" | "assistant"; content: string }>,
+): PersistedWorkspaceChatState | null => {
+  const serializedMessages = serializeChatMessages(messages);
+  const sanitizedConversationHistory = sanitizeConversationHistory(conversationHistory);
+
+  if (serializedMessages.length === 0 && sanitizedConversationHistory.length === 0) {
+    return null;
+  }
+
+  const updatedAt = serializedMessages.reduce((latest, message) => {
+    const nextTimestamp = Number.isFinite(Date.parse(message.timestamp)) ? Date.parse(message.timestamp) : 0;
+    return Math.max(latest, nextTimestamp);
+  }, 0);
+
+  return {
+    messages: serializedMessages,
+    conversationHistory: sanitizedConversationHistory,
+    updatedAt: updatedAt || Date.now(),
+  };
+};
+
+const restoreWorkspaceChatState = (projectData: ProjectData | null): RestoredWorkspaceChatState => {
   try {
-    const stored = localStorage.getItem(storageKey);
-    if (!stored) {
-      return {
-        messages: [] as ChatMessage[],
-        conversationHistory: [] as Array<{ role: "user" | "assistant"; content: string }>,
-      };
+    const storageKey = getWorkspaceChatStorageKey(projectData?.id);
+    const stored = storageKey ? localStorage.getItem(storageKey) : null;
+    const localSnapshot = stored
+      ? parsePersistedWorkspaceChatState(JSON.parse(stored), projectData)
+      : null;
+    const analysisSnapshot = parsePersistedWorkspaceChatState(projectData?.analysis?.workspaceChat, projectData);
+    const resolvedSnapshot = [localSnapshot, analysisSnapshot]
+      .filter((snapshot): snapshot is RestoredWorkspaceChatState => Boolean(snapshot))
+      .sort((left, right) => right.updatedAt - left.updatedAt)[0];
+
+    if (resolvedSnapshot) {
+      return resolvedSnapshot;
     }
-
-    const parsed = JSON.parse(stored) as PersistedWorkspaceChatState;
-
-    return {
-      messages: deserializeChatMessages(parsed?.messages, projectData),
-      conversationHistory: sanitizeConversationHistory(parsed?.conversationHistory),
-    };
   } catch (error) {
     console.error("Failed to restore workspace chat state:", error);
-    return {
-      messages: [] as ChatMessage[],
-      conversationHistory: [] as Array<{ role: "user" | "assistant"; content: string }>,
-    };
   }
+
+  return buildFallbackWorkspaceChatState(projectData);
 };
 
 const GuideLoadingPanel = ({ guide }: { guide: any }) => {
@@ -318,7 +438,9 @@ const Workspace = () => {
   const [showPauseResearchDialog, setShowPauseResearchDialog] = useState(false);
   const [showCompleteResearchDialog, setShowCompleteResearchDialog] = useState(false);
   const lastPersistedAnalysisKeyRef = useRef<string>("");
+  const lastPersistedWorkspaceChatKeyRef = useRef<string>("");
   const restoredChatProjectIdRef = useRef<string | null>(null);
+  const workspaceChatPersistTimeoutRef = useRef<number | null>(null);
   const researchMode = useMemo(() => getResearchMode(projectData?.analysis), [projectData?.analysis]);
   const isAIEnhancedMode = researchMode === "ai_enhanced";
   const aiEnhancedDisplayGuide = useMemo(
@@ -335,6 +457,52 @@ const Workspace = () => {
       timestamp: Date.now(),
     }));
   }, []);
+
+  const workspaceChatPayload = useMemo(
+    () => buildPersistedWorkspaceChatPayload(chatMessages, chatConversationHistory),
+    [chatConversationHistory, chatMessages],
+  );
+
+  const workspaceChatContentKey = useMemo(
+    () => JSON.stringify(workspaceChatPayload ? {
+      messages: workspaceChatPayload.messages,
+      conversationHistory: workspaceChatPayload.conversationHistory,
+    } : null),
+    [workspaceChatPayload],
+  );
+
+  const buildCurrentAnalysisSnapshot = useCallback((includeResearchState: boolean) => {
+    const existingAnalysis = projectData?.analysis || {};
+    const nextWorkspaceChat = workspaceChatPayload ?? existingAnalysis.workspaceChat ?? null;
+
+    if (!includeResearchState) {
+      return {
+        ...existingAnalysis,
+        workspaceChat: nextWorkspaceChat,
+      };
+    }
+
+    if (researchMode === "ai_enhanced") {
+      return {
+        ...existingAnalysis,
+        researchMode: "ai_enhanced",
+        aiEnhancedBrief,
+        isResearchRelated: true,
+        workspaceChat: nextWorkspaceChat,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    return {
+      ...existingAnalysis,
+      researchMode: "structured",
+      discussionGuide,
+      questionSet: ensureQuestionSetState(questionSetState, discussionGuide),
+      isResearchRelated: true,
+      workspaceChat: nextWorkspaceChat,
+      updatedAt: new Date().toISOString(),
+    };
+  }, [aiEnhancedBrief, discussionGuide, projectData?.analysis, questionSetState, researchMode, workspaceChatPayload]);
 
   useEffect(() => {
     const researcherSession = localStorage.getItem("researcher-session");
@@ -374,15 +542,27 @@ const Workspace = () => {
 
   useEffect(() => {
     const projectId = projectData?.id ?? null;
-    if (!projectId || restoredChatProjectIdRef.current === projectId) {
+    if (!projectId) {
+      return;
+    }
+
+    const hasCurrentChat = chatMessages.length > 0 || chatConversationHistory.length > 0;
+    const hasPersistedAnalysisChat = Boolean(projectData?.analysis?.workspaceChat);
+    const shouldRestoreForProjectSwitch = restoredChatProjectIdRef.current !== projectId;
+
+    if (!shouldRestoreForProjectSwitch && (hasCurrentChat || !hasPersistedAnalysisChat)) {
       return;
     }
 
     const restoredChatState = restoreWorkspaceChatState(projectData);
+    if (!shouldRestoreForProjectSwitch && restoredChatState.messages.length === 0 && restoredChatState.conversationHistory.length === 0) {
+      return;
+    }
+
     setChatMessages(restoredChatState.messages);
     setChatConversationHistory(restoredChatState.conversationHistory);
     restoredChatProjectIdRef.current = projectId;
-  }, [projectData]);
+  }, [chatConversationHistory.length, chatMessages.length, projectData]);
 
   useEffect(() => {
     const hydrateLatestProject = async () => {
@@ -398,7 +578,12 @@ const Workspace = () => {
           title: latestProject.title,
           description: latestProject.description,
           template: latestProject.analysis?.template || projectData.template,
-          analysis: latestProject.analysis || projectData.analysis,
+          analysis: latestProject.analysis
+            ? {
+                ...latestProject.analysis,
+                workspaceChat: latestProject.analysis.workspaceChat ?? projectData.analysis?.workspaceChat,
+              }
+            : projectData.analysis,
         };
 
         syncProjectData(mergedProject);
@@ -486,23 +671,7 @@ const Workspace = () => {
     if (!projectData?.id) return;
 
     try {
-      const existingAnalysis = projectData.analysis || {};
-      const nextAnalysis = researchMode === "ai_enhanced"
-        ? {
-            ...existingAnalysis,
-            researchMode: "ai_enhanced",
-            aiEnhancedBrief,
-            isResearchRelated: true,
-            updatedAt: new Date().toISOString(),
-          }
-        : {
-            ...existingAnalysis,
-            researchMode: "structured",
-            discussionGuide,
-            questionSet: ensureQuestionSetState(questionSetState, discussionGuide),
-            isResearchRelated: true,
-            updatedAt: new Date().toISOString(),
-          };
+      const nextAnalysis = buildCurrentAnalysisSnapshot(true);
 
       await projectService.updateProject(projectData.id, {
         analysis: nextAnalysis,
@@ -549,25 +718,61 @@ const Workspace = () => {
     }
 
     try {
-      const nextMessages = serializeChatMessages(chatMessages);
-      const nextConversationHistory = sanitizeConversationHistory(chatConversationHistory);
-
-      if (nextMessages.length === 0 && nextConversationHistory.length === 0) {
+      if (!workspaceChatPayload) {
         localStorage.removeItem(storageKey);
         return;
       }
 
-      const payload: PersistedWorkspaceChatState = {
-        messages: nextMessages,
-        conversationHistory: nextConversationHistory,
-        updatedAt: Date.now(),
-      };
-
-      localStorage.setItem(storageKey, JSON.stringify(payload));
+      localStorage.setItem(storageKey, JSON.stringify(workspaceChatPayload));
     } catch (error) {
       console.error("Failed to persist workspace chat state:", error);
     }
-  }, [chatConversationHistory, chatMessages, projectData?.id]);
+  }, [projectData?.id, workspaceChatPayload]);
+
+  useEffect(() => {
+    if (!projectData?.id || !user) {
+      return;
+    }
+
+    if (workspaceChatPersistTimeoutRef.current) {
+      window.clearTimeout(workspaceChatPersistTimeoutRef.current);
+      workspaceChatPersistTimeoutRef.current = null;
+    }
+
+    if (!workspaceChatPayload) {
+      lastPersistedWorkspaceChatKeyRef.current = "";
+      return;
+    }
+
+    if (lastPersistedWorkspaceChatKeyRef.current === workspaceChatContentKey) {
+      return;
+    }
+
+    workspaceChatPersistTimeoutRef.current = window.setTimeout(() => {
+      const nextAnalysis = buildCurrentAnalysisSnapshot(false);
+
+      void projectService.updateProject(projectData.id!, {
+        analysis: nextAnalysis,
+      }).then((updatedProject) => {
+        syncProjectData({
+          ...projectData,
+          analysis: updatedProject.analysis ?? nextAnalysis,
+        });
+        lastPersistedWorkspaceChatKeyRef.current = workspaceChatContentKey;
+      }).catch((error) => {
+        console.error("Failed to persist workspace chat to project:", error);
+      }).finally(() => {
+        workspaceChatPersistTimeoutRef.current = null;
+      });
+    }, 600);
+
+    return () => {
+      if (workspaceChatPersistTimeoutRef.current) {
+        window.clearTimeout(workspaceChatPersistTimeoutRef.current);
+        workspaceChatPersistTimeoutRef.current = null;
+      }
+    };
+  }, [buildCurrentAnalysisSnapshot, projectData, syncProjectData, user, workspaceChatContentKey, workspaceChatPayload]);
 
   const applyDiscussionGuide = useCallback((nextGuide: any, source: string) => {
     setDiscussionGuide(nextGuide);
