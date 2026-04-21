@@ -141,8 +141,11 @@ ${usabilityContextPrompt ? `${usabilityContextPrompt}
 
 ` : ""}${warmupSection ? `Bu bölüm görüşmenin ilk ısınma bölümüdür.
 - Katılımcıyı rahatlatan, düşük baskılı ve konuşmayı açan sorular üret.
-- İlk soru mutlaka katılımcının gününe veya o ana kadar ne yaptığına dokunsun.
-- Ürün değerlendirmesine doğrudan yüklenme; önce bağlam ve gündelik deneyim aç.` : `Bu bölüm görüşmenin ana araştırma bölümüdür.
+- Sorular kısa, tek cümleli ve birbirinden bağımsız olsun.
+- Her soru tek başına anlamlı olsun; önceki soruya referans verme.
+- İlk soru katılımcının gününe dokunsun.
+- "Bu konu", "bu konuyla", "bununla ilgili", "buraya gelmeden önce", "en son karşılaştığınız an" gibi ifadeleri kullanma.
+- Ürün değerlendirmesine doğrudan yüklenme; önce gündelik ve genel bir sohbet aç.` : `Bu bölüm görüşmenin ana araştırma bölümüdür.
 - Warm-up sorusu üretme.
 - Soruları bu bölümün araştırma odağına sadık, açık uçlu ve tek odaklı kur.
 ${isUsabilityMode ? `- Her soruyu somut bir ekran, görev adımı, karar anı, bilgi mesajı veya kullanıcı hareketine bağla.
@@ -211,7 +214,9 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 ## Soru Metodolojisi
 - Görüşme soruları genişten özele ilerlemeli
 - İlk bölüm warm-up ise katılımcıyı rahatlatan, gündelik ve düşük baskılı sorular üret
-- Warm-up bölümünün ilk sorusu mutlaka katılımcının gününe veya o ana kadar ne yaptığına değsin
+- Warm-up soruları kısa, tek cümleli ve birbirinden bağımsız olsun
+- Warm-up bölümünün ilk sorusu katılımcının gününe değsin
+- Warm-up sorularında "bu konu", "bu konuyla", "bununla ilgili", "buraya gelmeden önce", "en son karşılaştığınız an" gibi önceki bağlama yaslanan kalıpları kullanma
 - Warm-up olmayan bölümlerde rapport yerine doğrudan araştırma odağına gir
 - Her soru tek bir amaca hizmet etsin
 - Mümkünse soru metninde "ve" kullanma; tek soruda tek odak koru
@@ -231,7 +236,7 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 ✓ **Nötr ve Yönlendirmesiz**: Kullanıcıya bir sorun, duygu veya yargı empoze etme
 
 ## Bölüm Türlerine Göre Yaklaşım
-- **Isınma**: "Bugün gününüz nasıl geçiyor, buraya gelmeden önce neler yapıyordunuz?", "Bu konunun günlük hayatınızda ne kadar yeri var?"
+- **Isınma**: "Bugün gününüz nasıl geçiyor?", "Şu sıralar günlük rutininizde en çok ne öne çıkıyor?", "Son birkaç günde aklınızı en çok meşgul eden şey ne oldu?"
 - **Profesyonel Geçmiş / Bağlam**: "Bu alanda ne zamandır çalışıyorsun?", "Günlük iş akışında hangi araçları kullanıyorsun?"
 - **İlk İzlenimler**: "İlk gördüğünde aklına ne geldi?", "Dikkatini çeken ilk şey ne oldu?"
 - **Detaylı Keşif**: "Bu özelliği kullanırken aklından neler geçti?", "Başka ürünlerle kıyasladığında sana ne farklı göründü?"
@@ -382,7 +387,7 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
 Aşağıdaki sorular leading, varsayımsız değil veya yeterince açık uçlu olmadığı için reddedildi:
 ${questions.map((question, index) => `${index + 1}. ${question}`).join('\n')}
 
-Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warmupSection ? "Bu bölüm warm-up olduğu için sorular hafif, sohbet açıcı ve gündelik tonda olsun." : "Warm-up sorusu üretme."} "Oldu mu?", "yaşadınız mı?", "karışıklık", "sorun", "problem", "güven verdi mi?", "kendi cümlelerinizle", "nasıl anlıyorsunuz" gibi kalıpları kullanma.`;
+Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warmupSection ? 'Bu bölüm warm-up olduğu için sorular hafif, sohbet açıcı, tek cümleli ve birbirinden bağımsız olsun. "Bu konu", "bu konuyla", "bununla ilgili", "buraya gelmeden önce", "en son karşılaştığınız an" gibi kalıpları kullanma.' : "Warm-up sorusu üretme."} "Oldu mu?", "yaşadınız mı?", "karışıklık", "sorun", "problem", "güven verdi mi?", "kendi cümlelerinizle", "nasıl anlıyorsunuz" gibi kalıpları kullanma.`;
 
       const retryResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',

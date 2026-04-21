@@ -148,6 +148,17 @@ const GENERIC_USABILITY_PATTERNS = [
   "bu deneyimi nasil tarif edersiniz",
 ];
 
+const WARMUP_TOPIC_DEPENDENCY_PATTERNS = [
+  "bu konu",
+  "bu konuyla",
+  "bununla ilgili",
+  "buna dair",
+  "buraya gelmeden once",
+  "buraya gelmeden önce",
+  "en son karsilastiginiz ani",
+  "en son karşılaştığınız anı",
+];
+
 const METHODOLOGY_MUST_RULES_BY_CODE: Record<string, string> = {
   leading: "Katılımcıya sorun, duygu veya yargı empoze etme.",
   assumptive: "Katılımcının belirli bir deneyim yaşadığını peşinen varsayma.",
@@ -212,14 +223,22 @@ const hasWarmupQuestionTone = (question: string) => {
   return [
     "bugun gununuz nasil",
     "gununuz nasil gec",
-    "buraya gelmeden once",
     "gundelik rutininiz",
     "günlük rutininiz",
-    "bu konuyla en son ne zaman",
-    "hayatinizda ne kadar yer tut",
-    "kendinizden biraz",
+    "su siralar",
+    "şu sıralar",
+    "son gunlerde",
+    "son günlerde",
+    "aklinizi en cok mesgul",
+    "aklınızı en çok meşgul",
   ].some((pattern) => normalized.includes(pattern));
 };
+
+const hasWarmupTopicDependency = (normalized: string) =>
+  WARMUP_TOPIC_DEPENDENCY_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
+
+const hasWarmupMultiClauseStructure = (question: string) =>
+  /[,;:]/.test(cleanQuestion(question));
 
 export const isWarmupSection = (sectionLike: { title?: string; questions?: string[] } | null | undefined) => {
   if (!sectionLike) {
@@ -256,9 +275,9 @@ export const resolveQuestionMode = ({
 };
 
 export const buildWarmupQuestions = () => [
-  "Bugün gününüz nasıl geçiyor, buraya gelmeden önce neler yapıyordunuz?",
-  "Bu konu son dönemde günlük hayatınızda nasıl bir yer tutuyor?",
-  "Bu konuyla en son karşılaştığınız anı biraz anlatır mısınız?",
+  "Bugün gününüz nasıl geçiyor?",
+  "Şu sıralar günlük rutininizde en çok ne öne çıkıyor?",
+  "Son birkaç günde aklınızı en çok meşgul eden şey ne oldu?",
 ];
 
 const dedupeQuestions = (questions: string[]) => {
@@ -422,6 +441,8 @@ export const assessQuestionQuality = ({
   const clarity = wordCount >= 6 && wordCount <= 28 && cleanedQuestion.endsWith("?");
   const jargonFree = !hasHeavyJargon(normalized);
   const warmupFit = !warmupSection || hasWarmupQuestionTone(cleanedQuestion);
+  const warmupIndependent = !warmupSection || !hasWarmupTopicDependency(normalized);
+  const warmupSingleClause = !warmupSection || !hasWarmupMultiClauseStructure(cleanedQuestion);
   const usabilityContextFit = mode !== "usability" || warmupSection || (!hasGenericUsabilityPrompt(normalized) && hasUsabilityContextAnchor(normalized));
   const methodologyMatches = detectMethodologyMatches(normalized);
   const methodologyFit =
@@ -499,6 +520,24 @@ export const assessQuestionQuality = ({
       label: "Isınma tonu zayıf",
       detail: "İlk bölüm için soru fazla direkt; önce kullanıcıyı sohbete alıştıran bir giriş sorusu daha uygun olur.",
       severity: "caution",
+    });
+  }
+
+  if (!warmupIndependent) {
+    issues.push({
+      code: "warmup_dependency",
+      label: "Isınma sorusu bağımsız değil",
+      detail: 'Isınma sorusu "bu konu" gibi önceki bağlama yaslanan bir ifade taşıyor.',
+      severity: "problematic",
+    });
+  }
+
+  if (!warmupSingleClause) {
+    issues.push({
+      code: "warmup_multiclause",
+      label: "Isınma sorusu fazla birleşik",
+      detail: "Isınma sorusu tek cümlede ikinci bir alt soru taşıyor; daha kısa ve bağımsız kurulmalı.",
+      severity: "problematic",
     });
   }
 
@@ -581,6 +620,8 @@ export const assessQuestionQuality = ({
       no_standalone_ve: { label: '"ve" içermiyor', passed: noStandaloneVe },
       clarity: { label: "Net", passed: clarity },
       warmup_fit: { label: "Isınma akışına uygun", passed: warmupFit },
+      warmup_independent: { label: "Isınma sorusu bağımsız", passed: warmupIndependent },
+      warmup_single_clause: { label: "Isınma sorusu tek cümleli", passed: warmupSingleClause },
       usability_context: { label: "Usability bağlamına bağlı", passed: usabilityContextFit },
       methodology_fit: { label: "Metodolojiye uygun", passed: methodologyFit },
     },
