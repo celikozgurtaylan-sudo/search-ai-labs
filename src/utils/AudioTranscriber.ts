@@ -1,12 +1,14 @@
 import { supabase } from "@/integrations/supabase/client";
+import {
+  getTranscriberEnterThreshold,
+  getTranscriberStayThreshold,
+} from "@/utils/microphoneHealth";
 
 const CALIBRATION_WINDOW_MS = 450;
 const MAX_WAIT_FOR_SPEECH_MS = 10000;
 const MIN_RECORDING_MS = 750;
 const MIN_AUDIO_BLOB_SIZE = 6000;
 const MIN_SPEECH_FRAMES = 2;
-const ABSOLUTE_ENTER_THRESHOLD = 4.2;
-const ABSOLUTE_STAY_THRESHOLD = 2.2;
 const SOFT_STAY_THRESHOLD_RATIO = 0.72;
 const CHUNK_STALL_AFTER_SPEECH_MS = 2500;
 const HALLUCINATION_PATTERNS = [
@@ -77,6 +79,7 @@ export class AudioTranscriber {
   private levelSampleCount = 0;
   private calibrationTotal = 0;
   private calibrationSamples = 0;
+  private lastCalibrationLevel = 0;
   private lastVoiceActivityAt = 0;
   private lastChunkAt = 0;
   private analysisFrameId: number | null = null;
@@ -127,6 +130,7 @@ export class AudioTranscriber {
       this.levelSampleCount = 0;
       this.calibrationTotal = 0;
       this.calibrationSamples = 0;
+      this.lastCalibrationLevel = 0;
       this.lastVoiceActivityAt = this.recordingStartedAt;
       this.lastChunkAt = this.recordingStartedAt;
       this.stopReason = 'manual';
@@ -231,8 +235,9 @@ export class AudioTranscriber {
       const calibrationLevel = this.calibrationSamples > 0
         ? this.calibrationTotal / this.calibrationSamples
         : 0;
-      const enterThreshold = Math.max(ABSOLUTE_ENTER_THRESHOLD, calibrationLevel * 2.6 + 1.2);
-      const stayThreshold = Math.max(ABSOLUTE_STAY_THRESHOLD, calibrationLevel * 1.9 + 0.7);
+      const enterThreshold = getTranscriberEnterThreshold(calibrationLevel);
+      const stayThreshold = getTranscriberStayThreshold(calibrationLevel);
+      this.lastCalibrationLevel = calibrationLevel;
 
       if (level >= enterThreshold) {
         this.speechFrameCount += 1;
@@ -254,6 +259,12 @@ export class AudioTranscriber {
       }
 
       if (!this.speechDetected && elapsed >= MAX_WAIT_FOR_SPEECH_MS) {
+        const averageLevel = this.levelSampleCount > 0 ? this.totalLevel / this.levelSampleCount : 0;
+        const trackLooksSilent =
+          this.peakLevel < Math.max(1.8, enterThreshold * 0.8) &&
+          averageLevel < Math.max(1.1, calibrationLevel + 0.45);
+
+        this.forcedErrorCode = trackLooksSilent ? 'MICROPHONE_SILENT' : null;
         this.finish('no-speech');
         return;
       }
@@ -307,7 +318,7 @@ export class AudioTranscriber {
     }
 
     if (this.stopReason === 'no-speech') {
-      this.onError('PREP_TIMEOUT');
+      this.onError(this.forcedErrorCode ?? 'PREP_TIMEOUT');
       return;
     }
 
@@ -324,8 +335,8 @@ export class AudioTranscriber {
         !this.speechDetected ||
         recordingDuration < MIN_RECORDING_MS ||
         audioBlob.size < MIN_AUDIO_BLOB_SIZE ||
-        this.peakLevel < ABSOLUTE_ENTER_THRESHOLD ||
-        averageLevel < 1.6
+        this.peakLevel < Math.max(2.2, getTranscriberEnterThreshold(this.lastCalibrationLevel) * 0.8) ||
+        averageLevel < Math.max(1.1, this.lastCalibrationLevel + 0.35)
       ) {
         this.onError('NO_SPEECH_DETECTED');
         return;

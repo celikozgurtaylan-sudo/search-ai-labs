@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,13 +8,17 @@ import { FloatingVideo } from "@/components/FloatingVideo";
 import { participantService } from "@/services/participantService";
 import { InterviewProgress, InterviewQuestion, setInterviewSessionToken } from "@/services/interviewService";
 import { CheckCircle, AlertCircle, Clock, Loader2, ExternalLink, Image as ImageIcon, Camera, Mic } from "lucide-react";
-
-type CameraValidationState = 'idle' | 'requesting' | 'verifying' | 'preview' | 'stream' | 'failed';
+import {
+  DeviceCheckState,
+  MicFailureCode,
+  getMicrophoneFailureMessage,
+  mapMediaAccessErrorToFailureCode,
+  probeMicrophoneHealth,
+} from "@/utils/microphoneHealth";
 
 type CameraValidationResult = {
   verified: boolean;
   preview: boolean;
-  state: Extract<CameraValidationState, 'preview' | 'stream' | 'failed'>;
   message: string | null;
 };
 
@@ -117,32 +121,90 @@ const StudySession = () => {
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const [hasMicrophonePermission, setHasMicrophonePermission] = useState(false);
   const [cameraGateCompleted, setCameraGateCompleted] = useState(false);
-  const [cameraRequestPending, setCameraRequestPending] = useState(false);
   const [cameraPreviewReady, setCameraPreviewReady] = useState(false);
   const [cameraStreamVerified, setCameraStreamVerified] = useState(false);
   const [microphoneVerified, setMicrophoneVerified] = useState(false);
-  const [cameraValidationState, setCameraValidationState] = useState<CameraValidationState>('idle');
-  const [cameraValidationMessage, setCameraValidationMessage] = useState<string | null>(null);
+  const [deviceCheckState, setDeviceCheckState] = useState<DeviceCheckState>('idle');
+  const [deviceCheckFailureCode, setDeviceCheckFailureCode] = useState<MicFailureCode | null>(null);
+  const [deviceCheckMessage, setDeviceCheckMessage] = useState<string | null>(null);
+  const [microphoneLevel, setMicrophoneLevel] = useState(0);
+  const [microphoneLevelThreshold, setMicrophoneLevelThreshold] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraGateVideoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const sessionIdRef = useRef<string | null>(sessionId);
+  const sessionMetadataRef = useRef<any>(null);
+  const deviceCheckRetryCountRef = useRef(0);
   const hasShownCameraFailureRef = useRef(false);
 
   const stopCameraStream = (stream: MediaStream | null) => {
     stream?.getTracks().forEach(track => track.stop());
   };
 
-  const resetCameraState = (message: string | null = null) => {
+  const persistDeviceCheckSnapshot = useCallback(async (
+    nextState: DeviceCheckState,
+    failureCode: MicFailureCode | null,
+    message: string | null,
+  ) => {
+    const activeSessionId = sessionIdRef.current;
+    if (isDesignMode || !activeSessionId) {
+      return;
+    }
+
+    const currentMetadata = sessionMetadataRef.current && typeof sessionMetadataRef.current === 'object'
+      ? sessionMetadataRef.current
+      : {};
+    const previousDeviceCheck = currentMetadata.deviceCheck && typeof currentMetadata.deviceCheck === 'object'
+      ? currentMetadata.deviceCheck
+      : {};
+    const checkedAt = new Date().toISOString();
+    const readyAt = nextState === 'ready'
+      ? checkedAt
+      : (previousDeviceCheck.readyAt as string | null | undefined) ?? null;
+    const nextMetadata = {
+      ...currentMetadata,
+      deviceCheck: {
+        ...previousDeviceCheck,
+        lastState: nextState,
+        lastFailureCode: failureCode,
+        lastFailureMessage: message,
+        retryCount: deviceCheckRetryCountRef.current,
+        lastCheckedAt: checkedAt,
+        readyAt,
+      },
+    };
+
+    sessionMetadataRef.current = nextMetadata;
+
+    try {
+      await participantService.updateSession(activeSessionId, { metadata: nextMetadata });
+    } catch (persistError) {
+      console.warn('Failed to persist device check snapshot:', persistError);
+    }
+  }, [isDesignMode]);
+
+  const resetCameraState = (message: string | null = null, failureCode: MicFailureCode | null = null) => {
     setCameraEnabled(false);
     setCameraPreviewReady(false);
     setCameraStreamVerified(false);
     setMicrophoneVerified(false);
     setCameraGateCompleted(false);
-    setCameraValidationState(message ? 'failed' : 'idle');
-    setCameraValidationMessage(message);
+    setDeviceCheckState(message ? 'failed' : 'idle');
+    setDeviceCheckFailureCode(failureCode);
+    setDeviceCheckMessage(message);
+    setMicrophoneLevel(0);
+    setMicrophoneLevelThreshold(0);
   };
 
-  const releaseMediaDevices = ({ preserveGate = false, message = null }: { preserveGate?: boolean; message?: string | null } = {}) => {
+  const releaseMediaDevices = ({
+    preserveGate = false,
+    message = null,
+    failureCode = null,
+  }: {
+    preserveGate?: boolean;
+    message?: string | null;
+    failureCode?: MicFailureCode | null;
+  } = {}) => {
     stopCameraStream(cameraStreamRef.current);
     cameraStreamRef.current = null;
 
@@ -151,11 +213,14 @@ const StudySession = () => {
     setCameraPreviewReady(false);
     setCameraStreamVerified(false);
     setMicrophoneVerified(false);
+    setMicrophoneLevel(0);
+    setMicrophoneLevelThreshold(0);
     if (!preserveGate) {
       setCameraGateCompleted(false);
     }
-    setCameraValidationState(message ? 'failed' : 'idle');
-    setCameraValidationMessage(message);
+    setDeviceCheckState(message ? 'failed' : 'idle');
+    setDeviceCheckFailureCode(failureCode);
+    setDeviceCheckMessage(message);
 
     if (videoRef.current) {
       videoRef.current.srcObject = null;
@@ -384,7 +449,6 @@ const StudySession = () => {
           return {
             verified: true,
             preview: true,
-            state: 'preview',
             message: null,
           };
         }
@@ -395,7 +459,6 @@ const StudySession = () => {
       return {
         verified: true,
         preview: false,
-        state: 'stream',
         message: 'Tarayiciniz canli onizlemeyi gostermese de kameraniz aktif olarak dogrulandi. Devam edebilirsiniz.',
       };
     }
@@ -404,7 +467,6 @@ const StudySession = () => {
       return {
         verified: true,
         preview: false,
-        state: 'stream',
         message: 'Tarayiciniz canli onizlemeyi gostermese de kameraniz aktif olarak dogrulandi. Devam edebilirsiniz.',
       };
     }
@@ -412,7 +474,6 @@ const StudySession = () => {
     return {
       verified: false,
       preview: false,
-      state: 'failed',
       message: 'Canli kamera goruntusu dogrulanamadi. Kamerayi yeniden deneyin.',
     };
   };
@@ -423,7 +484,6 @@ const StudySession = () => {
       setInterviewSessionToken(null);
       console.log('Design mode active - using mock data');
       setLoading(false);
-      void requestCameraAccess();
       return;
     }
     
@@ -445,6 +505,10 @@ const StudySession = () => {
   useEffect(() => {
     cameraStreamRef.current = cameraStream;
   }, [cameraStream]);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -499,43 +563,62 @@ const StudySession = () => {
   }, [cameraStream, cameraGateCompleted]);
 
   useEffect(() => {
-    if (loading || pausedMessage || error || cameraGateCompleted || cameraEnabled || cameraRequestPending || cameraValidationState === 'failed') return;
-    void requestCameraAccess();
-  }, [cameraGateCompleted, cameraEnabled, cameraRequestPending, cameraValidationState, error, loading, pausedMessage]);
-
-  useEffect(() => {
     if (!cameraStream) return;
 
     const videoTrack = cameraStream.getVideoTracks()[0];
-    if (!videoTrack) return;
+    const audioTrack = cameraStream.getAudioTracks()[0];
+    if (!videoTrack && !audioTrack) return;
 
     let disconnected = false;
 
-    const handleTrackInterrupted = () => {
+    const handleTrackInterrupted = (failureCode: MicFailureCode, message: string, toastMessage: string) => {
       if (disconnected) return;
       disconnected = true;
 
       stopCameraStream(cameraStream);
       setCameraStream(null);
-      resetCameraState("Kamera baglantisi kesildi. Devam etmeden once yeniden baglanin.");
+      resetCameraState(message, failureCode);
+      void persistDeviceCheckSnapshot('failed', failureCode, message);
       if (!hasShownCameraFailureRef.current) {
-        toast.error("Kamera baglantisi kesildi. Oturum devam etmeden once kamerayi yeniden acin.");
+        toast.error(toastMessage);
         hasShownCameraFailureRef.current = true;
       }
     };
 
-    videoTrack.addEventListener('ended', handleTrackInterrupted);
+    const handleVideoInterrupted = () => {
+      handleTrackInterrupted(
+        'track_ended',
+        'Kamera baglantisi kesildi. Devam etmeden once yeniden baglanin.',
+        'Kamera baglantisi kesildi. Oturum devam etmeden once kamerayi yeniden acin.',
+      );
+    };
+    const handleAudioInterrupted = () => {
+      handleTrackInterrupted(
+        'track_ended',
+        'Mikrofon baglantisi kesildi. Devam etmeden once yeniden baglanin.',
+        'Mikrofon baglantisi kesildi. Oturum devam etmeden once mikrofonu yeniden acin.',
+      );
+    };
+
+    videoTrack?.addEventListener('ended', handleVideoInterrupted);
+    audioTrack?.addEventListener('ended', handleAudioInterrupted);
     const healthInterval = window.setInterval(() => {
-      if (!isLiveVideoTrack(videoTrack)) {
-        handleTrackInterrupted();
+      if (videoTrack && !isLiveVideoTrack(videoTrack)) {
+        handleVideoInterrupted();
+        return;
+      }
+
+      if (audioTrack && !isLiveAudioTrack(audioTrack)) {
+        handleAudioInterrupted();
       }
     }, 1200);
 
     return () => {
-      videoTrack.removeEventListener('ended', handleTrackInterrupted);
+      videoTrack?.removeEventListener('ended', handleVideoInterrupted);
+      audioTrack?.removeEventListener('ended', handleAudioInterrupted);
       window.clearInterval(healthInterval);
     };
-  }, [cameraStream]);
+  }, [cameraStream, persistDeviceCheckSnapshot]);
 
   const initializeSession = async () => {
     try {
@@ -578,6 +661,8 @@ const StudySession = () => {
       const participant = access.participant_data || cachedParticipant;
 
       console.log('Session access resolved:', access);
+      sessionIdRef.current = session.id || null;
+      sessionMetadataRef.current = session.metadata && typeof session.metadata === 'object' ? session.metadata : {};
       setSessionId(session.id || null);
       setParticipantId(session.participant_id || participant?.id || null);
       setParticipantName(participant?.name || participant?.email || 'Katilimci');
@@ -585,7 +670,7 @@ const StudySession = () => {
       setSessionStatus(session.status === 'completed' ? 'completed' : 'active');
       setSessionCompletionReason(session.status === 'completed' ? 'completed' : null);
 
-      await checkCameraPermissions();
+      await syncDevicePermissions();
     } catch (error) {
       console.error('Failed to initialize session:', error);
       setError("Oturum başlatılırken hata oluştu");
@@ -595,7 +680,19 @@ const StudySession = () => {
     }
   };
 
-  const checkCameraPermissions = async () => {
+  const applyDeviceCheckFailure = useCallback(async (failureCode: MicFailureCode, message?: string | null) => {
+    const nextMessage = message ?? getMicrophoneFailureMessage(failureCode);
+
+    releaseMediaDevices({
+      preserveGate: false,
+      message: nextMessage,
+      failureCode,
+    });
+    await persistDeviceCheckSnapshot('failed', failureCode, nextMessage);
+    return nextMessage;
+  }, [persistDeviceCheckSnapshot]);
+
+  const syncDevicePermissions = async () => {
     try {
       if (!('permissions' in navigator) || !navigator.permissions?.query) {
         return;
@@ -609,9 +706,10 @@ const StudySession = () => {
         const isGranted = permissionStatus.state === 'granted';
         setHasCameraPermission(isGranted);
         if (!isGranted) {
-          stopCameraStream(cameraStreamRef.current);
-          setCameraStream(null);
-          resetCameraState("Tarayici kamera iznini kapatti. Devam etmek icin kamera ve mikrofon iznini yeniden acin.");
+          void applyDeviceCheckFailure(
+            'permission_denied',
+            'Tarayici kamera iznini kapatti. Devam etmek icin kamera ve mikrofon iznini yeniden acin.',
+          );
         }
       };
 
@@ -624,35 +722,44 @@ const StudySession = () => {
           const isGranted = microphonePermissionStatus.state === 'granted';
           setHasMicrophonePermission(isGranted);
           if (!isGranted) {
-            stopCameraStream(cameraStreamRef.current);
-            setCameraStream(null);
-            resetCameraState("Tarayici mikrofon iznini kapatti. Devam etmek icin kamera ve mikrofon iznini yeniden acin.");
+            void applyDeviceCheckFailure(
+              'permission_denied',
+              'Tarayici mikrofon iznini kapatti. Devam etmek icin kamera ve mikrofon iznini yeniden acin.',
+            );
           }
         };
-
-        if (granted && microphoneGranted && !cameraStream) {
-          await requestCameraAccess();
-        }
         return;
       } catch (error) {
         console.warn('Microphone permissions API not available:', error);
-      }
-
-      if (granted && !cameraStream) {
-        await requestCameraAccess();
       }
     } catch (error) {
       console.error('Error checking camera permissions:', error);
     }
   };
 
-  const requestCameraAccess = async () => {
-    setCameraRequestPending(true);
-    setCameraValidationState('requesting');
-    setCameraValidationMessage(null);
+  const runDeviceCheck = async () => {
+    setDeviceCheckState('requesting_permission');
+    setDeviceCheckFailureCode(null);
+    setDeviceCheckMessage(null);
+    setMicrophoneLevel(0);
+    setMicrophoneLevelThreshold(0);
     hasShownCameraFailureRef.current = false;
+    deviceCheckRetryCountRef.current += 1;
+    await persistDeviceCheckSnapshot('requesting_permission', null, null);
 
     try {
+      if (!window.isSecureContext) {
+        const message = await applyDeviceCheckFailure('insecure_context');
+        toast.error(message);
+        return false;
+      }
+
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+        const message = await applyDeviceCheckFailure('browser_unsupported');
+        toast.error(message);
+        return false;
+      }
+
       const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
       const fallbackCamera = devices.find((device) => device.kind === 'videoinput');
       const constraintsQueue: MediaStreamConstraints[] = [
@@ -726,10 +833,9 @@ const StudySession = () => {
       const audioTrack = stream.getAudioTracks()[0];
       if (!isLiveAudioTrack(audioTrack)) {
         stopCameraStream(stream);
-        setCameraStream(null);
         setHasMicrophonePermission(false);
-        resetCameraState("Mikrofon baglantisi dogrulanamadi. Devam etmek icin mikrofonu yeniden deneyin.");
-        toast.error("Mikrofon baglantisi dogrulanamadi.");
+        const message = await applyDeviceCheckFailure('track_ended');
+        toast.error(message);
         return false;
       }
 
@@ -738,47 +844,65 @@ const StudySession = () => {
       setCameraEnabled(true);
       setHasCameraPermission(true);
       setHasMicrophonePermission(true);
-      setMicrophoneVerified(true);
+      setMicrophoneVerified(false);
       setCameraPreviewReady(false);
       setCameraStreamVerified(false);
-      setCameraValidationState('verifying');
-      setCameraValidationMessage("Kamera ve mikrofon baglantisi dogrulaniyor...");
+      setDeviceCheckState('verifying_camera');
+      setDeviceCheckMessage('Kamera goruntusu dogrulaniyor...');
 
       const validation = await validateCameraStream(stream);
 
       if (!validation.verified) {
         stopCameraStream(stream);
-        setCameraStream(null);
-        resetCameraState(validation.message);
-        toast.error(validation.message || "Canli kamera goruntusu dogrulanamadi.");
+        const message = await applyDeviceCheckFailure('device_busy', validation.message || 'Canli kamera goruntusu dogrulanamadi. Kamerayi yeniden deneyin.');
+        toast.error(message);
         return false;
       }
 
       setCameraStreamVerified(true);
       setCameraPreviewReady(validation.preview);
-      setCameraValidationState(validation.state);
-      setCameraValidationMessage(validation.message);
+      setDeviceCheckState('verifying_microphone');
+      setDeviceCheckFailureCode(null);
+      setDeviceCheckMessage('Lutfen kisa bir cumle soyleyin. Mikrofon sinyalini test ediyoruz.');
+
+      const microphoneHealth = await probeMicrophoneHealth(stream, {
+        onLevelSample: ({ level, threshold }) => {
+          setMicrophoneLevel(level);
+          setMicrophoneLevelThreshold(threshold);
+        },
+      });
+
+      if (!microphoneHealth.ok) {
+        stopCameraStream(stream);
+        const message = await applyDeviceCheckFailure(
+          microphoneHealth.failureCode ?? 'track_silent',
+          microphoneHealth.message,
+        );
+        toast.error(message);
+        return false;
+      }
+
+      setMicrophoneVerified(true);
+      setDeviceCheckState('ready');
+      setDeviceCheckFailureCode(null);
+      setDeviceCheckMessage(validation.message ?? 'Kamera ve mikrofon hazir. Arastirmaya devam edebilirsiniz.');
+      await persistDeviceCheckSnapshot('ready', null, validation.message ?? 'Kamera ve mikrofon hazir.');
       return true;
     } catch (error) {
       console.error('Error accessing camera:', error);
-      const errorName = error instanceof DOMException ? error.name : '';
-      const permissionDenied = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(errorName);
-      const cameraUnavailable = ['NotFoundError', 'DevicesNotFoundError', 'OverconstrainedError', 'NotReadableError', 'TrackStartError'].includes(errorName);
-      const message = permissionDenied
-        ? "Devam etmek icin kamera ve mikrofon izni vermelisiniz."
-        : cameraUnavailable
-          ? "Kamera veya mikrofon bulunamadi ya da kullanilamiyor. Lutfen cihazlarinizi kontrol edip tekrar deneyin."
-          : "Kamera ve mikrofon baslatilamadi. Lutfen tekrar deneyin.";
-
-      setHasCameraPermission(false);
-      setHasMicrophonePermission(false);
-      resetCameraState(message);
+      const failureCode = mapMediaAccessErrorToFailureCode(error);
+      const message = await applyDeviceCheckFailure(failureCode);
+      setHasCameraPermission(failureCode === 'permission_denied' ? false : hasCameraPermission);
+      setHasMicrophonePermission(failureCode === 'permission_denied' ? false : hasMicrophonePermission);
       toast.error(message);
       return false;
-    } finally {
-      setCameraRequestPending(false);
     }
   };
+
+  const handleMediaRecoveryRequested = useCallback((reason: MicFailureCode) => {
+    const message = getMicrophoneFailureMessage(reason);
+    void applyDeviceCheckFailure(reason, message);
+  }, [applyDeviceCheckFailure]);
 
   const handleCompleteSession = (reason: 'manual' | 'completed' = 'manual') => {
     localStorage.removeItem('participant-session');
@@ -808,6 +932,43 @@ const StudySession = () => {
   }, [currentInterviewQuestion, currentInterviewProgress.total, designScreens.length, questionsPerScreen]);
 
   const activeScreen = designScreens[activeScreenIndex] || null;
+  const isDeviceCheckBusy = deviceCheckState === 'requesting_permission' || deviceCheckState === 'verifying_camera' || deviceCheckState === 'verifying_microphone';
+  const canContinueToInterview = cameraEnabled && cameraStreamVerified && microphoneVerified && deviceCheckState === 'ready';
+  const microphoneLevelRatio = microphoneLevelThreshold > 0
+    ? Math.min(microphoneLevel / Math.max(microphoneLevelThreshold * 1.4, 1), 1)
+    : 0;
+  const gatePrimaryLabel = deviceCheckState === 'failed'
+    ? 'Tekrar Dene'
+    : isDeviceCheckBusy
+      ? 'Dogrulaniyor...'
+      : 'Kamera ve Mikrofonu Ac';
+  const gateStatusText = (() => {
+    if (deviceCheckMessage) {
+      return deviceCheckMessage;
+    }
+
+    if (deviceCheckState === 'requesting_permission') {
+      return 'Tarayicinin izin penceresini onaylayin.';
+    }
+
+    if (deviceCheckState === 'verifying_camera') {
+      return 'Kamera goruntusu kontrol ediliyor.';
+    }
+
+    if (deviceCheckState === 'verifying_microphone') {
+      return 'Lutfen “Merhaba” gibi kisa bir cumle soyleyin. Mikrofon sinyali olculuyor.';
+    }
+
+    if (deviceCheckState === 'ready') {
+      return 'Kamera ve mikrofon hazir. Arastirmaya devam edebilirsiniz.';
+    }
+
+    if (deviceCheckFailureCode) {
+      return getMicrophoneFailureMessage(deviceCheckFailureCode);
+    }
+
+    return 'Arastirmaya girebilmek icin once kamera ve mikrofonunuzu acip dogrulayalim.';
+  })();
 
   if (loading) {
     return (
@@ -1007,6 +1168,7 @@ const StudySession = () => {
                     setCurrentInterviewProgress(progress);
                   }}
                   onMediaReleaseRequested={() => releaseMediaDevices({ preserveGate: true })}
+                  onMediaRecoveryRequested={handleMediaRecoveryRequested}
                 />
               </div>
             )}
@@ -1036,83 +1198,133 @@ const StudySession = () => {
                   <div className={`rounded-2xl border px-4 py-3 text-sm ${
                     cameraEnabled && cameraStreamVerified
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : 'border-border-light bg-surface text-text-secondary'
+                      : deviceCheckState === 'verifying_camera'
+                        ? 'border-brand-primary/30 bg-brand-primary/5 text-brand-primary'
+                        : 'border-border-light bg-surface text-text-secondary'
                   }`}>
                     <div className="flex items-center gap-2 font-medium">
                       <Camera className="h-4 w-4" />
                       Kamera
                     </div>
                     <p className="mt-1 text-xs">
-                      {cameraEnabled && cameraStreamVerified ? 'Hazir' : hasCameraPermission ? 'Dogrulaniyor' : 'Izin bekleniyor'}
+                      {cameraEnabled && cameraStreamVerified
+                        ? 'Hazir'
+                        : deviceCheckState === 'verifying_camera'
+                          ? 'Dogrulaniyor'
+                          : hasCameraPermission
+                            ? 'Izin verildi'
+                            : 'Izin bekleniyor'}
                     </p>
                   </div>
 
                   <div className={`rounded-2xl border px-4 py-3 text-sm ${
                     microphoneVerified
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : 'border-border-light bg-surface text-text-secondary'
+                      : deviceCheckState === 'verifying_microphone'
+                        ? 'border-brand-primary/30 bg-brand-primary/5 text-brand-primary'
+                        : 'border-border-light bg-surface text-text-secondary'
                   }`}>
                     <div className="flex items-center gap-2 font-medium">
                       <Mic className="h-4 w-4" />
                       Mikrofon
                     </div>
                     <p className="mt-1 text-xs">
-                      {microphoneVerified ? 'Hazir' : hasMicrophonePermission ? 'Dogrulaniyor' : 'Izin bekleniyor'}
+                      {microphoneVerified
+                        ? 'Hazir'
+                        : deviceCheckState === 'verifying_microphone'
+                          ? 'Ses testi yapiliyor'
+                          : hasMicrophonePermission
+                            ? 'Izin verildi'
+                            : 'Izin bekleniyor'}
                     </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border-light bg-surface/70 px-4 py-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-secondary">
+                        Mikrofon Sinyali
+                      </p>
+                      <p className="mt-1 text-sm text-text-secondary">
+                        {deviceCheckState === 'verifying_microphone'
+                          ? 'Lutfen normal sesinizle kisa bir cumle soyleyin.'
+                          : 'Mikrofon seviyesini burada goreceksiniz.'}
+                      </p>
+                    </div>
+                    <span className="text-xs font-medium text-text-secondary">
+                      Esik {microphoneLevelThreshold.toFixed(1)}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className={`h-full rounded-full transition-all duration-150 ${
+                        microphoneLevelRatio >= 0.85
+                          ? 'bg-emerald-500'
+                          : microphoneLevelRatio >= 0.45
+                            ? 'bg-amber-500'
+                            : 'bg-slate-400'
+                      }`}
+                      style={{ width: `${Math.max(6, Math.round(microphoneLevelRatio * 100))}%` }}
+                    />
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between text-xs text-text-secondary">
+                    <span>Seviye {microphoneLevel.toFixed(1)}</span>
+                    <span>
+                      {deviceCheckState === 'verifying_microphone'
+                        ? 'Ses bekleniyor'
+                        : microphoneVerified
+                          ? 'Sinyal dogrulandi'
+                          : 'Hazir degil'}
+                    </span>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <Button
-                    onClick={() => setCameraGateCompleted(true)}
-                    disabled={!cameraEnabled || !cameraStreamVerified || !microphoneVerified}
+                    onClick={() => void runDeviceCheck()}
+                    disabled={isDeviceCheckBusy}
                     size="lg"
                     className={`min-w-[180px] ${
-                      cameraEnabled && cameraStreamVerified && microphoneVerified
+                      isDeviceCheckBusy || deviceCheckState === 'failed' || deviceCheckState === 'idle'
                         ? "bg-brand-primary text-white hover:bg-brand-primary-hover"
-                        : "bg-muted text-muted-foreground hover:bg-muted"
+                        : "bg-brand-primary text-white hover:bg-brand-primary-hover"
+                    }`}
+                  >
+                    {isDeviceCheckBusy ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        {gatePrimaryLabel}
+                      </span>
+                    ) : (
+                      gatePrimaryLabel
+                    )}
+                  </Button>
+
+                  <Button
+                    onClick={() => setCameraGateCompleted(true)}
+                    disabled={!canContinueToInterview}
+                    size="lg"
+                    variant={canContinueToInterview ? 'default' : 'outline'}
+                    className={`min-w-[180px] ${
+                      canContinueToInterview
+                        ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                        : ""
                     }`}
                   >
                     Devam et
                   </Button>
-
-                  {cameraValidationState === 'failed' && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="lg"
-                      className="min-w-[180px]"
-                      onClick={() => void requestCameraAccess()}
-                      disabled={cameraRequestPending}
-                    >
-                      Kamera ve mikrofonu yeniden dene
-                    </Button>
-                  )}
                 </div>
 
-                {!cameraEnabled && !microphoneVerified && !cameraRequestPending && !cameraValidationMessage && (
-                  <p className="text-sm text-text-secondary">
-                    Kamera ve mikrofon izni gerekiyor. Tarayıcı izin penceresini onaylayın.
-                  </p>
-                )}
-
-                {cameraRequestPending && (
-                  <p className="text-sm text-text-secondary">
-                    Kamera ve mikrofon izni isteniyor...
-                  </p>
-                )}
-
-                {cameraEnabled && microphoneVerified && cameraValidationState === 'verifying' && !cameraRequestPending && (
-                  <p className="text-sm text-text-secondary">
-                    Kamera ve mikrofon baglandi. Baglanti dogrulaniyor...
-                  </p>
-                )}
-
-                {cameraValidationMessage && (
-                  <p className="text-sm text-text-secondary">
-                    {cameraValidationMessage}
-                  </p>
-                )}
+                <div className={`rounded-2xl px-4 py-3 text-sm ${
+                  deviceCheckState === 'failed'
+                    ? 'border border-red-200 bg-red-50 text-red-700'
+                    : 'border border-border-light bg-surface text-text-secondary'
+                }`}>
+                  {gateStatusText}
+                </div>
               </div>
 
               <div className="relative overflow-hidden rounded-[28px] border border-border/70 bg-slate-950 shadow-[0_20px_50px_rgba(15,23,42,0.24)]">

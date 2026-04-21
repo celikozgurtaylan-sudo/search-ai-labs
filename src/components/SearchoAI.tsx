@@ -17,6 +17,12 @@ import {
 import { AudioTranscriber, AudioTranscriberMetrics } from '@/utils/AudioTranscriber';
 import { interviewService, InterviewProgress, InterviewQuestion, setInterviewSessionToken } from '@/services/interviewService';
 import { prefetchTextToSpeech, resetTextToSpeechSessionState } from '@/services/textToSpeechService';
+import {
+  MicFailureCode,
+  getMicrophoneFailureMessage,
+  mapMediaAccessErrorToFailureCode,
+  probeMicrophoneHealth,
+} from '@/utils/microphoneHealth';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
 import { AvatarSpeaker } from './AvatarSpeaker';
 
@@ -95,6 +101,7 @@ interface SearchoAIProps {
   onPreambleStateChange?: (isActive: boolean) => void;
   onQuestionChange?: (question: InterviewQuestion | null, progress: InterviewProgress) => void;
   onMediaReleaseRequested?: () => void;
+  onMediaRecoveryRequested?: (reason: MicFailureCode) => void;
 }
 
 const isLiveTrack = (track?: MediaStreamTrack | null) => Boolean(track && track.readyState === 'live' && track.enabled !== false);
@@ -126,6 +133,7 @@ const SearchoAI = ({
   onPreambleStateChange,
   onQuestionChange,
   onMediaReleaseRequested,
+  onMediaRecoveryRequested,
 }: SearchoAIProps) => {
   const { toast } = useToast();
 
@@ -157,6 +165,7 @@ const SearchoAI = ({
   const [responseRecoveryMessage, setResponseRecoveryMessage] = useState<string | null>(null);
   const [resumeAfterFailure, setResumeAfterFailure] = useState(false);
   const [hasUsedRecoveryGrace, setHasUsedRecoveryGrace] = useState(false);
+  const [isStartingCapture, setIsStartingCapture] = useState(false);
 
   const audioTranscriberRef = useRef<AudioTranscriber | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
@@ -486,6 +495,7 @@ const SearchoAI = ({
     setHasSpeechStartedForCurrentAttempt(false);
     setResumeAfterFailure(shouldResume);
     setResponseRecoveryMessage(message);
+    setIsStartingCapture(false);
   }, [hasUsedRecoveryGrace, responseTimeRemaining]);
 
   const startProcessingWatchdog = useCallback((attemptId: number) => {
@@ -528,6 +538,7 @@ const SearchoAI = ({
     setResponseRecoveryMessage(null);
     setResumeAfterFailure(false);
     setHasUsedRecoveryGrace(false);
+    setIsStartingCapture(false);
 
     if (nextQuestion?.question_text) {
       setInterviewPhase('asking');
@@ -789,6 +800,11 @@ const SearchoAI = ({
     }
   }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, uploadResponseMedia]);
 
+  const requestMediaRecovery = useCallback((reason: MicFailureCode, message?: string | null) => {
+    onMediaRecoveryRequested?.(reason);
+    return message ?? getMicrophoneFailureMessage(reason);
+  }, [onMediaRecoveryRequested]);
+
   const beginAnswerCapture = useCallback(async (options?: CaptureStartOptions) => {
     const preserveDraft = options?.preserveDraft ?? true;
     const resetDuration = options?.resetDuration ?? false;
@@ -821,11 +837,11 @@ const SearchoAI = ({
       setHasUsedRecoveryGrace(false);
     }
 
+    setIsStartingCapture(true);
     setResumeAfterFailure(false);
     setResponseRecoveryMessage(null);
     setUserTranscript(nextDraftTranscript);
     setEditableTranscript(nextDraftTranscript);
-    setInterviewPhase('recording');
     setResponseTimerExpired(false);
     setResponseTimerActive(false);
     setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
@@ -834,6 +850,32 @@ const SearchoAI = ({
     try {
       const microphoneStream = await ensureMicrophoneStream();
       if (captureAttemptRef.current !== attemptId) {
+        return;
+      }
+
+      const microphoneHealth = await probeMicrophoneHealth(microphoneStream, {
+        calibrationWindowMs: 350,
+        timeoutMs: 2200,
+        minSpeechMs: 120,
+      });
+      if (captureAttemptRef.current !== attemptId) {
+        return;
+      }
+
+      if (!microphoneHealth.ok) {
+        const recoveryReason = microphoneHealth.failureCode ?? 'track_silent';
+        const recoveryMessage = requestMediaRecovery(recoveryReason, microphoneHealth.message);
+        setUserTranscript(draftTranscript);
+        setEditableTranscript(draftTranscript);
+        enterRecoveryState(recoveryMessage, {
+          resume: true,
+          allowGraceIfNeeded: false,
+        });
+        toast({
+          title: 'Mikrofon dogrulanamadi',
+          description: recoveryMessage,
+          variant: 'destructive',
+        });
         return;
       }
 
@@ -855,6 +897,7 @@ const SearchoAI = ({
         return;
       }
 
+      setInterviewPhase('recording');
       await startResponseRecording(currentQuestion.id, microphoneStream);
       if (captureAttemptRef.current !== attemptId) {
         void stopResponseRecording(true);
@@ -945,6 +988,22 @@ const SearchoAI = ({
           return;
         }
 
+        if (error === 'MICROPHONE_SILENT') {
+          const recoveryMessage = requestMediaRecovery('track_silent');
+          setUserTranscript(draftTranscript);
+          setEditableTranscript(draftTranscript);
+          enterRecoveryState(recoveryMessage, {
+            resume: true,
+            allowGraceIfNeeded: false,
+          });
+          toast({
+            title: 'Mikrofon sinyali algilanmadi',
+            description: recoveryMessage,
+            variant: 'destructive',
+          });
+          return;
+        }
+
         if (error === 'NO_SPEECH_DETECTED') {
           setUserTranscript(draftTranscript);
           setEditableTranscript(draftTranscript);
@@ -967,6 +1026,22 @@ const SearchoAI = ({
           'TRANSCRIPTION_SERVICE_UNAVAILABLE',
           'MICROPHONE_DISCONNECTED',
         ].includes(error);
+
+        if (error === 'MICROPHONE_DISCONNECTED') {
+          const recoveryMessage = requestMediaRecovery('track_ended');
+          setUserTranscript(draftTranscript);
+          setEditableTranscript(draftTranscript);
+          enterRecoveryState(recoveryMessage, {
+            resume: true,
+            allowGraceIfNeeded: false,
+          });
+          toast({
+            title: 'Mikrofon baglantisi kesildi',
+            description: recoveryMessage,
+            variant: 'destructive',
+          });
+          return;
+        }
 
         if (isSystemFailure) {
           setUserTranscript(draftTranscript);
@@ -1008,15 +1083,19 @@ const SearchoAI = ({
 
       console.error('Failed to start listening:', error);
       clearTranscriptionHealthMonitor();
-      enterRecoveryState('Mikrofon başlatılamadı. Aynı soruda yeniden deneyebilirsiniz.', {
+      const failureCode = mapMediaAccessErrorToFailureCode(error);
+      const recoveryMessage = requestMediaRecovery(failureCode);
+      enterRecoveryState(recoveryMessage, {
         resume: true,
         allowGraceIfNeeded: false,
       });
       toast({
         title: 'Mikrofon Hatası',
-        description: 'Mikrofon başlatılamadı. Lütfen tekrar deneyin.',
+        description: recoveryMessage,
         variant: 'destructive',
       });
+    } finally {
+      setIsStartingCapture(false);
     }
   }, [
     clearProcessingWatchdog,
@@ -1032,6 +1111,7 @@ const SearchoAI = ({
     interviewPhase,
     invalidateCaptureAttempt,
     isSubmittingResponse,
+    requestMediaRecovery,
     mergeTranscriptSegments,
     persistDraftResponse,
     responseTimeRemaining,
@@ -1198,12 +1278,19 @@ const SearchoAI = ({
                 Hazırsanız siz başlayın
               </p>
               <p className="text-sm leading-6 text-muted-foreground">
-                Soruyu duyduysanız yanıt kaydını manuel olarak başlatın. Hazırlık süresi düğmeye bastığınızda başlayacak.
+                {isStartingCapture
+                  ? 'Mikrofon hazirlaniyor. Kisa bir saglik kontrolu yapiyoruz.'
+                  : 'Soruyu duyduysanız yanıt kaydını manuel olarak başlatın. Hazırlık süresi düğmeye bastığınızda başlayacak.'}
               </p>
             </div>
-            <Button onClick={() => void beginAnswerCapture({ preserveDraft: true, resetDuration: false })} size="lg" className="gap-2 bg-brand-primary text-white hover:bg-brand-primary-hover">
-              <Play className="h-4 w-4" />
-              Konuşmaya Başla
+            <Button
+              onClick={() => void beginAnswerCapture({ preserveDraft: true, resetDuration: false })}
+              size="lg"
+              disabled={isStartingCapture}
+              className="gap-2 bg-brand-primary text-white hover:bg-brand-primary-hover"
+            >
+              {isStartingCapture ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {isStartingCapture ? 'Mikrofon Kontrol Ediliyor' : 'Konuşmaya Başla'}
             </Button>
           </div>
         </div>
@@ -1312,13 +1399,19 @@ const SearchoAI = ({
               </div>
             ) : null}
             <div className="flex flex-wrap gap-3">
-              <Button onClick={() => void beginAnswerCapture({ resetDuration: false, preserveDraft: resumeAfterFailure })} size="lg" className="bg-brand-primary text-white hover:bg-brand-primary-hover">
+              <Button
+                onClick={() => void beginAnswerCapture({ resetDuration: false, preserveDraft: resumeAfterFailure })}
+                size="lg"
+                disabled={isStartingCapture}
+                className="bg-brand-primary text-white hover:bg-brand-primary-hover"
+              >
+                {isStartingCapture ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {resumeAfterFailure ? 'Kaldığın Yerden Devam Et' : 'Tekrar Kaydet'}
               </Button>
-              <Button onClick={() => void reRecordAnswer()} variant="outline" size="lg">
+              <Button onClick={() => void reRecordAnswer()} variant="outline" size="lg" disabled={isStartingCapture}>
                 Baştan Kaydet
               </Button>
-              <Button onClick={() => void skipQuestion()} variant="outline" size="lg">
+              <Button onClick={() => void skipQuestion()} variant="outline" size="lg" disabled={isStartingCapture}>
                 <SkipForward className="mr-2 h-4 w-4" />
                 Atla
               </Button>
