@@ -143,6 +143,7 @@ export const AvatarSpeaker = ({
           return;
         }
 
+        completeSpeaking(token);
         return;
       } catch (error) {
         if (playbackTokenRef.current !== token) {
