@@ -9,6 +9,7 @@ import {
 interface AvatarSpeakerProps {
   questionText: string;
   isUserResponding?: boolean;
+  compact?: boolean;
   onSpeakingStart: () => void;
   onReadyToRespond: () => void;
   onPlaybackInterrupted: (reason: AvatarPlaybackIssueReason) => void;
@@ -42,6 +43,7 @@ const isAutoplayBlockedError = (error: unknown) => {
 export const AvatarSpeaker = ({
   questionText,
   isUserResponding = false,
+  compact = false,
   onSpeakingStart,
   onReadyToRespond,
   onPlaybackInterrupted,
@@ -258,8 +260,20 @@ export const AvatarSpeaker = ({
             ? 'Ses tamamlandi. Kayit otomatik olarak baslatiliyor.'
             : '';
 
+  const shellClassName = compact
+    ? 'w-full max-w-3xl rounded-[28px] px-5 py-5 shadow-[0_18px_44px_rgba(15,23,42,0.09)]'
+    : 'w-full max-w-2xl rounded-[32px] px-6 py-8 shadow-[0_24px_60px_rgba(15,23,42,0.10)]';
+  const orbWrapClassName = compact ? 'h-28 w-28' : 'h-40 w-40';
+  const outerGlowClassName = compact ? 'h-24 w-24 blur-xl' : 'h-36 w-36 blur-2xl';
+  const middleGlowClassName = compact ? 'h-20 w-20 blur-lg' : 'h-28 w-28 blur-xl';
+  const coreOrbClassName = compact ? 'h-16 w-16' : 'h-24 w-24';
+  const titleClassName = compact
+    ? 'mx-auto max-w-2xl text-lg font-semibold leading-relaxed md:text-xl'
+    : 'mx-auto max-w-xl text-xl font-semibold leading-relaxed md:text-2xl';
+  const stackGapClassName = compact ? 'gap-4' : 'gap-6';
+
   return (
-    <div className={`relative w-full max-w-2xl overflow-hidden rounded-[32px] border px-6 py-8 shadow-[0_24px_60px_rgba(15,23,42,0.10)] transition-all duration-500 ${
+    <div className={`relative overflow-hidden border transition-all duration-500 ${shellClassName} ${
       isPreparing
         ? 'border-slate-200/90 bg-[linear-gradient(180deg,_#f6f6f6_0%,_#ededed_100%)]'
         : 'border-border/70 bg-[radial-gradient(circle_at_top,_hsl(var(--brand-primary)/0.20),_transparent_42%),linear-gradient(180deg,_#ffffff_0%,_hsl(var(--brand-primary-light)/0.35)_100%)]'
@@ -270,23 +284,23 @@ export const AvatarSpeaker = ({
           : 'bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.5),transparent)] opacity-70'
       }`} />
 
-      <div className="relative flex flex-col items-center gap-6 text-center">
-        <div className="relative flex h-40 w-40 items-center justify-center">
-          <div className={`absolute h-36 w-36 rounded-full blur-2xl transition-all duration-500 ${
+      <div className={`relative flex flex-col items-center text-center ${stackGapClassName}`}>
+        <div className={`relative flex items-center justify-center ${orbWrapClassName}`}>
+          <div className={`absolute rounded-full transition-all duration-500 ${outerGlowClassName} ${
             isPreparing
               ? 'bg-slate-300/35 opacity-70 scale-90'
               : isSpeaking
                 ? 'bg-[hsl(var(--brand-primary)/0.26)] scale-110 opacity-100'
                 : 'bg-[hsl(var(--brand-primary)/0.20)] scale-95 opacity-55'
           }`} />
-          <div className={`absolute h-28 w-28 rounded-full blur-xl transition-all duration-500 ${
+          <div className={`absolute rounded-full transition-all duration-500 ${middleGlowClassName} ${
             isPreparing
               ? 'bg-slate-200/55 opacity-80 scale-90'
               : isSpeaking
                 ? 'bg-[hsl(var(--brand-primary-light)/0.95)] scale-105 opacity-100'
                 : 'bg-[hsl(var(--brand-primary-light)/0.75)] scale-90 opacity-65'
           }`} />
-          <div className={`relative h-24 w-24 rounded-full transition-all duration-500 ${
+          <div className={`relative rounded-full transition-all duration-500 ${coreOrbClassName} ${
             isPreparing
               ? 'bg-[radial-gradient(circle_at_30%_30%,_#f4f4f5_0%,_#d4d4d8_45%,_#a1a1aa_100%)] shadow-[inset_0_6px_18px_rgba(255,255,255,0.35),0_10px_24px_rgba(115,115,115,0.16)] scale-95'
               : 'bg-[radial-gradient(circle_at_30%_30%,_hsl(var(--brand-primary-light))_0%,_hsl(var(--brand-primary)/0.48)_38%,_hsl(var(--brand-primary))_100%)] shadow-[inset_0_6px_18px_rgba(255,255,255,0.55),0_16px_40px_hsl(var(--brand-primary)/0.32)]'
@@ -297,7 +311,7 @@ export const AvatarSpeaker = ({
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-primary/70">
             {statusLabel}
           </p>
-          <h3 className={`mx-auto max-w-xl text-xl font-semibold leading-relaxed md:text-2xl ${
+          <h3 className={`${titleClassName} ${
             isPreparing ? 'text-slate-500' : 'text-foreground'
           }`}>
             {questionText}

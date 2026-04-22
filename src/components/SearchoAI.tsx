@@ -1285,14 +1285,14 @@ const SearchoAI = ({
   const renderResponsePanel = () => {
     if (isSubmittingResponse) {
       return (
-        <div className="rounded-2xl border-2 border-blue-300 bg-blue-50 p-5 shadow-sm">
-          <div className="mb-3 flex items-center gap-3">
-            <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+        <div className="rounded-2xl border-2 border-blue-300 bg-blue-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-3">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             <span className="text-sm font-bold uppercase tracking-wide text-blue-700">
               Yanıt kaydediliyor
             </span>
           </div>
-          <div className="rounded-xl bg-white/80 p-4 text-base text-slate-700">
+          <div className="rounded-xl bg-white/80 p-3 text-sm text-slate-700">
             {userTranscript || 'Yanıtınız güvenli şekilde kaydediliyor...'}
           </div>
         </div>
@@ -1301,7 +1301,7 @@ const SearchoAI = ({
 
     if (interviewPhase === 'asking') {
       return (
-        <div className="rounded-2xl border border-border/70 bg-muted/20 p-5">
+        <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
           <div className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             {isAutoStartingPhase
@@ -1314,14 +1314,14 @@ const SearchoAI = ({
 
     if (isAwaitingAudioPlaybackPhase) {
       return (
-        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">
-          <div className="mb-3 flex items-center gap-3">
-            <Mic className="h-5 w-5 text-amber-700" />
+        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-3">
+            <Mic className="h-4 w-4 text-amber-700" />
             <span className="text-sm font-bold uppercase tracking-wide text-amber-800">
               Soru sesi bekleniyor
             </span>
           </div>
-          <div className="rounded-xl bg-white/80 p-4 text-base leading-relaxed text-slate-700">
+          <div className="rounded-xl bg-white/80 p-3 text-sm leading-relaxed text-slate-700">
             Soru sesi tamamlanmadan kayıt ve 2 dakikalık süre başlamaz. Yukarıdaki ses kontrolünü kullanarak soruyu tekrar oynatın.
           </div>
         </div>
@@ -1330,45 +1330,45 @@ const SearchoAI = ({
 
     if (isRecordingPhase) {
       return (
-        <div className="rounded-2xl border-2 border-red-300 bg-gradient-to-r from-red-50 to-pink-50 p-5 shadow-sm">
-          <div className="mb-3 flex items-center gap-3">
+        <div className="rounded-2xl border-2 border-red-300 bg-gradient-to-r from-red-50 to-pink-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-3">
             <div className="relative">
-              <div className="h-4 w-4 rounded-full bg-red-500 animate-pulse" />
-              <div className="absolute inset-0 h-4 w-4 rounded-full bg-red-500 animate-ping" />
+              <div className="h-3.5 w-3.5 rounded-full bg-red-500 animate-pulse" />
+              <div className="absolute inset-0 h-3.5 w-3.5 rounded-full bg-red-500 animate-ping" />
             </div>
             <span className="text-sm font-bold uppercase tracking-wide text-red-700">
               Kayıt alınıyor
             </span>
           </div>
-          <div className="rounded-xl bg-white/80 p-4 shadow-sm">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-2">
-                <p className="text-base font-medium leading-relaxed text-slate-800">
+          <div className="rounded-xl bg-white/80 p-3 shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium leading-relaxed text-slate-800">
                   Yanıtınız kaydediliyor. Bitirdiğinizde “Yanıtı Bitir” düğmesini kullanın.
                 </p>
                 <p className={`text-sm font-medium ${isVoiceClearlyDetected ? 'text-blue-700' : 'text-slate-500'}`}>
                   {isVoiceClearlyDetected ? 'Konuşuyorsunuz, sesiniz kayda giriyor.' : 'Dinliyoruz. Konuştuğunuzda ses dalgası yükselecek.'}
                 </p>
                 {showSilentMicWarning ? (
-                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800">
                     İlk 5 saniyede belirgin ses girişi görünmedi. Mikrofon seçimini kontrol edin; kayıt devam ediyor.
                   </p>
                 ) : null}
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-950/95 px-4 py-3 shadow-inner">
+              <div className="rounded-2xl border border-slate-200 bg-slate-950/95 px-3 py-2 shadow-inner">
                 <MinimalVoiceWaves
                   isListening
-                  className="h-12 min-w-[96px]"
+                  className="h-10 min-w-[88px]"
                   userSpeakingLevel={currentAudioLevel}
                 />
               </div>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <Button onClick={finishCurrentAnswer} className="bg-brand-primary text-white hover:bg-brand-primary-hover" size="lg">
+          <div className="mt-3 flex flex-wrap gap-2.5">
+            <Button onClick={finishCurrentAnswer} className="bg-brand-primary text-white hover:bg-brand-primary-hover" size="default">
               Yanıtı Bitir
             </Button>
-            <Button onClick={() => void skipQuestion()} variant="outline" size="lg">
+            <Button onClick={() => void skipQuestion()} variant="outline" size="default">
               <SkipForward className="mr-2 h-4 w-4" />
               Atla
             </Button>
@@ -1379,14 +1379,14 @@ const SearchoAI = ({
 
     if (isProcessingPhase) {
       return (
-        <div className="rounded-2xl border-2 border-sky-300 bg-sky-50 p-5 shadow-sm">
-          <div className="mb-3 flex items-center gap-3">
-            <Loader2 className="h-5 w-5 animate-spin text-sky-700" />
+        <div className="rounded-2xl border-2 border-sky-300 bg-sky-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-3">
+            <Loader2 className="h-4 w-4 animate-spin text-sky-700" />
             <span className="text-sm font-bold uppercase tracking-wide text-sky-700">
               Yanıt işleniyor
             </span>
           </div>
-          <div className="rounded-xl bg-white/80 p-4 text-base leading-relaxed text-slate-700">
+          <div className="rounded-xl bg-white/80 p-3 text-sm leading-relaxed text-slate-700">
             Kaydınız yazıya çevriliyor. Bu aşama tamamlanmazsa otomatik olarak kurtarma moduna geçeceğiz.
           </div>
         </div>
@@ -1395,7 +1395,7 @@ const SearchoAI = ({
 
     if (isReviewPhase) {
       return (
-        <div className="rounded-2xl border-2 border-yellow-400 bg-gradient-to-r from-yellow-50 to-amber-50 p-5 shadow-sm">
+        <div className="rounded-2xl border-2 border-yellow-400 bg-gradient-to-r from-yellow-50 to-amber-50 p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-4">
             <span className="text-sm font-bold uppercase tracking-wide text-yellow-800">
               Yanıtı kontrol edin
@@ -1407,17 +1407,17 @@ const SearchoAI = ({
           <Textarea
             value={editableTranscript}
             onChange={(event) => setEditableTranscript(event.target.value)}
-            className="min-h-[120px] w-full resize-none text-base font-medium leading-relaxed"
+            className="min-h-[108px] w-full resize-none text-sm font-medium leading-relaxed"
             placeholder="Yanıtınızı buraya yazın..."
           />
-          <div className="mt-4 flex flex-wrap gap-3">
-            <Button onClick={() => void confirmAndSaveResponse()} className="bg-green-600 text-white hover:bg-green-700" size="lg">
+          <div className="mt-3 flex flex-wrap gap-2.5">
+            <Button onClick={() => void confirmAndSaveResponse()} className="bg-green-600 text-white hover:bg-green-700" size="default">
               Onayla ve Kaydet
             </Button>
-            <Button onClick={() => void reRecordAnswer()} variant="outline" size="lg">
+            <Button onClick={() => void reRecordAnswer()} variant="outline" size="default">
               Tekrar Kaydet
             </Button>
-            <Button onClick={() => void skipQuestion()} variant="outline" size="lg">
+            <Button onClick={() => void skipQuestion()} variant="outline" size="default">
               <SkipForward className="mr-2 h-4 w-4" />
               Atla
             </Button>
@@ -1428,38 +1428,38 @@ const SearchoAI = ({
 
     if (isRecoveringPhase) {
       return (
-        <div className="rounded-2xl border-2 border-dashed border-gray-300 bg-gradient-to-r from-gray-50 to-slate-50 p-5">
-          <div className="flex flex-col gap-4">
+        <div className="rounded-2xl border-2 border-dashed border-gray-300 bg-gradient-to-r from-gray-50 to-slate-50 p-4">
+          <div className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
-              <Mic className="h-6 w-6 text-gray-500" />
-              <p className="text-base font-medium leading-relaxed text-gray-700">
+              <Mic className="h-5 w-5 text-gray-500" />
+              <p className="text-sm font-medium leading-relaxed text-gray-700">
                 {responseRecoveryMessage ?? 'Yanıt akışı aynı soruda kurtarma moduna alındı.'}
               </p>
             </div>
             {draftTranscript ? (
-              <div className="rounded-xl bg-white/80 p-4 text-left shadow-sm">
+              <div className="rounded-xl bg-white/80 p-3 text-left shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Şu ana kadar kaydedilen kısım
                 </p>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">
                   {draftTranscript}
                 </p>
               </div>
             ) : null}
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2.5">
               <Button
                 onClick={() => void beginAnswerCapture({ resetDuration: false, preserveDraft: resumeAfterFailure })}
-                size="lg"
+                size="default"
                 disabled={isStartingCapture}
                 className="bg-brand-primary text-white hover:bg-brand-primary-hover"
               >
                 {isStartingCapture ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {resumeAfterFailure ? 'Kaldığın Yerden Devam Et' : 'Tekrar Kaydet'}
               </Button>
-              <Button onClick={() => void reRecordAnswer()} variant="outline" size="lg" disabled={isStartingCapture}>
+              <Button onClick={() => void reRecordAnswer()} variant="outline" size="default" disabled={isStartingCapture}>
                 Baştan Kaydet
               </Button>
-              <Button onClick={() => void skipQuestion()} variant="outline" size="lg" disabled={isStartingCapture}>
+              <Button onClick={() => void skipQuestion()} variant="outline" size="default" disabled={isStartingCapture}>
                 <SkipForward className="mr-2 h-4 w-4" />
                 Atla
               </Button>
@@ -1485,12 +1485,13 @@ const SearchoAI = ({
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col xl:min-h-0">
               {currentQuestion && !isPreamblePhase ? (
-                <div className="flex flex-1 flex-col gap-4 xl:min-h-0">
+                <div className="flex flex-1 flex-col gap-3 xl:min-h-0">
                   <div className="flex shrink-0 justify-center">
                     <AvatarSpeaker
                       key={currentQuestion.id}
                       questionText={currentQuestion.question_text}
                       isUserResponding={isUserResponding}
+                      compact
                       onSpeakingStart={() => {
                         if (
                           interviewPhase === 'idle' ||
@@ -1506,7 +1507,7 @@ const SearchoAI = ({
                     />
                   </div>
 
-                  <div className="flex flex-1 flex-col overflow-hidden rounded-[28px] border bg-card p-5 shadow xl:min-h-0 xl:p-6">
+                  <div className="flex flex-1 flex-col overflow-hidden rounded-[28px] border bg-card p-4 shadow xl:min-h-0 xl:p-5">
                     <div className="shrink-0">
                       <div className="flex items-center justify-between gap-3">
                         <div>
@@ -1523,7 +1524,7 @@ const SearchoAI = ({
                           {Math.round(interviewProgress.percentage)}% Tamamlandı
                         </span>
                       </div>
-                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
                         <div
                           className="h-full bg-primary transition-all duration-500 ease-out"
                           style={{ width: `${interviewProgress.percentage}%` }}
@@ -1531,30 +1532,30 @@ const SearchoAI = ({
                       </div>
                     </div>
 
-                    <div className="mt-5 flex flex-1 flex-col gap-5 xl:min-h-0">
-                      <div className="shrink-0 rounded-2xl border border-border/70 bg-muted/30 px-4 py-4">
+                    <div className="mt-4 flex flex-1 flex-col gap-4 xl:min-h-0">
+                      <div className="shrink-0 rounded-2xl border border-border/70 bg-muted/30 px-4 py-3">
                         <div className="flex items-center justify-between gap-4">
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                               {responseTimerHeading}
                             </p>
-                            <p className="mt-1 text-sm text-muted-foreground">
+                            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                               {responseTimerDescription}
                             </p>
                           </div>
-                          <div className={`text-2xl font-semibold tabular-nums ${responseTimerTone}`}>
+                          <div className={`text-xl font-semibold tabular-nums xl:text-2xl ${responseTimerTone}`}>
                             {responseTimerLabel}
                           </div>
                         </div>
                       </div>
 
                       <div className="shrink-0">
-                        <h3 className="text-xl font-semibold leading-relaxed text-foreground">
+                        <h3 className="text-lg font-semibold leading-relaxed text-foreground xl:text-xl">
                           {currentQuestion.question_text}
                         </h3>
                       </div>
 
-                      <div className="flex-1 xl:min-h-0 xl:overflow-y-auto">
+                      <div className={`flex-1 xl:min-h-0 ${isReviewPhase ? 'xl:overflow-y-auto' : 'xl:overflow-hidden'}`}>
                         {renderResponsePanel()}
                       </div>
                     </div>
@@ -1591,31 +1592,29 @@ const SearchoAI = ({
           </div>
 
           {!isCompletedPhase ? (
-            <div className="border-t border-border bg-card/50 backdrop-blur-sm">
-              <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-6 py-4">
-                <div className="flex items-center gap-3">
-                  {isRecordingVideo ? (
-                    <span className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                      Video kaydı alınıyor
-                    </span>
-                  ) : (
-                    <span className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                      Görüşme aktif
-                    </span>
-                  )}
+            <div className="shrink-0 border-t border-border bg-card/40 backdrop-blur-sm">
+              <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-2.5 xl:px-5">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] ${
+                    isRecordingVideo
+                      ? 'bg-red-50 text-red-700'
+                      : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {isRecordingVideo ? 'Video Açık' : 'Görüşme Aktif'}
+                  </span>
                 </div>
 
-                <div className="font-mono text-sm text-muted-foreground">
+                <div className="font-mono text-xs text-muted-foreground xl:text-sm">
                   {getSessionDuration()}
                 </div>
 
                 <Button
                   onClick={() => setShowEndSessionConfirmation(true)}
                   variant="destructive"
-                  size="lg"
-                  className="gap-2"
+                  size="sm"
+                  className="gap-1.5 px-3"
                 >
-                  <PhoneOff className="h-5 w-5" />
+                  <PhoneOff className="h-4 w-4" />
                   Oturumu Bitir
                 </Button>
               </div>
