@@ -1256,6 +1256,7 @@ const SearchoAI = ({
   const isAutoStartingPhase = interviewPhase === 'asking' && isStartingCapture;
   const isVoiceClearlyDetected = currentAudioLevel >= 8;
   const isUserResponding = isRecordingPhase || isReviewPhase || isProcessingPhase || isSubmittingResponse || Boolean(userTranscript);
+  const shouldShowSpeaker = interviewPhase === 'asking' || isAwaitingAudioPlaybackPhase;
 
   const responseTimerLabel = isAwaitingAudioPlaybackPhase
     ? formatTimerLabel(RESPONSE_TIME_LIMIT_SECONDS)
@@ -1479,33 +1480,35 @@ const SearchoAI = ({
   }
 
   return (
-    <div className="flex min-h-full flex-col bg-background xl:h-full">
+    <div className="flex min-h-full flex-col bg-background xl:h-full xl:min-h-0 xl:overflow-hidden">
       {!showTurkishPreamble && (
         <>
-          <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex flex-1 flex-col overflow-hidden xl:min-h-0">
             <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col xl:min-h-0">
               {currentQuestion && !isPreamblePhase ? (
-                <div className="flex flex-1 flex-col gap-3 xl:min-h-0">
-                  <div className="flex shrink-0 justify-center">
-                    <AvatarSpeaker
-                      key={currentQuestion.id}
-                      questionText={currentQuestion.question_text}
-                      isUserResponding={isUserResponding}
-                      compact
-                      onSpeakingStart={() => {
-                        if (
-                          interviewPhase === 'idle' ||
-                          interviewPhase === 'asking' ||
-                          interviewPhase === 'awaiting_audio_playback'
-                        ) {
-                          setInterviewPhase('asking');
-                        }
-                        void ensureMicrophoneStream().catch(() => undefined);
-                      }}
-                      onReadyToRespond={handleQuestionReadyToRespond}
-                      onPlaybackInterrupted={handleQuestionPlaybackInterrupted}
-                    />
-                  </div>
+                <div className={`flex flex-1 flex-col xl:min-h-0 ${shouldShowSpeaker ? 'gap-3' : 'gap-2'}`}>
+                  {shouldShowSpeaker ? (
+                    <div className="flex shrink-0 justify-center">
+                      <AvatarSpeaker
+                        key={currentQuestion.id}
+                        questionText={currentQuestion.question_text}
+                        isUserResponding={isUserResponding}
+                        compact
+                        onSpeakingStart={() => {
+                          if (
+                            interviewPhase === 'idle' ||
+                            interviewPhase === 'asking' ||
+                            interviewPhase === 'awaiting_audio_playback'
+                          ) {
+                            setInterviewPhase('asking');
+                          }
+                          void ensureMicrophoneStream().catch(() => undefined);
+                        }}
+                        onReadyToRespond={handleQuestionReadyToRespond}
+                        onPlaybackInterrupted={handleQuestionPlaybackInterrupted}
+                      />
+                    </div>
+                  ) : null}
 
                   <div className="flex flex-1 flex-col overflow-hidden rounded-[28px] border bg-card p-4 shadow xl:min-h-0 xl:p-5">
                     <div className="shrink-0">
@@ -1532,7 +1535,7 @@ const SearchoAI = ({
                       </div>
                     </div>
 
-                    <div className="mt-4 flex flex-1 flex-col gap-4 xl:min-h-0">
+                    <div className={`flex flex-1 flex-col gap-4 xl:min-h-0 ${shouldShowSpeaker ? 'mt-4' : 'mt-2'}`}>
                       <div className="shrink-0 rounded-2xl border border-border/70 bg-muted/30 px-4 py-3">
                         <div className="flex items-center justify-between gap-4">
                           <div>

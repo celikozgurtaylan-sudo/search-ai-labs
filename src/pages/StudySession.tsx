@@ -1041,7 +1041,7 @@ const StudySession = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background xl:h-screen xl:overflow-hidden">
       {/* Design Mode Indicator */}
       {isDesignMode && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-brand-primary/90 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg backdrop-blur-sm">
@@ -1057,8 +1057,8 @@ const StudySession = () => {
       />
 
       {/* Main Content */}
-      <div className="min-h-screen">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 pt-2 pb-6 md:px-6 xl:h-[calc(100vh-1rem)] xl:overflow-hidden xl:pb-4">
+      <div className="min-h-screen xl:h-full xl:overflow-hidden">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 pt-2 pb-6 md:px-6 xl:h-full xl:overflow-hidden xl:pb-4">
           {showDesignPanels && (
             <div className="shrink-0 rounded-[28px] border border-border-light bg-white/96 p-4 backdrop-blur">
               <div className="mb-4 flex items-center justify-between gap-3">
@@ -1145,7 +1145,7 @@ const StudySession = () => {
             )}
 
             {sessionId && projectData && (
-              <div className="min-w-0 xl:min-h-0">
+              <div className="min-w-0 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
                 <SearchoAI
                   isActive={sessionStatus === 'active' && cameraGateCompleted}
                   cameraStream={cameraStream}
