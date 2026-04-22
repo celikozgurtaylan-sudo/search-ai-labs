@@ -10,8 +10,10 @@ interface AvatarSpeakerProps {
   questionText: string;
   isUserResponding?: boolean;
   onSpeakingStart: () => void;
-  onSpeakingComplete: () => void;
+  onReadyToRespond: (reason: AvatarReadyReason) => void;
 }
+
+export type AvatarReadyReason = 'spoken' | 'blocked' | 'text_only' | 'error';
 
 type OrbState =
   | 'preparing'
@@ -40,7 +42,7 @@ export const AvatarSpeaker = ({
   questionText,
   isUserResponding = false,
   onSpeakingStart,
-  onSpeakingComplete,
+  onReadyToRespond,
 }: AvatarSpeakerProps) => {
   const [orbState, setOrbState] = useState<OrbState>('preparing');
   const [showListeningHint, setShowListeningHint] = useState(false);
@@ -51,7 +53,7 @@ export const AvatarSpeaker = ({
   const playbackTokenRef = useRef(0);
   const ttsRef = useRef<SequentialTTS | null>(null);
   const onSpeakingStartRef = useRef(onSpeakingStart);
-  const onSpeakingCompleteRef = useRef(onSpeakingComplete);
+  const onReadyToRespondRef = useRef(onReadyToRespond);
   const listeningHintTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -59,8 +61,8 @@ export const AvatarSpeaker = ({
   }, [onSpeakingStart]);
 
   useEffect(() => {
-    onSpeakingCompleteRef.current = onSpeakingComplete;
-  }, [onSpeakingComplete]);
+    onReadyToRespondRef.current = onReadyToRespond;
+  }, [onReadyToRespond]);
 
   const stopPlayback = () => {
     if (listeningHintTimerRef.current) {
@@ -77,14 +79,14 @@ export const AvatarSpeaker = ({
     stopPlayback();
   };
 
-  const completeSpeaking = (token: number) => {
+  const completeSpeaking = (token: number, reason: AvatarReadyReason = 'spoken') => {
     if (playbackTokenRef.current !== token) return;
     setOrbState('listening');
     setShowListeningHint(false);
     setRetryAttempt(0);
     setManualStartRequired(false);
     setLastErrorMessage('');
-    onSpeakingCompleteRef.current();
+    onReadyToRespondRef.current(reason);
   };
 
   const enterTextOnlyMode = (token: number, message: string) => {
@@ -95,7 +97,7 @@ export const AvatarSpeaker = ({
     setRetryAttempt(0);
     setManualStartRequired(false);
     setLastErrorMessage(message);
-    onSpeakingCompleteRef.current();
+    onReadyToRespondRef.current('text_only');
   };
 
   const startPlayback = async () => {
@@ -153,7 +155,8 @@ export const AvatarSpeaker = ({
         if (isAutoplayBlockedError(error)) {
           setOrbState('blocked');
           setManualStartRequired(true);
-          setLastErrorMessage('Tarayici otomatik sesi engelledi. Soruyu manuel olarak baslatin.');
+          setLastErrorMessage('Tarayici otomatik sesi engelledi. Soru ekranda yazili; kayit otomatik olarak baslatiliyor.');
+          onReadyToRespondRef.current('blocked');
           return;
         }
 
@@ -168,6 +171,7 @@ export const AvatarSpeaker = ({
 
         if (!shouldRetryTTSError(error) || attempt >= MAX_AUTO_RETRIES - 1) {
           setOrbState('error');
+          onReadyToRespondRef.current('error');
           return;
         }
 
@@ -225,12 +229,12 @@ export const AvatarSpeaker = ({
   const isPreparing = orbState === 'preparing' || orbState === 'retrying';
   const isSpeaking = orbState === 'speaking';
   const statusLabel = orbState === 'speaking'
-    ? 'Searcho konusuyor'
-    : orbState === 'blocked'
-      ? 'Searcho sesi bekliyor'
-      : orbState === 'textOnly'
-        ? 'Searcho metin modunda'
-        : orbState === 'error'
+            ? 'Searcho konusuyor'
+            : orbState === 'blocked'
+              ? 'Searcho sesi engellendi'
+              : orbState === 'textOnly'
+                ? 'Searcho metin modunda'
+                : orbState === 'error'
           ? 'Searcho sesi baglanamadi'
           : orbState === 'listening'
             ? 'Searcho dinliyor'
@@ -244,7 +248,7 @@ export const AvatarSpeaker = ({
         : orbState === 'retrying'
           ? `ElevenLabs sesi baglaniyor. Deneme ${retryAttempt}.`
           : showListeningHint
-            ? 'Hazir oldugunuzda konusmaya baslamak icin asagidaki dugmeyi kullanin.'
+            ? 'Ses tamamlandi. Kayit otomatik olarak baslatiliyor.'
             : '';
 
   return (

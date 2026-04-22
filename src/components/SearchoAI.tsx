@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { CheckCircle2, Loader2, Mic, PhoneOff, Play, SkipForward, Sparkles } from 'lucide-react';
+import { CheckCircle2, Loader2, Mic, PhoneOff, SkipForward, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
@@ -24,10 +24,10 @@ import {
   probeMicrophoneHealth,
 } from '@/utils/microphoneHealth';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
-import { AvatarSpeaker } from './AvatarSpeaker';
+import { AvatarSpeaker, type AvatarReadyReason } from './AvatarSpeaker';
+import MinimalVoiceWaves from './ui/minimal-voice-waves';
 
 const RESPONSE_TIME_LIMIT_SECONDS = 120;
-const PRE_SPEECH_PREP_LIMIT_SECONDS = 10;
 const RECOVERY_GRACE_SECONDS = 30;
 const AUTO_SAVE_MIN_CHARACTERS = 8;
 const AUTO_SAVE_MIN_WORDS = 2;
@@ -47,7 +47,6 @@ type PendingResponseMedia = ResponseRecordingResult & {
 type InterviewPhase =
   | 'idle'
   | 'asking'
-  | 'awaiting_start'
   | 'recording'
   | 'processing'
   | 'review'
@@ -151,10 +150,8 @@ const SearchoAI = ({
   const [userTranscript, setUserTranscript] = useState('');
   const [editableTranscript, setEditableTranscript] = useState('');
   const [responseTimeRemaining, setResponseTimeRemaining] = useState(RESPONSE_TIME_LIMIT_SECONDS);
-  const [prepTimeRemaining, setPrepTimeRemaining] = useState(PRE_SPEECH_PREP_LIMIT_SECONDS);
   const [responseTimerExpired, setResponseTimerExpired] = useState(false);
   const [responseTimerActive, setResponseTimerActive] = useState(false);
-  const [hasSpeechStartedForCurrentAttempt, setHasSpeechStartedForCurrentAttempt] = useState(false);
   const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
   const [isRecordingVideo, setIsRecordingVideo] = useState(false);
   const [isPreamblePhase, setIsPreamblePhase] = useState(true);
@@ -166,6 +163,7 @@ const SearchoAI = ({
   const [resumeAfterFailure, setResumeAfterFailure] = useState(false);
   const [hasUsedRecoveryGrace, setHasUsedRecoveryGrace] = useState(false);
   const [isStartingCapture, setIsStartingCapture] = useState(false);
+  const [currentAudioLevel, setCurrentAudioLevel] = useState(0);
 
   const audioTranscriberRef = useRef<AudioTranscriber | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
@@ -209,6 +207,7 @@ const SearchoAI = ({
     responseRecorderRef.current = null;
     responseRecordingStartedAtRef.current = 0;
     setIsRecordingVideo(false);
+    setCurrentAudioLevel(0);
   }, []);
 
   const releaseMicrophoneStream = useCallback(() => {
@@ -415,7 +414,7 @@ const SearchoAI = ({
 
     setResponseTimerActive(false);
     setResponseTimerExpired(false);
-    setHasSpeechStartedForCurrentAttempt(false);
+    setCurrentAudioLevel(0);
   }, [clearTranscriptionHealthMonitor, invalidateCaptureAttempt, stopResponseRecording]);
 
   const uploadResponseMedia = useCallback(async (responseId: string, questionId: string, media: PendingResponseMedia) => {
@@ -491,11 +490,10 @@ const SearchoAI = ({
     setInterviewPhase('recovering');
     setResponseTimerActive(false);
     setResponseTimerExpired(false);
-    setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
-    setHasSpeechStartedForCurrentAttempt(false);
     setResumeAfterFailure(shouldResume);
     setResponseRecoveryMessage(message);
     setIsStartingCapture(false);
+    setCurrentAudioLevel(0);
   }, [hasUsedRecoveryGrace, responseTimeRemaining]);
 
   const startProcessingWatchdog = useCallback((attemptId: number) => {
@@ -529,8 +527,6 @@ const SearchoAI = ({
     setResponseTimerActive(false);
     setResponseTimerExpired(false);
     setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
-    setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
-    setHasSpeechStartedForCurrentAttempt(false);
     setUserTranscript('');
     setEditableTranscript('');
     setDraftTranscript('');
@@ -539,6 +535,7 @@ const SearchoAI = ({
     setResumeAfterFailure(false);
     setHasUsedRecoveryGrace(false);
     setIsStartingCapture(false);
+    setCurrentAudioLevel(0);
 
     if (nextQuestion?.question_text) {
       setInterviewPhase('asking');
@@ -634,15 +631,15 @@ const SearchoAI = ({
   useEffect(() => {
     if (!currentQuestion?.id) return;
     setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
-    setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
     setResponseTimerExpired(false);
     setResponseTimerActive(false);
-    setHasSpeechStartedForCurrentAttempt(false);
     setHasUsedRecoveryGrace(false);
+    setCurrentAudioLevel(0);
   }, [currentQuestion?.id]);
 
   useEffect(() => {
-    if (!currentQuestion || interviewPhase !== 'recording' || !responseTimerActive || isSubmittingResponse) return;
+    if (!currentQuestion || !responseTimerActive || isSubmittingResponse) return;
+    if (interviewPhase !== 'asking' && interviewPhase !== 'recording') return;
     if (responseTimeRemaining <= 0) return;
 
     const timer = window.setInterval(() => {
@@ -651,28 +648,6 @@ const SearchoAI = ({
 
     return () => window.clearInterval(timer);
   }, [currentQuestion, interviewPhase, isSubmittingResponse, responseTimeRemaining, responseTimerActive]);
-
-  useEffect(() => {
-    if (
-      !currentQuestion ||
-      interviewPhase !== 'recording' ||
-      responseTimerActive ||
-      hasSpeechStartedForCurrentAttempt ||
-      isSubmittingResponse
-    ) {
-      return;
-    }
-
-    if (prepTimeRemaining <= 0) {
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      setPrepTimeRemaining((previous) => Math.max(0, previous - 1));
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [currentQuestion, hasSpeechStartedForCurrentAttempt, interviewPhase, isSubmittingResponse, prepTimeRemaining, responseTimerActive]);
 
   const finishCurrentAnswer = useCallback(() => {
     if (!audioTranscriberRef.current || interviewPhase !== 'recording') {
@@ -811,7 +786,13 @@ const SearchoAI = ({
     const nextDraftTranscript = preserveDraft ? draftTranscript : '';
     const attemptId = invalidateCaptureAttempt();
 
-    if (!currentQuestion?.id || isSubmittingResponse || interviewPhase === 'completed') {
+    if (
+      !currentQuestion?.id ||
+      isSubmittingResponse ||
+      interviewPhase === 'completed' ||
+      interviewPhase === 'processing' ||
+      isStartingCapture
+    ) {
       return;
     }
 
@@ -843,9 +824,8 @@ const SearchoAI = ({
     setUserTranscript(nextDraftTranscript);
     setEditableTranscript(nextDraftTranscript);
     setResponseTimerExpired(false);
-    setResponseTimerActive(false);
-    setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
-    setHasSpeechStartedForCurrentAttempt(false);
+    setResponseTimerActive(true);
+    setCurrentAudioLevel(0);
 
     try {
       const microphoneStream = await ensureMicrophoneStream();
@@ -865,8 +845,8 @@ const SearchoAI = ({
       if (!microphoneHealth.ok) {
         const recoveryReason = microphoneHealth.failureCode ?? 'track_silent';
         const recoveryMessage = requestMediaRecovery(recoveryReason, microphoneHealth.message);
-        setUserTranscript(draftTranscript);
-        setEditableTranscript(draftTranscript);
+        setUserTranscript(nextDraftTranscript);
+        setEditableTranscript(nextDraftTranscript);
         enterRecoveryState(recoveryMessage, {
           resume: true,
           allowGraceIfNeeded: false,
@@ -905,14 +885,13 @@ const SearchoAI = ({
       }
 
       const transcriber = new AudioTranscriber();
-      transcriber.onSpeechDetected = () => {
+      transcriber.onSpeechDetected = () => {};
+      transcriber.onAudioLevel = (level: number) => {
         if (captureAttemptRef.current !== attemptId) {
           return;
         }
 
-        setHasSpeechStartedForCurrentAttempt(true);
-        setResponseTimerActive(true);
-        startTranscriptionHealthMonitor();
+        setCurrentAudioLevel(level);
       };
       transcriber.onDebugMetrics = (metrics: AudioTranscriberMetrics) => {
         if (import.meta.env.DEV) {
@@ -930,6 +909,7 @@ const SearchoAI = ({
         setResponseTimerActive(false);
         setResponseRecoveryMessage(null);
         setResumeAfterFailure(false);
+        setCurrentAudioLevel(0);
 
         const recording = await stopResponseRecording(false);
         if (captureAttemptRef.current !== attemptId || !currentQuestion?.id) {
@@ -967,7 +947,7 @@ const SearchoAI = ({
         clearTranscriptionHealthMonitor();
         clearProcessingWatchdog();
         setResponseTimerActive(false);
-        setHasSpeechStartedForCurrentAttempt(false);
+        setCurrentAudioLevel(0);
 
         await discardPendingResponseMedia();
         if (captureAttemptRef.current !== attemptId) {
@@ -975,23 +955,23 @@ const SearchoAI = ({
         }
 
         if (error === 'PREP_TIMEOUT') {
-          setUserTranscript(draftTranscript);
-          setEditableTranscript(draftTranscript);
-          enterRecoveryState('Soruyu duyduysanız şimdi konuşmaya başlayabilirsiniz. İlk 10 saniyede ses algılanmadı.', {
+          setUserTranscript(nextDraftTranscript);
+          setEditableTranscript(nextDraftTranscript);
+          enterRecoveryState('Kayıt otomatik başlatıldı ancak ses algılanamadı. Aynı soruda yeniden deneyebilirsiniz.', {
             resume: false,
             allowGraceIfNeeded: false,
           });
           toast({
-            title: 'Konuşma başlamadı',
-            description: 'Yanıta başlamak için “Konuşmaya Başla” düğmesinden sonra 10 saniye içinde konuşmanız gerekiyor.',
+            title: 'Ses algılanamadı',
+            description: 'Kayıt açıktı ancak belirgin bir konuşma yakalanamadı. Mikrofonu kontrol edip tekrar deneyin.',
           });
           return;
         }
 
         if (error === 'MICROPHONE_SILENT') {
           const recoveryMessage = requestMediaRecovery('track_silent');
-          setUserTranscript(draftTranscript);
-          setEditableTranscript(draftTranscript);
+          setUserTranscript(nextDraftTranscript);
+          setEditableTranscript(nextDraftTranscript);
           enterRecoveryState(recoveryMessage, {
             resume: true,
             allowGraceIfNeeded: false,
@@ -1005,8 +985,8 @@ const SearchoAI = ({
         }
 
         if (error === 'NO_SPEECH_DETECTED') {
-          setUserTranscript(draftTranscript);
-          setEditableTranscript(draftTranscript);
+          setUserTranscript(nextDraftTranscript);
+          setEditableTranscript(nextDraftTranscript);
           enterRecoveryState('Ses net algılanamadı. Aynı soruda yeniden kayıt alabilirsiniz.', {
             resume: false,
             allowGraceIfNeeded: false,
@@ -1029,8 +1009,8 @@ const SearchoAI = ({
 
         if (error === 'MICROPHONE_DISCONNECTED') {
           const recoveryMessage = requestMediaRecovery('track_ended');
-          setUserTranscript(draftTranscript);
-          setEditableTranscript(draftTranscript);
+          setUserTranscript(nextDraftTranscript);
+          setEditableTranscript(nextDraftTranscript);
           enterRecoveryState(recoveryMessage, {
             resume: true,
             allowGraceIfNeeded: false,
@@ -1044,8 +1024,8 @@ const SearchoAI = ({
         }
 
         if (isSystemFailure) {
-          setUserTranscript(draftTranscript);
-          setEditableTranscript(draftTranscript);
+          setUserTranscript(nextDraftTranscript);
+          setEditableTranscript(nextDraftTranscript);
           enterRecoveryState(
             responseTimeRemaining <= 0 && !hasUsedRecoveryGrace
               ? 'Kayıt ya da transcript zincirinde sorun algılandı. Aynı soruda devam etmeniz için 30 saniyelik ek süre tanındı.'
@@ -1075,7 +1055,11 @@ const SearchoAI = ({
       };
 
       audioTranscriberRef.current = transcriber;
-      await transcriber.start(microphoneStream);
+      startTranscriptionHealthMonitor();
+      await transcriber.start(microphoneStream, {
+        requireSpeechWithinMs: null,
+        emitAudioLevels: true,
+      });
     } catch (error) {
       if (captureAttemptRef.current !== attemptId) {
         return;
@@ -1129,13 +1113,38 @@ const SearchoAI = ({
     setDraftTranscript('');
     setDraftAudioDurationMs(0);
     setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
-    setPrepTimeRemaining(PRE_SPEECH_PREP_LIMIT_SECONDS);
     setResponseTimerExpired(false);
     setResponseTimerActive(false);
-    setHasSpeechStartedForCurrentAttempt(false);
     setHasUsedRecoveryGrace(false);
+    setCurrentAudioLevel(0);
     await beginAnswerCapture({ resetDuration: true, preserveDraft: false });
   }, [beginAnswerCapture]);
+
+  const handleQuestionReadyToRespond = useCallback((reason: AvatarReadyReason) => {
+    if (
+      !currentQuestion?.id ||
+      interviewPhase !== 'asking' ||
+      isSubmittingResponse ||
+      isStartingCapture ||
+      audioTranscriberRef.current
+    ) {
+      return;
+    }
+
+    if (reason === 'blocked') {
+      toast({
+        title: 'Ses otomatik oynatılamadı',
+        description: 'Soru ekranda yazılı. Kayıt otomatik başlatılıyor; isterseniz sesi manuel oynatabilirsiniz.',
+      });
+    } else if (reason === 'error') {
+      toast({
+        title: 'Sesli okuma kullanılamıyor',
+        description: 'Soru yazılı gösteriliyor. Kayıt akışı otomatik devam edecek.',
+      });
+    }
+
+    void beginAnswerCapture({ resetDuration: false, preserveDraft: true });
+  }, [beginAnswerCapture, currentQuestion?.id, interviewPhase, isStartingCapture, isSubmittingResponse, toast]);
 
   const confirmAndSaveResponse = useCallback(async () => {
     if (!editableTranscript.trim()) {
@@ -1206,40 +1215,34 @@ const SearchoAI = ({
   };
 
   const isRecordingPhase = interviewPhase === 'recording';
-  const isAwaitingStartPhase = interviewPhase === 'awaiting_start';
   const isProcessingPhase = interviewPhase === 'processing';
   const isReviewPhase = interviewPhase === 'review';
   const isRecoveringPhase = interviewPhase === 'recovering';
   const isCompletedPhase = interviewPhase === 'completed' || interviewProgress.isComplete;
-  const isInPrepWindow = isRecordingPhase && !hasSpeechStartedForCurrentAttempt && !responseTimerActive;
+  const isAutoStartingPhase = interviewPhase === 'asking' && isStartingCapture;
+  const isVoiceClearlyDetected = currentAudioLevel >= 8;
   const isUserResponding = isRecordingPhase || isReviewPhase || isProcessingPhase || isSubmittingResponse || Boolean(userTranscript);
 
-  const responseTimerLabel = isAwaitingStartPhase
-    ? 'Hazır'
-    : formatTimerLabel(isInPrepWindow ? prepTimeRemaining : responseTimeRemaining);
-  const responseTimerHeading = isAwaitingStartPhase
-    ? 'Konuşma başlangıcı'
-    : isInPrepWindow
-      ? 'Hazırlık süresi'
-      : 'Yanıt süresi';
-  const responseTimerDescription = isAwaitingStartPhase
-    ? 'Soruyu bitirdiğinizde aşağıdaki düğmeyle kaydı başlatın.'
-    : isInPrepWindow
-      ? '“Konuşmaya Başla” sonrasında 10 sn içinde ilk cümlenizi söyleyin. İlk sesinizle 2 dk başlar.'
-      : 'Konuşmaya başladıktan sonra 2 dk boyunca yanıt verebilirsiniz.';
-  const responseTimerTone = isAwaitingStartPhase
-    ? 'text-foreground'
-    : isInPrepWindow
-      ? prepTimeRemaining <= 3
-        ? 'text-red-600'
-        : prepTimeRemaining <= 5
-          ? 'text-amber-600'
-          : 'text-foreground'
-      : responseTimeRemaining <= 10
-        ? 'text-red-600'
-        : responseTimeRemaining <= 30
-          ? 'text-amber-600'
-          : 'text-foreground';
+  const responseTimerLabel = formatTimerLabel(responseTimeRemaining);
+  const responseTimerHeading = 'Yanıt süresi';
+  const responseTimerDescription = interviewPhase === 'asking'
+    ? (isAutoStartingPhase
+      ? 'Soru bitti. Mikrofon hazırlanıyor ve kayıt birkaç saniye içinde otomatik başlayacak.'
+      : 'Soru seslendirmesi tamamlanınca 2 dakikalık yanıt süresi otomatik başlar.')
+    : isRecordingPhase
+      ? 'Yanıt süresi başladı. Ses dalgası sizi duyduğumuzu gösterir.'
+      : isProcessingPhase
+        ? 'Kayıt tamamlandı. Şimdi yanıtınız işleniyor.'
+        : isReviewPhase
+          ? 'Yanıtınızı düzenleyip kaydedebilir veya yeniden kayıt alabilirsiniz.'
+          : isRecoveringPhase
+            ? 'Aynı soruda tekrar deneyebilir veya kaldığınız yerden devam edebilirsiniz.'
+            : 'Yanıt süresi soru okuması biter bitmez otomatik başlar.';
+  const responseTimerTone = responseTimeRemaining <= 10
+    ? 'text-red-600'
+    : responseTimeRemaining <= 30
+      ? 'text-amber-600'
+      : 'text-foreground';
 
   const renderResponsePanel = () => {
     if (isSubmittingResponse) {
@@ -1263,35 +1266,9 @@ const SearchoAI = ({
         <div className="rounded-2xl border border-border/70 bg-muted/20 p-5">
           <div className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Soru seslendiriliyor. Ses tamamlanınca “Konuşmaya Başla” düğmesi aktif olacak.
-          </div>
-        </div>
-      );
-    }
-
-    if (isAwaitingStartPhase) {
-      return (
-        <div className="rounded-2xl border-2 border-brand-primary/20 bg-[linear-gradient(180deg,rgba(124,77,255,0.08),rgba(255,255,255,0.96))] p-5 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-2">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-brand-primary">
-                Hazırsanız siz başlayın
-              </p>
-              <p className="text-sm leading-6 text-muted-foreground">
-                {isStartingCapture
-                  ? 'Mikrofon hazirlaniyor. Kisa bir saglik kontrolu yapiyoruz.'
-                  : 'Soruyu duyduysanız yanıt kaydını manuel olarak başlatın. Hazırlık süresi düğmeye bastığınızda başlayacak.'}
-              </p>
-            </div>
-            <Button
-              onClick={() => void beginAnswerCapture({ preserveDraft: true, resetDuration: false })}
-              size="lg"
-              disabled={isStartingCapture}
-              className="gap-2 bg-brand-primary text-white hover:bg-brand-primary-hover"
-            >
-              {isStartingCapture ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {isStartingCapture ? 'Mikrofon Kontrol Ediliyor' : 'Konuşmaya Başla'}
-            </Button>
+            {isAutoStartingPhase
+              ? 'Soru tamamlandı. Mikrofon hazırlanıyor; kayıt otomatik olarak başlatılıyor.'
+              : 'Soru seslendiriliyor. Ses biter bitmez kayıt otomatik olarak başlayacak.'}
           </div>
         </div>
       );
@@ -1306,15 +1283,27 @@ const SearchoAI = ({
               <div className="absolute inset-0 h-4 w-4 rounded-full bg-red-500 animate-ping" />
             </div>
             <span className="text-sm font-bold uppercase tracking-wide text-red-700">
-              {isInPrepWindow ? 'Konuşma başlangıcı bekleniyor' : 'Kayıt alınıyor'}
+              Kayıt alınıyor
             </span>
           </div>
-          <div className="rounded-xl bg-white/80 p-4">
-            <p className="text-base font-medium leading-relaxed text-slate-800">
-              {isInPrepWindow
-                ? 'İlk cümlenizi şimdi söyleyin. Ses algılandığında yanıt süresi başlayacak.'
-                : 'Yanıtınız kaydediliyor. Bitirdiğinizde “Yanıtı Bitir” düğmesini kullanın.'}
-            </p>
+          <div className="rounded-xl bg-white/80 p-4 shadow-sm">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-2">
+                <p className="text-base font-medium leading-relaxed text-slate-800">
+                  Yanıtınız kaydediliyor. Bitirdiğinizde “Yanıtı Bitir” düğmesini kullanın.
+                </p>
+                <p className={`text-sm font-medium ${isVoiceClearlyDetected ? 'text-blue-700' : 'text-slate-500'}`}>
+                  {isVoiceClearlyDetected ? 'Konuşuyorsunuz, sesiniz kayda giriyor.' : 'Dinliyoruz. Konuştuğunuzda ses dalgası yükselecek.'}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-950/95 px-4 py-3 shadow-inner">
+                <MinimalVoiceWaves
+                  isListening
+                  className="h-12 min-w-[96px]"
+                  userSpeakingLevel={currentAudioLevel}
+                />
+              </div>
+            </div>
           </div>
           <div className="mt-4 flex flex-wrap gap-3">
             <Button onClick={finishCurrentAnswer} className="bg-brand-primary text-white hover:bg-brand-primary-hover" size="lg">
@@ -1444,12 +1433,12 @@ const SearchoAI = ({
                       questionText={currentQuestion.question_text}
                       isUserResponding={isUserResponding}
                       onSpeakingStart={() => {
-                        setInterviewPhase('asking');
-                        void ensureMicrophoneStream();
+                        if (interviewPhase === 'idle' || interviewPhase === 'asking') {
+                          setInterviewPhase('asking');
+                        }
+                        void ensureMicrophoneStream().catch(() => undefined);
                       }}
-                      onSpeakingComplete={() => {
-                        setInterviewPhase('awaiting_start');
-                      }}
+                      onReadyToRespond={handleQuestionReadyToRespond}
                     />
                   </div>
 

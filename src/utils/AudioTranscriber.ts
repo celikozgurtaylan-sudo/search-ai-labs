@@ -23,6 +23,11 @@ const HALLUCINATION_PATTERNS = [
   /bildirim zil/i,
 ];
 
+export interface AudioTranscriberStartOptions {
+  requireSpeechWithinMs?: number | null;
+  emitAudioLevels?: boolean;
+}
+
 type SpeechToTextErrorPayload = {
   error?: string;
   code?: string;
@@ -85,14 +90,19 @@ export class AudioTranscriber {
   private analysisFrameId: number | null = null;
   private stopReason: 'manual' | 'no-speech' | 'cancelled' | 'health-failure' = 'manual';
   private forcedErrorCode: string | null = null;
+  private requireSpeechWithinMs: number | null = MAX_WAIT_FOR_SPEECH_MS;
+  private emitAudioLevels = false;
+  private lastLevelEmitAt = 0;
+  private lastEmittedLevel = 0;
 
   onTranscriptionUpdate: (text: string) => void = () => {};
   onSpeechDetected: () => void = () => {};
+  onAudioLevel: (level: number) => void = () => {};
   onComplete: (text: string) => void = () => {};
   onError: (error: string) => void = () => {};
   onDebugMetrics: (metrics: AudioTranscriberMetrics) => void = () => {};
 
-  async start(stream?: MediaStream) {
+  async start(stream?: MediaStream, options?: AudioTranscriberStartOptions) {
     try {
       if (stream) {
         this.stream = stream;
@@ -136,6 +146,12 @@ export class AudioTranscriber {
       this.stopReason = 'manual';
       this.discardRecording = false;
       this.forcedErrorCode = null;
+      this.requireSpeechWithinMs = options?.requireSpeechWithinMs === undefined
+        ? MAX_WAIT_FOR_SPEECH_MS
+        : options.requireSpeechWithinMs;
+      this.emitAudioLevels = options?.emitAudioLevels ?? false;
+      this.lastLevelEmitAt = 0;
+      this.lastEmittedLevel = 0;
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -188,6 +204,11 @@ export class AudioTranscriber {
       this.analysisFrameId = null;
     }
 
+    if (this.emitAudioLevels && this.lastEmittedLevel !== 0) {
+      this.lastEmittedLevel = 0;
+      this.onAudioLevel(0);
+    }
+
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
       this.mediaRecorder.stop();
     }
@@ -226,6 +247,7 @@ export class AudioTranscriber {
       this.totalLevel += level;
       this.levelSampleCount += 1;
       this.peakLevel = Math.max(this.peakLevel, level);
+      this.emitAudioLevel(now, level);
 
       if (elapsed <= CALIBRATION_WINDOW_MS) {
         this.calibrationTotal += level;
@@ -258,7 +280,7 @@ export class AudioTranscriber {
         this.lastVoiceActivityAt = now;
       }
 
-      if (!this.speechDetected && elapsed >= MAX_WAIT_FOR_SPEECH_MS) {
+      if (!this.speechDetected && this.requireSpeechWithinMs !== null && elapsed >= this.requireSpeechWithinMs) {
         const averageLevel = this.levelSampleCount > 0 ? this.totalLevel / this.levelSampleCount : 0;
         const trackLooksSilent =
           this.peakLevel < Math.max(1.8, enterThreshold * 0.8) &&
@@ -280,6 +302,20 @@ export class AudioTranscriber {
     };
 
     this.analysisFrameId = window.requestAnimationFrame(sample);
+  }
+
+  private emitAudioLevel(now: number, level: number) {
+    if (!this.emitAudioLevels) {
+      return;
+    }
+
+    if (now - this.lastLevelEmitAt < 80 && Math.abs(level - this.lastEmittedLevel) < 5) {
+      return;
+    }
+
+    this.lastLevelEmitAt = now;
+    this.lastEmittedLevel = level;
+    this.onAudioLevel(level);
   }
 
   private calculateRmsLevel(dataArray: Uint8Array) {
