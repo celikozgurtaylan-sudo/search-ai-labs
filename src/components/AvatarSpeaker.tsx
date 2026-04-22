@@ -10,10 +10,11 @@ interface AvatarSpeakerProps {
   questionText: string;
   isUserResponding?: boolean;
   onSpeakingStart: () => void;
-  onReadyToRespond: (reason: AvatarReadyReason) => void;
+  onReadyToRespond: () => void;
+  onPlaybackInterrupted: (reason: AvatarPlaybackIssueReason) => void;
 }
 
-export type AvatarReadyReason = 'spoken' | 'blocked' | 'text_only' | 'error';
+export type AvatarPlaybackIssueReason = 'blocked' | 'text_only' | 'error';
 
 type OrbState =
   | 'preparing'
@@ -43,6 +44,7 @@ export const AvatarSpeaker = ({
   isUserResponding = false,
   onSpeakingStart,
   onReadyToRespond,
+  onPlaybackInterrupted,
 }: AvatarSpeakerProps) => {
   const [orbState, setOrbState] = useState<OrbState>('preparing');
   const [showListeningHint, setShowListeningHint] = useState(false);
@@ -54,6 +56,7 @@ export const AvatarSpeaker = ({
   const ttsRef = useRef<SequentialTTS | null>(null);
   const onSpeakingStartRef = useRef(onSpeakingStart);
   const onReadyToRespondRef = useRef(onReadyToRespond);
+  const onPlaybackInterruptedRef = useRef(onPlaybackInterrupted);
   const listeningHintTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -63,6 +66,10 @@ export const AvatarSpeaker = ({
   useEffect(() => {
     onReadyToRespondRef.current = onReadyToRespond;
   }, [onReadyToRespond]);
+
+  useEffect(() => {
+    onPlaybackInterruptedRef.current = onPlaybackInterrupted;
+  }, [onPlaybackInterrupted]);
 
   const stopPlayback = () => {
     if (listeningHintTimerRef.current) {
@@ -79,14 +86,14 @@ export const AvatarSpeaker = ({
     stopPlayback();
   };
 
-  const completeSpeaking = (token: number, reason: AvatarReadyReason = 'spoken') => {
+  const completeSpeaking = (token: number) => {
     if (playbackTokenRef.current !== token) return;
     setOrbState('listening');
     setShowListeningHint(false);
     setRetryAttempt(0);
     setManualStartRequired(false);
     setLastErrorMessage('');
-    onReadyToRespondRef.current(reason);
+    onReadyToRespondRef.current();
   };
 
   const enterTextOnlyMode = (token: number, message: string) => {
@@ -97,7 +104,7 @@ export const AvatarSpeaker = ({
     setRetryAttempt(0);
     setManualStartRequired(false);
     setLastErrorMessage(message);
-    onReadyToRespondRef.current('text_only');
+    onPlaybackInterruptedRef.current('text_only');
   };
 
   const startPlayback = async () => {
@@ -155,8 +162,8 @@ export const AvatarSpeaker = ({
         if (isAutoplayBlockedError(error)) {
           setOrbState('blocked');
           setManualStartRequired(true);
-          setLastErrorMessage('Tarayici otomatik sesi engelledi. Soru ekranda yazili; kayit otomatik olarak baslatiliyor.');
-          onReadyToRespondRef.current('blocked');
+          setLastErrorMessage('Tarayici otomatik sesi engelledi. Sesi manuel olarak baslatin; yanit suresi ses tamamlandiginda baslayacak.');
+          onPlaybackInterruptedRef.current('blocked');
           return;
         }
 
@@ -171,7 +178,7 @@ export const AvatarSpeaker = ({
 
         if (!shouldRetryTTSError(error) || attempt >= MAX_AUTO_RETRIES - 1) {
           setOrbState('error');
-          onReadyToRespondRef.current('error');
+          onPlaybackInterruptedRef.current('error');
           return;
         }
 
@@ -242,9 +249,9 @@ export const AvatarSpeaker = ({
   const helperText = manualStartRequired
     ? lastErrorMessage
     : orbState === 'textOnly'
-      ? (lastErrorMessage || 'Ses kotasi doldu. Soru yazili olarak devam ediyor.')
+      ? (lastErrorMessage || 'Ses kotasi doldu. Yanit suresi baslamadi; ses tekrar denenmeli.')
       : orbState === 'error'
-        ? (lastErrorMessage || 'ElevenLabs sesine ulasilamadi. Tekrar deneyin.')
+        ? (lastErrorMessage || 'ElevenLabs sesine ulasilamadi. Yanit suresi baslamadi; tekrar deneyin.')
         : orbState === 'retrying'
           ? `ElevenLabs sesi baglaniyor. Deneme ${retryAttempt}.`
           : showListeningHint
@@ -310,7 +317,7 @@ export const AvatarSpeaker = ({
                 Soruyu Sesli Baslat
               </button>
             </div>
-          ) : orbState === 'error' ? (
+          ) : orbState === 'error' || orbState === 'textOnly' ? (
             <div className="pt-2">
               <button
                 type="button"

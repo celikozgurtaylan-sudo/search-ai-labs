@@ -21,10 +21,9 @@ import {
   MicFailureCode,
   getMicrophoneFailureMessage,
   mapMediaAccessErrorToFailureCode,
-  probeMicrophoneHealth,
 } from '@/utils/microphoneHealth';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
-import { AvatarSpeaker, type AvatarReadyReason } from './AvatarSpeaker';
+import { AvatarSpeaker, type AvatarPlaybackIssueReason } from './AvatarSpeaker';
 import MinimalVoiceWaves from './ui/minimal-voice-waves';
 
 const RESPONSE_TIME_LIMIT_SECONDS = 120;
@@ -47,6 +46,7 @@ type PendingResponseMedia = ResponseRecordingResult & {
 type InterviewPhase =
   | 'idle'
   | 'asking'
+  | 'awaiting_audio_playback'
   | 'recording'
   | 'processing'
   | 'review'
@@ -164,6 +164,8 @@ const SearchoAI = ({
   const [hasUsedRecoveryGrace, setHasUsedRecoveryGrace] = useState(false);
   const [isStartingCapture, setIsStartingCapture] = useState(false);
   const [currentAudioLevel, setCurrentAudioLevel] = useState(0);
+  const [showSilentMicWarning, setShowSilentMicWarning] = useState(false);
+  const [hasDetectedSpeechForCurrentAttempt, setHasDetectedSpeechForCurrentAttempt] = useState(false);
 
   const audioTranscriberRef = useRef<AudioTranscriber | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
@@ -415,6 +417,8 @@ const SearchoAI = ({
     setResponseTimerActive(false);
     setResponseTimerExpired(false);
     setCurrentAudioLevel(0);
+    setShowSilentMicWarning(false);
+    setHasDetectedSpeechForCurrentAttempt(false);
   }, [clearTranscriptionHealthMonitor, invalidateCaptureAttempt, stopResponseRecording]);
 
   const uploadResponseMedia = useCallback(async (responseId: string, questionId: string, media: PendingResponseMedia) => {
@@ -494,6 +498,8 @@ const SearchoAI = ({
     setResponseRecoveryMessage(message);
     setIsStartingCapture(false);
     setCurrentAudioLevel(0);
+    setShowSilentMicWarning(false);
+    setHasDetectedSpeechForCurrentAttempt(false);
   }, [hasUsedRecoveryGrace, responseTimeRemaining]);
 
   const startProcessingWatchdog = useCallback((attemptId: number) => {
@@ -536,6 +542,8 @@ const SearchoAI = ({
     setHasUsedRecoveryGrace(false);
     setIsStartingCapture(false);
     setCurrentAudioLevel(0);
+    setShowSilentMicWarning(false);
+    setHasDetectedSpeechForCurrentAttempt(false);
 
     if (nextQuestion?.question_text) {
       setInterviewPhase('asking');
@@ -635,11 +643,13 @@ const SearchoAI = ({
     setResponseTimerActive(false);
     setHasUsedRecoveryGrace(false);
     setCurrentAudioLevel(0);
+    setShowSilentMicWarning(false);
+    setHasDetectedSpeechForCurrentAttempt(false);
   }, [currentQuestion?.id]);
 
   useEffect(() => {
     if (!currentQuestion || !responseTimerActive || isSubmittingResponse) return;
-    if (interviewPhase !== 'asking' && interviewPhase !== 'recording') return;
+    if (interviewPhase !== 'recording') return;
     if (responseTimeRemaining <= 0) return;
 
     const timer = window.setInterval(() => {
@@ -648,6 +658,19 @@ const SearchoAI = ({
 
     return () => window.clearInterval(timer);
   }, [currentQuestion, interviewPhase, isSubmittingResponse, responseTimeRemaining, responseTimerActive]);
+
+  useEffect(() => {
+    if (interviewPhase !== 'recording' || hasDetectedSpeechForCurrentAttempt || isSubmittingResponse) {
+      setShowSilentMicWarning(false);
+      return;
+    }
+
+    const warningTimer = window.setTimeout(() => {
+      setShowSilentMicWarning(true);
+    }, 5000);
+
+    return () => window.clearTimeout(warningTimer);
+  }, [hasDetectedSpeechForCurrentAttempt, interviewPhase, isSubmittingResponse]);
 
   const finishCurrentAnswer = useCallback(() => {
     if (!audioTranscriberRef.current || interviewPhase !== 'recording') {
@@ -824,38 +847,14 @@ const SearchoAI = ({
     setUserTranscript(nextDraftTranscript);
     setEditableTranscript(nextDraftTranscript);
     setResponseTimerExpired(false);
-    setResponseTimerActive(true);
+    setResponseTimerActive(false);
     setCurrentAudioLevel(0);
+    setShowSilentMicWarning(false);
+    setHasDetectedSpeechForCurrentAttempt(false);
 
     try {
       const microphoneStream = await ensureMicrophoneStream();
       if (captureAttemptRef.current !== attemptId) {
-        return;
-      }
-
-      const microphoneHealth = await probeMicrophoneHealth(microphoneStream, {
-        calibrationWindowMs: 350,
-        timeoutMs: 2200,
-        minSpeechMs: 120,
-      });
-      if (captureAttemptRef.current !== attemptId) {
-        return;
-      }
-
-      if (!microphoneHealth.ok) {
-        const recoveryReason = microphoneHealth.failureCode ?? 'track_silent';
-        const recoveryMessage = requestMediaRecovery(recoveryReason, microphoneHealth.message);
-        setUserTranscript(nextDraftTranscript);
-        setEditableTranscript(nextDraftTranscript);
-        enterRecoveryState(recoveryMessage, {
-          resume: true,
-          allowGraceIfNeeded: false,
-        });
-        toast({
-          title: 'Mikrofon dogrulanamadi',
-          description: recoveryMessage,
-          variant: 'destructive',
-        });
         return;
       }
 
@@ -878,6 +877,7 @@ const SearchoAI = ({
       }
 
       setInterviewPhase('recording');
+      setResponseTimerActive(true);
       await startResponseRecording(currentQuestion.id, microphoneStream);
       if (captureAttemptRef.current !== attemptId) {
         void stopResponseRecording(true);
@@ -885,7 +885,14 @@ const SearchoAI = ({
       }
 
       const transcriber = new AudioTranscriber();
-      transcriber.onSpeechDetected = () => {};
+      transcriber.onSpeechDetected = () => {
+        if (captureAttemptRef.current !== attemptId) {
+          return;
+        }
+
+        setHasDetectedSpeechForCurrentAttempt(true);
+        setShowSilentMicWarning(false);
+      };
       transcriber.onAudioLevel = (level: number) => {
         if (captureAttemptRef.current !== attemptId) {
           return;
@@ -910,6 +917,8 @@ const SearchoAI = ({
         setResponseRecoveryMessage(null);
         setResumeAfterFailure(false);
         setCurrentAudioLevel(0);
+        setShowSilentMicWarning(false);
+        setHasDetectedSpeechForCurrentAttempt(false);
 
         const recording = await stopResponseRecording(false);
         if (captureAttemptRef.current !== attemptId || !currentQuestion?.id) {
@@ -948,6 +957,8 @@ const SearchoAI = ({
         clearProcessingWatchdog();
         setResponseTimerActive(false);
         setCurrentAudioLevel(0);
+        setShowSilentMicWarning(false);
+        setHasDetectedSpeechForCurrentAttempt(false);
 
         await discardPendingResponseMedia();
         if (captureAttemptRef.current !== attemptId) {
@@ -1117,10 +1128,12 @@ const SearchoAI = ({
     setResponseTimerActive(false);
     setHasUsedRecoveryGrace(false);
     setCurrentAudioLevel(0);
+    setShowSilentMicWarning(false);
+    setHasDetectedSpeechForCurrentAttempt(false);
     await beginAnswerCapture({ resetDuration: true, preserveDraft: false });
   }, [beginAnswerCapture]);
 
-  const handleQuestionReadyToRespond = useCallback((reason: AvatarReadyReason) => {
+  const handleQuestionReadyToRespond = useCallback(() => {
     if (
       !currentQuestion?.id ||
       interviewPhase !== 'asking' ||
@@ -1131,20 +1144,40 @@ const SearchoAI = ({
       return;
     }
 
+    void beginAnswerCapture({ resetDuration: false, preserveDraft: true });
+  }, [beginAnswerCapture, currentQuestion?.id, interviewPhase, isStartingCapture, isSubmittingResponse]);
+
+  const handleQuestionPlaybackInterrupted = useCallback((reason: AvatarPlaybackIssueReason) => {
+    setInterviewPhase('awaiting_audio_playback');
+    setResponseTimerActive(false);
+    setResponseTimerExpired(false);
+    setCurrentAudioLevel(0);
+    setShowSilentMicWarning(false);
+    setHasDetectedSpeechForCurrentAttempt(false);
+
     if (reason === 'blocked') {
       toast({
-        title: 'Ses otomatik oynatılamadı',
-        description: 'Soru ekranda yazılı. Kayıt otomatik başlatılıyor; isterseniz sesi manuel oynatabilirsiniz.',
+        title: 'Soru sesi manuel olarak başlatılmalı',
+        description: 'Yanıt süresi, soru seslendirmesi gerçekten tamamlandıktan sonra başlayacak.',
       });
-    } else if (reason === 'error') {
-      toast({
-        title: 'Sesli okuma kullanılamıyor',
-        description: 'Soru yazılı gösteriliyor. Kayıt akışı otomatik devam edecek.',
-      });
+      return;
     }
 
-    void beginAnswerCapture({ resetDuration: false, preserveDraft: true });
-  }, [beginAnswerCapture, currentQuestion?.id, interviewPhase, isStartingCapture, isSubmittingResponse, toast]);
+    if (reason === 'text_only') {
+      toast({
+        title: 'Soru sesi üretilemedi',
+        description: 'Bu soruda ses gelmeden görüşme ilerlemeyecek. Lütfen sesi yeniden deneyin.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({
+      title: 'Sesli okuma başarısız oldu',
+      description: 'Yanıt süresi başlamadı. Soru sesini tekrar denemeniz gerekiyor.',
+      variant: 'destructive',
+    });
+  }, [toast]);
 
   const confirmAndSaveResponse = useCallback(async () => {
     if (!editableTranscript.trim()) {
@@ -1215,6 +1248,7 @@ const SearchoAI = ({
   };
 
   const isRecordingPhase = interviewPhase === 'recording';
+  const isAwaitingAudioPlaybackPhase = interviewPhase === 'awaiting_audio_playback';
   const isProcessingPhase = interviewPhase === 'processing';
   const isReviewPhase = interviewPhase === 'review';
   const isRecoveringPhase = interviewPhase === 'recovering';
@@ -1223,9 +1257,13 @@ const SearchoAI = ({
   const isVoiceClearlyDetected = currentAudioLevel >= 8;
   const isUserResponding = isRecordingPhase || isReviewPhase || isProcessingPhase || isSubmittingResponse || Boolean(userTranscript);
 
-  const responseTimerLabel = formatTimerLabel(responseTimeRemaining);
+  const responseTimerLabel = isAwaitingAudioPlaybackPhase
+    ? formatTimerLabel(RESPONSE_TIME_LIMIT_SECONDS)
+    : formatTimerLabel(responseTimeRemaining);
   const responseTimerHeading = 'Yanıt süresi';
-  const responseTimerDescription = interviewPhase === 'asking'
+  const responseTimerDescription = isAwaitingAudioPlaybackPhase
+    ? 'Yanıt süresi başlamadı. Önce soru sesi başarılı şekilde oynatılmalı ve tamamlanmalı.'
+    : interviewPhase === 'asking'
     ? (isAutoStartingPhase
       ? 'Soru bitti. Mikrofon hazırlanıyor ve kayıt birkaç saniye içinde otomatik başlayacak.'
       : 'Soru seslendirmesi tamamlanınca 2 dakikalık yanıt süresi otomatik başlar.')
@@ -1274,6 +1312,22 @@ const SearchoAI = ({
       );
     }
 
+    if (isAwaitingAudioPlaybackPhase) {
+      return (
+        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-3">
+            <Mic className="h-5 w-5 text-amber-700" />
+            <span className="text-sm font-bold uppercase tracking-wide text-amber-800">
+              Soru sesi bekleniyor
+            </span>
+          </div>
+          <div className="rounded-xl bg-white/80 p-4 text-base leading-relaxed text-slate-700">
+            Soru sesi tamamlanmadan kayıt ve 2 dakikalık süre başlamaz. Yukarıdaki ses kontrolünü kullanarak soruyu tekrar oynatın.
+          </div>
+        </div>
+      );
+    }
+
     if (isRecordingPhase) {
       return (
         <div className="rounded-2xl border-2 border-red-300 bg-gradient-to-r from-red-50 to-pink-50 p-5 shadow-sm">
@@ -1295,6 +1349,11 @@ const SearchoAI = ({
                 <p className={`text-sm font-medium ${isVoiceClearlyDetected ? 'text-blue-700' : 'text-slate-500'}`}>
                   {isVoiceClearlyDetected ? 'Konuşuyorsunuz, sesiniz kayda giriyor.' : 'Dinliyoruz. Konuştuğunuzda ses dalgası yükselecek.'}
                 </p>
+                {showSilentMicWarning ? (
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+                    İlk 5 saniyede belirgin ses girişi görünmedi. Mikrofon seçimini kontrol edin; kayıt devam ediyor.
+                  </p>
+                ) : null}
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-950/95 px-4 py-3 shadow-inner">
                 <MinimalVoiceWaves
@@ -1433,12 +1492,17 @@ const SearchoAI = ({
                       questionText={currentQuestion.question_text}
                       isUserResponding={isUserResponding}
                       onSpeakingStart={() => {
-                        if (interviewPhase === 'idle' || interviewPhase === 'asking') {
+                        if (
+                          interviewPhase === 'idle' ||
+                          interviewPhase === 'asking' ||
+                          interviewPhase === 'awaiting_audio_playback'
+                        ) {
                           setInterviewPhase('asking');
                         }
                         void ensureMicrophoneStream().catch(() => undefined);
                       }}
                       onReadyToRespond={handleQuestionReadyToRespond}
+                      onPlaybackInterrupted={handleQuestionPlaybackInterrupted}
                     />
                   </div>
 
