@@ -141,11 +141,15 @@ Her mesajda su karari ver:
 - Her researchPlan ilk bolum olarak mutlaka "${WARMUP_SECTION_TITLE}" bolumunu icermeli
 - Bu ilk bolum 2-3 kisa isınma / rapport sorusundan olusmali
 - Ilk soru mutlaka kullanicinin gunune veya o ana kadar ne yaptigina degmeli
+- Isınma soruları mümkünse ürün, proje veya araştırma konusuna hiç girmemeli
+- Isınma soruları duyguyu doğrudan sormamalı; kullanıcının ritmini ve zihinsel yükünü dolaylı anlamaya çalışmalı
 - Sonraki bolumler genisten ozele ilerlemeli: baglam/davranis -> ana deneyim/gorev -> degerlendirme/iyilestirme
 - Sorular tek odakli olmali; ayni soruda iki farkli seyi sorma
+- Her soru tek basina anlamli olmali; onceki soru veya cevaba yaslanan follow-up kaliplari kurma
 - Sorular kullanicinin bir problem yasadigini varsaymamali
 - Mümkünse soru metninde "ve" kullanma; iki farkli odagi ayri sorulara bol
 - "Kendi cumlelerinizle" gibi zorlayici paraphrase kaliplari kullanma
+- "Peki", "az once soylediginiz", "buna gore", "bu size nasil hissettirdi", "bu gununuzu nasil etkiledi" gibi referansli kaliplari kullanma
 - "Nasil anliyorsunuz" gibi yorum yonlendiren kaliplari kullanma
 - Ozellikle usability baglaminda UI ogesini once sen isimlendirip sonra anlamini sorma
 
@@ -172,7 +176,7 @@ Yanit:
         "questions": [
           "Kredili mevduat hesabinizi en cok hangi durumlarda kullaniyorsunuz?",
           "KMH limitini kullanmaya karar verdiginiz anlari biraz anlatir misiniz?",
-          "KMH'nin nasil calistigina dair sizde nasil bir anlayis olustu?"
+          "KMH'nin nasil calistigina dair size en net gelen nokta ne oluyor?"
         ]
       },
       {
@@ -186,11 +190,11 @@ Yanit:
       },
       {
         "id": "improvements",
-        "title": "Sorunlar ve Iyilestirmeler",
+        "title": "Kullanim Degerlendirmesi ve Iyilestirme Firsatlari",
         "questions": [
-          "KMH kullaniminda yasadiginiz sorunlar nelerdir?",
-          "KMH bildirimlerini nasil degerlendiriyorsunuz?",
-          "KMH yerine farkli bir acil nakit cozumu tercih eder miydiniz?"
+          "KMH kullaniminda sizin icin en belirgin nokta ne oluyor?",
+          "KMH bildirimlerinden size en net gelen mesaj ne oluyor?",
+          "Acil nakit ihtiyacinda farkli secenekleri degerlendirirken ilk neye bakarsiniz?"
         ]
       }
     ]
@@ -219,7 +223,7 @@ Yanit:
         "id": "product_understanding",
         "title": "Urun Anlama ve Farkindalik",
         "questions": [
-          "Gunluk faiz hesabinin nasil calistigina dair sizde nasil bir anlayis olusuyor?",
+          "Gunluk faiz hesabinin nasil calistigina dair size en net gelen nokta ne oluyor?",
           "Gunluk faiz hesabini vadeli mevduattan ayiran temel nokta size ne ifade ediyor?",
           "Paranizi baglamadan gunluk faiz kazanma konseptini ilk nasil ogrendiniz?"
         ]
@@ -238,7 +242,7 @@ Yanit:
         "title": "Deneyim ve Memnuniyet",
         "questions": [
           "Gunluk faiz hesabi getiri oranlarini gordugunuzde sizde nasil bir beklenti olusuyor?",
-          "Faiz hesaplamasini ne kadar seffaf buluyorsunuz?",
+          "Faiz hesaplamasinda size en net gelen bilgi ne oluyor?",
           "Hesaptan para cekerken getiri tarafinda aklinizdan neler geciyor?"
         ]
       }
@@ -300,8 +304,10 @@ Yanit:
 - chatResponse alaninda ASLA genel kalip cumleler kullanma
 - Her zaman kullanicinin konusuna ozel, baglama uygun yanit ver
 - Arastirma sorulari acik uclu olmali (evet/hayir degil)
+- Her soru tek basina anlamli olmali; onceki soru veya cevaba referans vermemeli
 - Arastirma sorularinda mümkünse "ve" kullanma; tek odakli soru kur
 - "Kendi cumlelerinizle" yazma
+- "Peki", "az once soylediginiz", "buna gore" gibi follow-up kaliplari kullanma
 - "(...) nasil anliyorsunuz" gibi framing yapma
 - Section id'leri snake_case Ingilizce olmali
 - researchPlan.sections sayisi 3 veya 4 olmali, 5. bolum ASLA uretme
@@ -768,7 +774,7 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
       questions: [
         `${screenNames} ekranlarina baktiginizda ilk olarak ne yapmaniz gerektigini size hangi isaretler anlatiyor?`,
         `${primaryTask} gorevini tamamlarken aklinizdan nasil bir ilerleme akisi geciyor?`,
-        `Bu akista ilerlerken size neyin net, neyin daha fazla aciklama gerektirdigini anlatir misiniz?`,
+        `Bu gorev akisinda size en az net gelen adim hangisi oluyor?`,
       ],
     },
     {
@@ -776,8 +782,8 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
       title: "Karar Verme ve Ekran Netligi",
       questions: [
         `Bu ekranlarda karar vermenize en cok hangi bilgi yardimci oluyor?`,
-        `Karar vermeden once biraz daha aciklama gormek isteyeceginiz bir nokta var mi, varsa neresi?`,
-        `Bu deneyim sizde nasil bir izlenim birakiyor?`,
+        `Karar vermeden once hangi noktada biraz daha aciklama gormek istersiniz?`,
+        `Bu ekranlarda ilk bakista size en anlasilir gelen isaret ne oluyor?`,
       ],
     },
     {
@@ -786,7 +792,7 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
       questions: [
         `${riskAreas} başlığına baktığınızda dikkatinizi en çok hangi ekran veya adım çekiyor?`,
         `${successSignals} hedefine ulaşmak için bu deneyimde hangi değişiklikler en çok fark yaratır?`,
-        `Bu görevi daha hızlı ve daha rahat tamamlayabilmeniz için ilk neyi değiştirirdiniz?`,
+        `Bu görevi tamamlamayı sizin için kolaylaştıracak ilk değişiklik ne olurdu?`,
       ],
     },
   ];

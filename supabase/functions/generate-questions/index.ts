@@ -158,11 +158,14 @@ ${usabilityContextPrompt ? `${usabilityContextPrompt}
 - Sorular kısa, tek cümleli ve birbirinden bağımsız olsun.
 - Her soru tek başına anlamlı olsun; önceki soruya referans verme.
 - İlk soru katılımcının gününe dokunsun.
+- Mümkünse ürün, proje veya araştırma konusuna hiç girme; önce gündelik ve genel bir sohbet aç.
+- Duyguyu doğrudan sorma; "nasıl hissettiniz" veya "size ne hissettirdi" gibi kalıpları kullanma.
 - "Bu konu", "bu konuyla", "bununla ilgili", "buraya gelmeden önce", "en son karşılaştığınız an" gibi ifadeleri kullanma.
-- Konudan söz edeceksen belirsiz zamir kullanma; "${warmupTopicLabel || "araştırılan konu"}" gibi açık bir isimle bahset.
-- Ürün değerlendirmesine doğrudan yüklenme; önce gündelik ve genel bir sohbet aç.` : `Bu bölüm görüşmenin ana araştırma bölümüdür.
+- Konudan söz etmek gerçekten gerekiyorsa belirsiz zamir kullanma; "${warmupTopicLabel || "araştırılan konu"}" gibi açık bir isimle bahset.` : `Bu bölüm görüşmenin ana araştırma bölümüdür.
 - Warm-up sorusu üretme.
 - Soruları bu bölümün araştırma odağına sadık, açık uçlu ve tek odaklı kur.
+- Her soru tek başına anlamlı olsun; önceki soru veya cevaba yaslanan follow-up kalıpları kurma.
+- "Peki", "az önce söylediğiniz", "buna göre", "bu size nasıl hissettirdi", "bu gününüzü nasıl etkiledi" gibi ifadeleri kullanma.
 ${isUsabilityMode ? `- Her soruyu somut bir ekran, görev adımı, karar anı, bilgi mesajı veya kullanıcı hareketine bağla.
 - "Bu deneyim sizde nasıl bir izlenim bırakıyor?" gibi bağlamdan kopuk, jenerik soru yazma.
 - Mümkünse ana göreve, ekran listesine veya kullanıcının o adımda ne yapmaya çalıştığına yaslan.
@@ -223,7 +226,7 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 ## Nasıl Yaklaşmalısın?
 1. **Bağlamı Anla**: Proje açıklamasındaki ürün, hedef kitle, ve araştırma amacını kavra
 2. **Kullanıcı Perspektifi**: Gerçek bir kullanıcının yaşadığı deneyimi, duyguları ve zorluklarını keşfedecek sorular sor
-3. **Doğal Türkçe**: Günlük konuşma diline yakın ama profesyonel bir dil kullan. "Memnun musunuz?" yerine "Bu deneyimi kullanırken neler hissettin?" gibi
+3. **Doğal Türkçe**: Günlük konuşma diline yakın ama profesyonel bir dil kullan. "Memnun musunuz?" yerine "Burada sizin için en belirgin nokta ne oluyor?" gibi
 4. **Empati ve Merak**: Kullanıcının hikayesini dinlemek isteyen samimi bir araştırmacı gibi sor
 
 ## Soru Metodolojisi
@@ -231,12 +234,16 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 - İlk bölüm warm-up ise katılımcıyı rahatlatan, gündelik ve düşük baskılı sorular üret
 - Warm-up soruları kısa, tek cümleli ve birbirinden bağımsız olsun
 - Warm-up bölümünün ilk sorusu katılımcının gününe değsin
+- Warm-up sorularında mümkünse ürün, proje veya araştırma konusuna hiç girme
+- Warm-up sorularında duyguyu doğrudan sorma; gündelik akıştan dolaylı anlamayı hedefle
 - Warm-up sorularında "bu konu", "bu konuyla", "bununla ilgili", "buraya gelmeden önce", "en son karşılaştığınız an" gibi önceki bağlama yaslanan kalıpları kullanma
 - Warm-up sorularında konuya değinilecekse belirsiz zamir yerine kısa ve açık konu adı kullan
 - Warm-up olmayan bölümlerde rapport yerine doğrudan araştırma odağına gir
 - Her soru tek bir amaca hizmet etsin
+- Her soru tek başına anlamlı olsun; önceki soru veya cevaba yaslanan follow-up dili kullanma
 - Mümkünse soru metninde "ve" kullanma; tek soruda tek odak koru
 - "Kendi cümlelerinizle" gibi gereksiz paraphrase kalıplarını kullanma
+- "Peki", "az önce söylediğiniz", "buna göre", "bu size nasıl hissettirdi", "bu gününüzü nasıl etkiledi" gibi referanslı kalıpları kullanma
 - Kullanıcının anlamını senin çerçevelediğin "nasıl anlıyorsunuz" gibi kalıplardan kaçın
 - Özellikle usability bağlamında UI öğesini önce sen isimlendirip sonra anlamını sorma
 - Usability modunda warm-up dışındaki her soru gerçek ekran, görev akışı veya karar anıyla temas etsin
@@ -252,11 +259,11 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 ✓ **Nötr ve Yönlendirmesiz**: Kullanıcıya bir sorun, duygu veya yargı empoze etme
 
 ## Bölüm Türlerine Göre Yaklaşım
-- **Isınma**: "Bugün gününüz nasıl geçiyor?", "Şu sıralar günlük rutininizde en çok ne öne çıkıyor?", "Son birkaç günde aklınızı en çok meşgul eden şey ne oldu?"
+- **Isınma**: "Bugün gününüz nasıl geçiyor?", "Şu sıralar gün içinde en çok neyle meşgulsünüz?", "Son birkaç günde gününüzün temposu nasıldı?"
 - **Profesyonel Geçmiş / Bağlam**: "Bu alanda ne zamandır çalışıyorsun?", "Günlük iş akışında hangi araçları kullanıyorsun?"
 - **İlk İzlenimler**: "İlk gördüğünde aklına ne geldi?", "Dikkatini çeken ilk şey ne oldu?"
-- **Detaylı Keşif**: "Bu özelliği kullanırken aklından neler geçti?", "Başka ürünlerle kıyasladığında sana ne farklı göründü?"
-- **Son Düşünceler**: "Bu deneyimi bir arkadaşına nasıl anlatırdın?", "Bir şeyi değiştirebilseydin ne yapardın?"
+- **Detaylı Keşif**: "Bu adımda ilk olarak neye dikkat edersin?", "Başka seçeneklerle kıyasladığında burada sana farklı gelen şey ne oluyor?"
+- **Son Düşünceler**: "Burada senin için en önemli nokta ne oldu?", "Bir şeyi değiştirebilseydin ilk neyi ele alırdın?"
 
 ## Önemli
 - Sorular 15-25 kelime uzunluğunda olsun
@@ -270,6 +277,8 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 - Kullanıcının olumsuz bir deneyim yaşadığını varsayma
 - Soru metninde "ve" ile iki odağı birleştirme
 - "Kendi cümlelerinizle" yazma
+- "Peki", "az önce söylediğiniz", "buna göre" gibi önceki turne yaslanan dil kullanma
+- Warm-up'ta "nasıl hissettiniz", "size ne hissettirdi" gibi duyguyu doğrudan soran kalıplar kurma
 - "(... ) nasıl anlıyorsunuz" gibi framing yapma
 
 ## Kötü ve İyi Örnekler
@@ -277,6 +286,8 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 - İyi: "Promosyon metni size nasıl bir mesaj veriyor?"
 - Kötü: "Bu alan size güven verdi mi?"
 - İyi: "Bu alan sizde nasıl bir izlenim bıraktı?"
+- Kötü: "Peki bu size nasıl hissettirdi?"
+- İyi: "Burada sizin için en belirgin nokta ne oldu?"
 - Kötü: "Zaman dilimi kısaltmalarını (1G, 1H, 1A) nasıl anlıyorsunuz?"
 - İyi: "(1G, 1H, 1A) gibi ifadeler size ne anlatıyor?"
 - Kötü: "Bu deneyimi kendi cümlelerinizle nasıl anlatırsınız?"
@@ -403,7 +414,7 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
 Aşağıdaki sorular leading, varsayımsız değil veya yeterince açık uçlu olmadığı için reddedildi:
 ${questions.map((question, index) => `${index + 1}. ${question}`).join('\n')}
 
-Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warmupSection ? 'Bu bölüm warm-up olduğu için sorular hafif, sohbet açıcı, tek cümleli ve birbirinden bağımsız olsun. "Bu konu", "bu konuyla", "bununla ilgili", "buraya gelmeden önce", "en son karşılaştığınız an" gibi kalıpları kullanma.' : "Warm-up sorusu üretme."} "Oldu mu?", "yaşadınız mı?", "karışıklık", "sorun", "problem", "güven verdi mi?", "kendi cümlelerinizle", "nasıl anlıyorsunuz" gibi kalıpları kullanma.`;
+Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warmupSection ? 'Bu bölüm warm-up olduğu için sorular hafif, sohbet açıcı, tek cümleli ve birbirinden bağımsız olsun. Mümkünse ürün veya konu adı geçmesin. "Bu konu", "bu konuyla", "bununla ilgili", "buraya gelmeden önce", "en son karşılaştığınız an", "nasıl hissettiniz", "size ne hissettirdi" gibi kalıpları kullanma.' : 'Warm-up sorusu üretme. Her soru tek başına anlamlı olsun ve önceki soru veya cevaba referans verme.'} "Oldu mu?", "yaşadınız mı?", "karışıklık", "sorun", "problem", "güven verdi mi?", "kendi cümlelerinizle", "nasıl anlıyorsunuz", "Peki", "az önce söylediğiniz", "buna göre", "bu size nasıl hissettirdi", "bu gününüzü nasıl etkiledi" gibi kalıpları kullanma.`;
 
       const retryResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
@@ -434,20 +445,24 @@ Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warm
       console.log('Rejected leading questions:', rejected);
     }
 
+    let fallbackUsed = false;
+
     if (valid.length === 0) {
       valid = buildFallbackQuestions(sectionTitle, sectionIndex, resolvedMode);
+      fallbackUsed = true;
     }
 
     if (valid.length < requestedCount) {
       valid = [...valid, ...buildFallbackQuestions(sectionTitle, sectionIndex, resolvedMode)].slice(0, requestedCount);
+      fallbackUsed = true;
     }
 
     console.log('Final questions:', valid);
 
     return new Response(JSON.stringify({
       questions: valid.slice(0, requestedCount),
-      fallbackUsed: false,
-      warning: null,
+      fallbackUsed,
+      warning: fallbackUsed ? 'Generated questions were partially or fully replaced with safe fallbacks.' : null,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -455,8 +470,8 @@ Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warm
     console.error('Error in generate-questions function:', error);
     return new Response(JSON.stringify({
       questions: [
-        'Bu konudaki deneyiminizde ilk aklınıza gelen şey ne oldu?',
-        'Burada size en net gelen nokta neydi?',
+        'Bu alanda sizin için en önemli nokta ne oluyor?',
+        'Burada ilk dikkatinizi çeken nokta ne oluyor?',
         'Bir değişiklik önerseniz ilk nereden başlardınız?'
       ],
       fallbackUsed: true,

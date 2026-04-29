@@ -159,15 +159,58 @@ const WARMUP_TOPIC_DEPENDENCY_PATTERNS = [
   "en son karşılaştığınız anı",
 ];
 
+const QUESTION_DEPENDENCY_PATTERNS = [
+  "peki",
+  "bu size nasil hissettir",
+  "bu size ne hissettir",
+  "bu sizde nasil bir duygu",
+  "bu sizde ne uyandir",
+  "bu sizin gununuzu nasil etkiledi",
+  "bu gununuzu nasil etkiledi",
+  "az once",
+  "az önce",
+  "biraz once",
+  "biraz önce",
+  "demin soyled",
+  "demin söyled",
+  "soylediginize gore",
+  "söylediğinize göre",
+  "anlattiginiza gore",
+  "anlattığınıza göre",
+  "onceki cevab",
+  "önceki cevab",
+  "buna gore",
+  "buna göre",
+  "buna dayanarak",
+];
+
+const WARMUP_DIRECT_EMOTION_PATTERNS = [
+  "nasil hissediyorsunuz",
+  "nasıl hissediyorsunuz",
+  "nasil hissettiniz",
+  "nasıl hissettiniz",
+  "kendinizi nasil hissediyorsunuz",
+  "kendinizi nasıl hissediyorsunuz",
+  "size nasil hissettir",
+  "size nasıl hissettir",
+  "size ne hissettir",
+  "size ne hissettir",
+  "ruh halinizi",
+  "modunuzu",
+  "duygusal olarak",
+];
+
 const METHODOLOGY_MUST_RULES_BY_CODE: Record<string, string> = {
   leading: "Katılımcıya sorun, duygu veya yargı empoze etme.",
   assumptive: "Katılımcının belirli bir deneyim yaşadığını peşinen varsayma.",
   yes_no: "Soru mümkün olduğunca açık uçlu olmalı.",
   contains_ve: "Tek soruda tek odak kullan; iki odağı ayır.",
+  question_dependency: "Her soru tek başına anlamlı olsun; önceki soru veya cevaba yaslanan follow-up kalıbı kullanma.",
   forced_paraphrase: "\"Kendi cümlelerinizle\" gibi zorlayıcı paraphrase kalıplarını kullanma.",
   interpretation_prompting: "\"Nasıl anlıyorsunuz\" gibi yorum yönlendirici kalıpları kullanma.",
   participant_framing: "UI öğesini kullanıcı adına etiketleyip sonra anlamını sorma.",
   labelled_construct: "Katılımcının zihnindeki kavramı önce sen isimlendirme.",
+  warmup_direct_emotion: "Isınma sorusunda duyguyu doğrudan sorma; gündelik akıştan dolaylı anlamayı tercih et.",
 };
 
 export const normalizeForMatch = (value: string) =>
@@ -223,6 +266,8 @@ const hasWarmupQuestionTone = (question: string) => {
   return [
     "bugun gununuz nasil",
     "gununuz nasil gec",
+    "gun icinde",
+    "gün içinde",
     "gundelik rutininiz",
     "günlük rutininiz",
     "su siralar",
@@ -231,11 +276,21 @@ const hasWarmupQuestionTone = (question: string) => {
     "son günlerde",
     "aklinizi en cok mesgul",
     "aklınızı en çok meşgul",
+    "neyle mesgulsunuz",
+    "neyle meşgulsünüz",
+    "gununuzun temposu",
+    "gününüzün temposu",
   ].some((pattern) => normalized.includes(pattern));
 };
 
 const hasWarmupTopicDependency = (normalized: string) =>
   WARMUP_TOPIC_DEPENDENCY_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
+
+const hasQuestionDependency = (normalized: string) =>
+  QUESTION_DEPENDENCY_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
+
+const hasWarmupDirectEmotion = (normalized: string) =>
+  WARMUP_DIRECT_EMOTION_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
 
 const hasWarmupMultiClauseStructure = (question: string) =>
   /[,;:]/.test(cleanQuestion(question));
@@ -276,8 +331,8 @@ export const resolveQuestionMode = ({
 
 export const buildWarmupQuestions = () => [
   "Bugün gününüz nasıl geçiyor?",
-  "Şu sıralar günlük rutininizde en çok ne öne çıkıyor?",
-  "Son birkaç günde aklınızı en çok meşgul eden şey ne oldu?",
+  "Şu sıralar gün içinde en çok neyle meşgulsünüz?",
+  "Son birkaç günde gününüzün temposu nasıldı?",
 ];
 
 const dedupeQuestions = (questions: string[]) => {
@@ -330,10 +385,34 @@ export const buildFallbackQuestions = (
     ];
   }
 
+  if (normalizedTitle.includes("baglam") || normalizedTitle.includes("beklenti")) {
+    return [
+      "Bu alandaki gündelik deneyiminizde en belirgin nokta ne oluyor?",
+      "Bu alanda kararlarınızı en çok hangi ihtiyaç şekillendiriyor?",
+      "Bu alanda sizin için en önemli beklenti ne oluyor?",
+    ];
+  }
+
+  if (normalizedTitle.includes("karar") || normalizedTitle.includes("anlas")) {
+    return [
+      "Burada kararınızı verirken en çok neye bakarsınız?",
+      "Burada size en net gelen bilgi ne oluyor?",
+      "Burada biraz daha açıklık görmek isteyeceğiniz nokta ne olurdu?",
+    ];
+  }
+
+  if (normalizedTitle.includes("deger") || normalizedTitle.includes("motivasyon")) {
+    return [
+      "Bu alanda size en çok değer katan şey ne oluyor?",
+      "Burayı sizin için anlamlı kılan nokta ne oluyor?",
+      "Burayı tercih etmenizde en belirleyici etken ne oluyor?",
+    ];
+  }
+
   return [
-    "Bu bölümde ilk dikkatinizi çeken şey ne oldu?",
-    "Burada size en net gelen nokta neydi?",
-    "Bu bölüm sizde nasıl bir izlenim bıraktı?",
+    "Bu alanda sizin için en önemli nokta ne oluyor?",
+    "Burada ilk dikkatinizi çeken nokta ne oluyor?",
+    "Bir şeyi değiştirebilseydiniz ilk nereden başlardınız?",
   ];
 };
 
@@ -442,14 +521,18 @@ export const assessQuestionQuality = ({
   const jargonFree = !hasHeavyJargon(normalized);
   const warmupFit = !warmupSection || hasWarmupQuestionTone(cleanedQuestion);
   const warmupIndependent = !warmupSection || !hasWarmupTopicDependency(normalized);
+  const questionIndependent = !hasQuestionDependency(normalized);
+  const warmupDirectEmotionSafe = !warmupSection || !hasWarmupDirectEmotion(normalized);
   const warmupSingleClause = !warmupSection || !hasWarmupMultiClauseStructure(cleanedQuestion);
   const usabilityContextFit = mode !== "usability" || warmupSection || (!hasGenericUsabilityPrompt(normalized) && hasUsabilityContextAnchor(normalized));
   const methodologyMatches = detectMethodologyMatches(normalized);
   const methodologyFit =
+    questionIndependent &&
     methodologyMatches.forcedParaphraseMatches.length === 0 &&
     methodologyMatches.interpretationPromptingMatches.length === 0 &&
     methodologyMatches.participantFramingMatches.length === 0 &&
-    methodologyMatches.labelledConstructMatches.length === 0;
+    methodologyMatches.labelledConstructMatches.length === 0 &&
+    warmupDirectEmotionSafe;
 
   if (!openEnded) {
     issues.push({
@@ -528,6 +611,24 @@ export const assessQuestionQuality = ({
       code: "warmup_dependency",
       label: "Isınma sorusu bağımsız değil",
       detail: 'Isınma sorusu "bu konu" gibi önceki bağlama yaslanan bir ifade taşıyor.',
+      severity: "problematic",
+    });
+  }
+
+  if (!questionIndependent) {
+    issues.push({
+      code: "question_dependency",
+      label: "Önceki soruya yaslanıyor",
+      detail: 'Soru "peki", "az önce" veya "bu size nasıl hissettirdi" gibi follow-up diliyle önceki turne yaslanıyor.',
+      severity: "problematic",
+    });
+  }
+
+  if (!warmupDirectEmotionSafe) {
+    issues.push({
+      code: "warmup_direct_emotion",
+      label: "Isınmada duygu doğrudan soruluyor",
+      detail: "Isınma sorusu duyguyu doğrudan sorguluyor; daha gündelik ve dolaylı bir giriş tercih edilmeli.",
       severity: "problematic",
     });
   }
@@ -621,6 +722,8 @@ export const assessQuestionQuality = ({
       clarity: { label: "Net", passed: clarity },
       warmup_fit: { label: "Isınma akışına uygun", passed: warmupFit },
       warmup_independent: { label: "Isınma sorusu bağımsız", passed: warmupIndependent },
+      question_independent: { label: "Soru tek başına anlamlı", passed: questionIndependent },
+      warmup_direct_emotion: { label: "Isınmada duygu dolaylı", passed: warmupDirectEmotionSafe },
       warmup_single_clause: { label: "Isınma sorusu tek cümleli", passed: warmupSingleClause },
       usability_context: { label: "Usability bağlamına bağlı", passed: usabilityContextFit },
       methodology_fit: { label: "Metodolojiye uygun", passed: methodologyFit },
@@ -748,12 +851,20 @@ export const buildFallbackRewrite = ({
     return "Bu ekranı ilk gördüğünüzde sizde nasıl bir izlenim oluştu?";
   }
 
+  if (normalizedTitle.includes("baglam") || normalizedTitle.includes("beklenti")) {
+    return "Bu alandaki gündelik deneyiminizde en belirgin nokta ne oluyor?";
+  }
+
   if (normalizedTitle.includes("gorev") || normalizedTitle.includes("akis")) {
     return "Bu adımda ne yapmanız gerektiğini nasıl yorumladınız?";
   }
 
   if (normalizedTitle.includes("karar") || normalizedTitle.includes("anlas")) {
-    return "Bu noktada kararınızı verirken hangi bilgiler öne çıktı?";
+    return "Burada kararınızı verirken en çok hangi bilgi öne çıktı?";
+  }
+
+  if (normalizedTitle.includes("deger") || normalizedTitle.includes("motivasyon")) {
+    return "Bu alanda size en çok değer katan şey ne oluyor?";
   }
 
   if (normalizedQuestion.includes("nasil anliyorsunuz") || normalizedQuestion.includes("nasıl anlıyorsunuz")) {
@@ -764,5 +875,5 @@ export const buildFallbackRewrite = ({
     return "Bu ekranda bu adımda size en net gelen şey ne oldu?";
   }
 
-  return "Bu deneyimi nasıl tarif edersiniz?";
+  return "Bu alanda sizin için en önemli nokta ne oluyor?";
 };

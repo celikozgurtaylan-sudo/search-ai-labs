@@ -67,10 +67,12 @@ const requestSuggestionRewrite = async ({
           role: "system",
           content: `Sen deneyimli bir UX arastirma metodologusun.
 - Verilen soruyu tarafsiz, acik uclu, tek odakli ve dogal Turkce olacak sekilde yeniden yaz.
+- Her soru tek basina anlamli olsun; onceki soru veya cevaba yaslanan follow-up dili kullanma.
 - Katilimciya problem, duygu veya yargi empoze etme.
 - "Kendi cümlelerinizle" gibi zorlayici paraphrase kaliplari kullanma.
+- "Peki", "az once soylediginiz", "buna gore", "bu size nasil hissettirdi" gibi kaliplari kullanma.
 - "Nasıl anlıyorsunuz" gibi kullanicinin anlamini senin çerçevelediğin kaliplari kullanma.
-- Eger ilk bolumse, soru hafif bir isinma tonu tasiyabilir.
+- Eger ilk bolumse, soru hafif bir isinma tonu tasiyabilir; konuya mumkunse hic girme ve duyguyu dogrudan sorma.
 - Sadece JSON dondur.`,
         },
         {
