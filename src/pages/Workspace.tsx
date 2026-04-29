@@ -821,10 +821,10 @@ const Workspace = () => {
   };
 
   const resolvedProjectTitle =
-    projectData.title?.trim() ||
+    projectData?.title?.trim() ||
     discussionGuide?.title?.trim() ||
     aiEnhancedBrief?.objective?.trim() ||
-    getProjectTitle(projectData.description);
+    getProjectTitle(projectData?.description ?? "");
 
   const getResearchSteps = () => {
     const planningReady = isAIEnhancedMode

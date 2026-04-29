@@ -1622,9 +1622,9 @@ const SearchoAI = ({
                         compact
                         onSpeakingStart={() => {
                           if (
-                            interviewPhase === 'idle' ||
-                            interviewPhase === 'asking' ||
-                            interviewPhase === 'awaiting_audio_playback'
+                            (interviewPhase as InterviewPhase) === 'idle' ||
+                            (interviewPhase as InterviewPhase) === 'asking' ||
+                            (interviewPhase as InterviewPhase) === 'awaiting_audio_playback'
                           ) {
                             setInterviewPhase('asking');
                           }

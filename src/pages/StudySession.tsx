@@ -426,7 +426,6 @@ const StudySession = () => {
       return {
         verified: false,
         preview: false,
-        state: 'failed',
         message: 'Kamera akışı başlatılamadı. Lütfen tekrar deneyin.',
       };
     }
