@@ -27,7 +27,7 @@ interface StudyPanelProps {
   questionSetVersionId?: string | null;
   questionSetVersionNumber?: number | null;
   questionSetUpdatedAt?: string | null;
-  onGuideUpdate: (guide: any) => void;
+  onGuideUpdate: (guide: any | ((currentGuide: any) => any)) => void;
   onParticipantsUpdate: (participants: StudyParticipant[]) => void;
   isGuideLoading?: boolean;
   chatMessages?: any[];
@@ -114,6 +114,9 @@ const StudyPanel = ({
   const visibleQuestionsRef = useRef<{
     [key: string]: boolean;
   }>({});
+  const applyGuideUpdate = (guideOrUpdater: any | ((currentGuide: any) => any)) => {
+    onGuideUpdate(guideOrUpdater);
+  };
 
   const getQuestionKey = (sectionId: string, questionIndex: number) => `${sectionId}-${questionIndex}`;
   const getReviewStatusLabel = (status: QuestionReviewResult["status"]) => {
@@ -342,10 +345,10 @@ const StudyPanel = ({
   const handleSaveGuideTitle = () => {
     if (!discussionGuide) return;
 
-    onGuideUpdate({
-      ...discussionGuide,
+    applyGuideUpdate((currentGuide: any) => ({
+      ...currentGuide,
       title: editGuideTitleValue.trim() || "Adsız Araştırma Kılavuzu"
-    });
+    }));
     setEditingGuideTitle(false);
     setEditGuideTitleValue("");
   };
@@ -372,7 +375,7 @@ const StudyPanel = ({
         return section;
       })
     };
-    onGuideUpdate(updatedGuide);
+    applyGuideUpdate(updatedGuide);
     setEditingSection(null);
     setEditSectionValue("");
   };
@@ -385,7 +388,7 @@ const StudyPanel = ({
       sections: updatedSections
     };
 
-    onGuideUpdate(updatedGuide);
+    applyGuideUpdate(updatedGuide);
     setEditingSection(current => current === sectionId ? null : current);
     setEditSectionValue("");
     setShowSectionTypewriters(prev => {
@@ -424,10 +427,10 @@ const StudyPanel = ({
       questions: ["Yeni soru - düzenlemek için tıklayın"]
     };
 
-    onGuideUpdate({
-      ...discussionGuide,
-      sections: [...(discussionGuide.sections || []), newSection]
-    });
+    applyGuideUpdate((currentGuide: any) => ({
+      ...currentGuide,
+      sections: [...(currentGuide?.sections || []), newSection]
+    }));
 
     setShowSectionTypewriters(prev => ({
       ...prev,
@@ -460,7 +463,7 @@ const StudyPanel = ({
     const [movedSection] = sections.splice(sourceIndex, 1);
     sections.splice(targetIndex, 0, movedSection);
 
-    onGuideUpdate({
+    applyGuideUpdate({
       ...discussionGuide,
       sections
     });
@@ -511,7 +514,7 @@ const StudyPanel = ({
         return section;
       })
     };
-    onGuideUpdate(updatedGuide);
+    applyGuideUpdate(updatedGuide);
     setQuestionReviews((prev) => {
       const currentReview = prev[questionKey];
       if (!currentReview || currentReview.reviewedQuestion === updatedQuestion) {
@@ -549,7 +552,7 @@ const StudyPanel = ({
       })
     };
 
-    onGuideUpdate(updatedGuide);
+    applyGuideUpdate(updatedGuide);
 
     const questionKey = getQuestionKey(sectionId, questionIndex);
     setEditingQuestion(current => current === questionKey ? null : current);
@@ -595,7 +598,7 @@ const StudyPanel = ({
         return section;
       })
     };
-    onGuideUpdate(updatedGuide);
+    applyGuideUpdate(updatedGuide);
     const questionKey = getQuestionKey(sectionId, newQuestionIndex);
     setVisibleQuestions(prev => ({
       ...prev,
@@ -818,6 +821,10 @@ const StudyPanel = ({
         return;
       }
 
+      if (data?.fallbackUsed && data?.warning) {
+        console.warn('AI question generation fell back to safe defaults:', data.warning);
+      }
+
       questions = (data?.questions || []).slice(0, 1);
       
       if (questions.length === 0) {
@@ -827,19 +834,18 @@ const StudyPanel = ({
 
       console.log('Adding questions:', questions);
 
-      const updatedGuide = {
-        ...discussionGuide,
-        sections: discussionGuide.sections.map((section: any) => {
+      applyGuideUpdate((currentGuide: any) => ({
+        ...currentGuide,
+        sections: (currentGuide?.sections || []).map((section: any) => {
           if (section.id === sectionId) {
             return {
               ...section,
-              questions: [...section.questions, ...questions]
+              questions: [...(section.questions || []), ...questions]
             };
           }
           return section;
         })
-      };
-      onGuideUpdate(updatedGuide);
+      }));
 
       console.log('Questions added successfully');
     } catch (error) {
@@ -1291,16 +1297,16 @@ const StudyPanel = ({
               const currentReview = questionReviews[questionKey];
               const expectedReviewText = editingQuestion === questionKey ? editValue.trim() : question.trim();
               const isReviewCurrent = !!currentReview && currentReview.reviewedQuestion === expectedReviewText;
-              return <div key={`${section.id}-${index}`} className="group flex items-start space-x-2">
-                        <span className="text-xs text-text-muted mt-2 w-5">
+              return <div key={`${section.id}-${index}`} className="group grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-start gap-2">
+                        <span className="pt-2 text-right text-xs text-text-muted">
                           {index + 1}.
                         </span>
                         
-                        <div className="flex-1">
+                        <div className="min-w-0">
                           {isGuideLoading ? <div className="rounded-md border border-border-light bg-surface/60 px-3 py-3">
                               <Skeleton className={`h-4 ${questionSkeletonWidth}`} />
-                            </div> : editingQuestion === questionKey && isQuestionVisible && allowGuideEditing ? <div className="space-y-3">
-                                <Textarea value={editValue} onChange={e => setEditValue(e.target.value)} className="text-sm" autoFocus />
+                            </div> : editingQuestion === questionKey && isQuestionVisible && allowGuideEditing ? <div className="min-w-0 space-y-3">
+                                <Textarea value={editValue} onChange={e => setEditValue(e.target.value)} className="min-h-[104px] w-full min-w-0 resize-y text-sm leading-6" autoFocus />
                                 <div className="flex flex-wrap gap-2">
                                   <Button size="sm" onClick={() => handleSaveQuestion(section.id, index)}>
                                     Kaydet
@@ -1313,7 +1319,7 @@ const StudyPanel = ({
                                 {currentReview && currentReview.reviewedQuestion !== editValue.trim() && <p className="text-xs text-text-secondary">
                                     Metin değişti. Güncel yorum için yeniden değerlendir.
                                   </p>}
-                              </div> : isQuestionVisible ? <div className={`text-sm text-text-primary rounded p-2 -m-2 transition-colors ${allowGuideEditing ? "cursor-text hover:bg-surface" : ""}`} onClick={() => {
+                            </div> : isQuestionVisible ? <div className={`rounded-lg px-3 py-2 text-sm leading-6 text-text-primary transition-colors ${allowGuideEditing ? "cursor-text hover:bg-surface" : ""}`} onClick={() => {
                         if (allowGuideEditing) {
                           handleEditQuestion(questionKey, question);
                         }
@@ -1362,7 +1368,7 @@ const StudyPanel = ({
                             </div>}
                         </div>
                         
-                        {allowGuideEditing ? <div className="flex items-center gap-1">
+                        {allowGuideEditing ? <div className="flex items-start gap-1">
                           <Button size="sm" variant="ghost" className={`transition-opacity ${isQuestionVisible ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => handleEditQuestion(questionKey, question)}>
                             <Edit3 className="w-3 h-3" />
                           </Button>
@@ -1377,11 +1383,11 @@ const StudyPanel = ({
                       </div>;
             })}
                   
-                   {!isGuideLoading && loadingQuestions[section.id] && <div className="group flex items-start space-x-2">
-                      <span className="text-xs text-text-muted mt-2 w-5">
+                   {!isGuideLoading && loadingQuestions[section.id] && <div className="group grid grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-2">
+                      <span className="pt-2 text-right text-xs text-text-muted">
                         {section.questions.length + 1}.
                       </span>
-                      <div className="flex-1 rounded-md border border-border-light bg-surface/60 px-3 py-3">
+                      <div className="min-w-0 rounded-md border border-border-light bg-surface/60 px-3 py-3">
                         <div className="flex items-center gap-2 text-xs text-text-secondary mb-2">
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           <span>AI sorusu hazırlanıyor...</span>

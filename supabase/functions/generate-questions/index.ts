@@ -119,6 +119,19 @@ const buildUsabilityContextPrompt = (context: UsabilityContext | null) => {
 - Ek yönlendirme: ${context.guidancePrompt || "Yok"}`;
 };
 
+const deriveWarmupTopicLabel = (projectDescription: string) => {
+  const normalized = cleanInput(projectDescription)
+    .replace(/\s+/g, " ")
+    .split(/[.!?]/)[0]
+    ?.trim() || "";
+
+  if (!normalized) {
+    return "";
+  }
+
+  return normalized.length > 72 ? `${normalized.slice(0, 69).trimEnd()}...` : normalized;
+};
+
 const buildQuestionPrompt = (
   sectionTitle: string,
   sectionId: string,
@@ -132,6 +145,7 @@ const buildQuestionPrompt = (
 ) => {
   const warmupSection = sectionIndex === 0 || isWarmupSectionTitle(sectionTitle);
   const isUsabilityMode = mode === "usability";
+  const warmupTopicLabel = deriveWarmupTopicLabel(projectDescription);
 
   return `Proje: ${projectDescription}
 
@@ -145,6 +159,7 @@ ${usabilityContextPrompt ? `${usabilityContextPrompt}
 - Her soru tek başına anlamlı olsun; önceki soruya referans verme.
 - İlk soru katılımcının gününe dokunsun.
 - "Bu konu", "bu konuyla", "bununla ilgili", "buraya gelmeden önce", "en son karşılaştığınız an" gibi ifadeleri kullanma.
+- Konudan söz edeceksen belirsiz zamir kullanma; "${warmupTopicLabel || "araştırılan konu"}" gibi açık bir isimle bahset.
 - Ürün değerlendirmesine doğrudan yüklenme; önce gündelik ve genel bir sohbet aç.` : `Bu bölüm görüşmenin ana araştırma bölümüdür.
 - Warm-up sorusu üretme.
 - Soruları bu bölümün araştırma odağına sadık, açık uçlu ve tek odaklı kur.
@@ -217,6 +232,7 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 - Warm-up soruları kısa, tek cümleli ve birbirinden bağımsız olsun
 - Warm-up bölümünün ilk sorusu katılımcının gününe değsin
 - Warm-up sorularında "bu konu", "bu konuyla", "bununla ilgili", "buraya gelmeden önce", "en son karşılaştığınız an" gibi önceki bağlama yaslanan kalıpları kullanma
+- Warm-up sorularında konuya değinilecekse belirsiz zamir yerine kısa ve açık konu adı kullan
 - Warm-up olmayan bölümlerde rapport yerine doğrudan araştırma odağına gir
 - Her soru tek bir amaca hizmet etsin
 - Mümkünse soru metninde "ve" kullanma; tek soruda tek odak koru
@@ -428,20 +444,24 @@ Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warm
 
     console.log('Final questions:', valid);
 
-    return new Response(JSON.stringify({ questions: valid.slice(0, requestedCount) }), {
+    return new Response(JSON.stringify({
+      questions: valid.slice(0, requestedCount),
+      fallbackUsed: false,
+      warning: null,
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error('Error in generate-questions function:', error);
-    return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : 'Internal server error',
+    return new Response(JSON.stringify({
       questions: [
         'Bu konudaki deneyiminizde ilk aklınıza gelen şey ne oldu?',
         'Burada size en net gelen nokta neydi?',
         'Bir değişiklik önerseniz ilk nereden başlardınız?'
-      ]
+      ],
+      fallbackUsed: true,
+      warning: error instanceof Error ? error.message : 'Internal server error',
     }), {
-      status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

@@ -123,6 +123,7 @@ Her mesajda su karari ver:
 - Kisa mesaja kisa yanit ver
 - Detayli mesaja yalnizca gerektigi kadar detayli yanit ver
 - Dogal, net ve insan gibi yaz
+- Kullaniciya giden tum metinlerde Turkce karakterleri eksiksiz kullan; ASCII transliterasyon yazma
 - Asla yapay nezaket veya kurumsal giris kullanma
 - "Harika", "memnuniyet duyarim", "size yardimci olmak isterim", "birkac sorum olacak" gibi robotik kaliplardan kacın
 - Maddeli listeyi ancak kullanici gercekten birden fazla sey sordugunda veya liste acikca faydaliysa kullan
@@ -380,21 +381,21 @@ const inferSectionTitle = (questions: string[], index: number) => {
   }
 
   if (/(karsilast|rakip|alternatif)/.test(corpus)) {
-    return 'Karsilastirma ve Tercih';
+    return 'Karşılaştırma ve Tercih';
   }
 
   if (/(oner|degistir|gelistir|iyilestir|firsat)/.test(corpus)) {
-    return 'Iyilestirme Firsatlari';
+    return 'İyileştirme Fırsatları';
   }
 
   const fallbackTitles = [
-    'Kullanim Baglami ve Beklentiler',
-    'Ilk Algi ve Anlama',
-    'Akis ve Karar Verme',
-    'Iyilestirme Firsatlari',
+    'Kullanım Bağlamı ve Beklentiler',
+    'İlk Algı ve Anlama',
+    'Akış ve Karar Verme',
+    'İyileştirme Fırsatları',
   ];
 
-  return fallbackTitles[index] || `Arastirma Odagi ${index + 1}`;
+  return fallbackTitles[index] || `Araştırma Odağı ${index + 1}`;
 };
 
 const normalizeResearchPlan = (plan: any, mode: ResearchQuestionMode = "interview") => {
@@ -454,7 +455,7 @@ const normalizeResearchPlan = (plan: any, mode: ResearchQuestionMode = "intervie
 
   return ensureWarmupSection({
     ...plan,
-    title: cleanText(plan.title, 'Kullanici Arastirmasi'),
+    title: cleanText(plan.title, 'Kullanıcı Araştırması'),
     sections: normalizedSections,
   });
 };
@@ -781,20 +782,20 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
     },
     {
       id: slugifySectionId("friction_and_improvements"),
-      title: "Surtunme ve Iyilestirme Firsatlari",
+      title: "Sürtünme ve İyileştirme Fırsatları",
       questions: [
-        `${riskAreas} basligina baktiginizda dikkatinizi en cok hangi ekran veya adim cekiyor?`,
-        `${successSignals} hedefine ulasmak icin bu deneyimde hangi degisiklikler en cok fark yaratir?`,
-        `Bu gorevi daha hizli ve daha rahat tamamlayabilmeniz icin ilk neyi degistirirdiniz?`,
+        `${riskAreas} başlığına baktığınızda dikkatinizi en çok hangi ekran veya adım çekiyor?`,
+        `${successSignals} hedefine ulaşmak için bu deneyimde hangi değişiklikler en çok fark yaratır?`,
+        `Bu görevi daha hızlı ve daha rahat tamamlayabilmeniz için ilk neyi değiştirirdiniz?`,
       ],
     },
   ];
 
   return {
     action: "PLAN",
-    chatResponse: "Kullanilabilirlik testi baglamina gore arastirma planinizi olusturdum. Sorular gorev akisi, anlasilirlik, guven ve surtunme noktalarina odaklaniyor.",
+    chatResponse: "Kullanılabilirlik testi bağlamına göre araştırma planınızı oluşturdum. Sorular görev akışı, anlaşılırlık, güven ve sürtünme noktalarına odaklanıyor.",
     researchPlan: ensureWarmupSection({
-      title: `${titleBase} Kullanilabilirlik Arastirmasi`,
+      title: `${titleBase} Kullanılabilirlik Araştırması`,
       sections,
     }),
   };

@@ -774,9 +774,16 @@ const Workspace = () => {
     };
   }, [buildCurrentAnalysisSnapshot, projectData, syncProjectData, user, workspaceChatContentKey, workspaceChatPayload]);
 
-  const applyDiscussionGuide = useCallback((nextGuide: any, source: string) => {
-    setDiscussionGuide(nextGuide);
-    setQuestionSetState((currentQuestionSet) => createNextQuestionSetState(currentQuestionSet, nextGuide, source));
+  const applyDiscussionGuide = useCallback((nextGuideOrUpdater: any, source: string) => {
+    setDiscussionGuide((currentGuide) => {
+      const resolvedGuide =
+        typeof nextGuideOrUpdater === "function"
+          ? nextGuideOrUpdater(currentGuide)
+          : nextGuideOrUpdater;
+
+      setQuestionSetState((currentQuestionSet) => createNextQuestionSetState(currentQuestionSet, resolvedGuide, source));
+      return resolvedGuide;
+    });
     setIsResearchRelated(true);
   }, []);
 
@@ -812,6 +819,12 @@ const Workspace = () => {
     if (description.includes("NPS") || description.includes("banking") || description.includes("bankacılık")) return "Müşteri Memnuniyeti Araştırması";
     return "Kullanıcı Deneyimi Araştırma Çalışması";
   };
+
+  const resolvedProjectTitle =
+    projectData.title?.trim() ||
+    discussionGuide?.title?.trim() ||
+    aiEnhancedBrief?.objective?.trim() ||
+    getProjectTitle(projectData.description);
 
   const getResearchSteps = () => {
     const planningReady = isAIEnhancedMode
@@ -1049,7 +1062,7 @@ const Workspace = () => {
               />
             ) : currentStep === "guide" ? (
               <AIEnhancedBriefingPanel
-                projectTitle={projectData.title || getProjectTitle(projectData.description)}
+                projectTitle={resolvedProjectTitle}
                 projectDescription={projectData.description}
                 brief={aiEnhancedBrief}
                 onBriefUpdate={applyAIEnhancedBrief}
@@ -1060,7 +1073,7 @@ const Workspace = () => {
                 participants={participants}
                 sessions={sessions}
                 projectId={projectData.id || ""}
-                projectTitle={projectData.title || getProjectTitle(projectData.description)}
+                projectTitle={resolvedProjectTitle}
                 currentStep={currentStep}
                 researchMode={researchMode}
                 aiEnhancedBrief={aiEnhancedBrief}
@@ -1167,7 +1180,7 @@ const Workspace = () => {
                   participants={participants}
                   sessions={sessions}
                   projectId={projectData.id || ""}
-                  projectTitle={projectData.title || getProjectTitle(projectData.description)}
+                  projectTitle={resolvedProjectTitle}
                   currentStep={currentStep}
                   researchMode={researchMode}
                   aiEnhancedBrief={null}
@@ -1215,7 +1228,7 @@ const Workspace = () => {
             void loadResearchState();
           }}
           projectId={projectData.id || ""}
-          projectTitle={projectData.title || getProjectTitle(projectData.description)}
+          projectTitle={resolvedProjectTitle}
           researchMode={researchMode}
           aiEnhancedBrief={aiEnhancedBrief}
           currentQuestionSetVersionId={currentQuestionSetVersion?.id || null}

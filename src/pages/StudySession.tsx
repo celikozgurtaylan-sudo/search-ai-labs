@@ -55,7 +55,7 @@ const createMockScreen = (accent: string, title: string, subtitle: string, cta: 
 const MOCK_PROJECT_DATA = {
   id: 'mock-project-id',
   title: 'Pop-up Ekrani Ilk Gorunus ve Algilama Testi',
-  description: 'Bu bir ornek usability arastirmasi. Katilimcinin kopyalanip yapistirilmis Figma ekranini ilk gorunuste nasil yorumladigini anlamak icin tasarlandi.',
+  description: 'Bu bir örnek usability araştırması. Katılımcının kopyalanıp yapıştırılmış Figma ekranını ilk görünüşte nasıl yorumladığını anlamak için tasarlandı.',
   analysis: {
     designScreens: [
       {
@@ -427,7 +427,7 @@ const StudySession = () => {
         verified: false,
         preview: false,
         state: 'failed',
-        message: 'Kamera akisi baslatilamadi. Lutfen tekrar deneyin.',
+        message: 'Kamera akışı başlatılamadı. Lütfen tekrar deneyin.',
       };
     }
 
@@ -459,7 +459,7 @@ const StudySession = () => {
       return {
         verified: true,
         preview: false,
-        message: 'Tarayiciniz canli onizlemeyi gostermese de kameraniz aktif olarak dogrulandi. Devam edebilirsiniz.',
+        message: 'Tarayıcınız canlı önizlemeyi göstermese de kameranız aktif olarak doğrulandı. Devam edebilirsiniz.',
       };
     }
 
@@ -467,14 +467,14 @@ const StudySession = () => {
       return {
         verified: true,
         preview: false,
-        message: 'Tarayiciniz canli onizlemeyi gostermese de kameraniz aktif olarak dogrulandi. Devam edebilirsiniz.',
+        message: 'Tarayıcınız canlı önizlemeyi göstermese de kameranız aktif olarak doğrulandı. Devam edebilirsiniz.',
       };
     }
 
     return {
       verified: false,
       preview: false,
-      message: 'Canli kamera goruntusu dogrulanamadi. Kamerayi yeniden deneyin.',
+      message: 'Canlı kamera görüntüsü doğrulanamadı. Kamerayı yeniden deneyin.',
     };
   };
 
@@ -588,15 +588,15 @@ const StudySession = () => {
     const handleVideoInterrupted = () => {
       handleTrackInterrupted(
         'track_ended',
-        'Kamera baglantisi kesildi. Devam etmeden once yeniden baglanin.',
-        'Kamera baglantisi kesildi. Oturum devam etmeden once kamerayi yeniden acin.',
+        'Kamera bağlantısı kesildi. Devam etmeden önce yeniden bağlanın.',
+        'Kamera bağlantısı kesildi. Oturum devam etmeden önce kamerayı yeniden açın.',
       );
     };
     const handleAudioInterrupted = () => {
       handleTrackInterrupted(
         'track_ended',
-        'Mikrofon baglantisi kesildi. Devam etmeden once yeniden baglanin.',
-        'Mikrofon baglantisi kesildi. Oturum devam etmeden once mikrofonu yeniden acin.',
+        'Mikrofon bağlantısı kesildi. Devam etmeden önce yeniden bağlanın.',
+        'Mikrofon bağlantısı kesildi. Oturum devam etmeden önce mikrofonu yeniden açın.',
       );
     };
 
@@ -665,7 +665,7 @@ const StudySession = () => {
       sessionMetadataRef.current = session.metadata && typeof session.metadata === 'object' ? session.metadata : {};
       setSessionId(session.id || null);
       setParticipantId(session.participant_id || participant?.id || null);
-      setParticipantName(participant?.name || participant?.email || 'Katilimci');
+      setParticipantName(participant?.name || participant?.email || 'Katılımcı');
       setProjectData(access.project_data);
       setSessionStatus(session.status === 'completed' ? 'completed' : 'active');
       setSessionCompletionReason(session.status === 'completed' ? 'completed' : null);
@@ -708,7 +708,7 @@ const StudySession = () => {
         if (!isGranted) {
           void applyDeviceCheckFailure(
             'permission_denied',
-            'Tarayici kamera iznini kapatti. Devam etmek icin kamera ve mikrofon iznini yeniden acin.',
+            'Tarayıcı kamera iznini kapattı. Devam etmek için kamera ve mikrofon iznini yeniden açın.',
           );
         }
       };
@@ -724,7 +724,7 @@ const StudySession = () => {
           if (!isGranted) {
             void applyDeviceCheckFailure(
               'permission_denied',
-              'Tarayici mikrofon iznini kapatti. Devam etmek icin kamera ve mikrofon iznini yeniden acin.',
+              'Tarayıcı mikrofon iznini kapattı. Devam etmek için kamera ve mikrofon iznini yeniden açın.',
             );
           }
         };
@@ -848,13 +848,13 @@ const StudySession = () => {
       setCameraPreviewReady(false);
       setCameraStreamVerified(false);
       setDeviceCheckState('verifying_camera');
-      setDeviceCheckMessage('Kamera goruntusu dogrulaniyor...');
+      setDeviceCheckMessage('Kamera görüntüsü doğrulanıyor...');
 
       const validation = await validateCameraStream(stream);
 
       if (!validation.verified) {
         stopCameraStream(stream);
-        const message = await applyDeviceCheckFailure('device_busy', validation.message || 'Canli kamera goruntusu dogrulanamadi. Kamerayi yeniden deneyin.');
+        const message = await applyDeviceCheckFailure('device_busy', validation.message || 'Canlı kamera görüntüsü doğrulanamadı. Kamerayı yeniden deneyin.');
         toast.error(message);
         return false;
       }
@@ -863,7 +863,7 @@ const StudySession = () => {
       setCameraPreviewReady(validation.preview);
       setDeviceCheckState('verifying_microphone');
       setDeviceCheckFailureCode(null);
-      setDeviceCheckMessage('Lutfen kisa bir cumle soyleyin. Mikrofon sinyalini test ediyoruz.');
+      setDeviceCheckMessage('Lütfen kısa bir cümle söyleyin. Mikrofon sinyalini test ediyoruz.');
 
       const microphoneHealth = await probeMicrophoneHealth(stream, {
         onLevelSample: ({ level, threshold }) => {
@@ -885,7 +885,7 @@ const StudySession = () => {
       setMicrophoneVerified(true);
       setDeviceCheckState('ready');
       setDeviceCheckFailureCode(null);
-      setDeviceCheckMessage(validation.message ?? 'Kamera ve mikrofon hazir. Arastirmaya devam edebilirsiniz.');
+      setDeviceCheckMessage(validation.message ?? 'Kamera ve mikrofon hazır. Araştırmaya devam edebilirsiniz.');
       await persistDeviceCheckSnapshot('ready', null, validation.message ?? 'Kamera ve mikrofon hazir.');
       return true;
     } catch (error) {
@@ -937,37 +937,43 @@ const StudySession = () => {
   const microphoneLevelRatio = microphoneLevelThreshold > 0
     ? Math.min(microphoneLevel / Math.max(microphoneLevelThreshold * 1.4, 1), 1)
     : 0;
-  const gatePrimaryLabel = deviceCheckState === 'failed'
-    ? 'Tekrar Dene'
-    : isDeviceCheckBusy
-      ? 'Dogrulaniyor...'
-      : 'Kamera ve Mikrofonu Ac';
+  const permissionWasDenied = deviceCheckFailureCode === 'permission_denied';
+  const gatePrimaryLabel = permissionWasDenied
+    ? 'İzin Ver'
+    : deviceCheckState === 'failed'
+      ? 'Tekrar Dene'
+      : isDeviceCheckBusy
+        ? 'Doğrulanıyor...'
+        : 'Kamera ve Mikrofonu Aç';
+  const permissionHelpText = permissionWasDenied
+    ? 'Tarayıcı izni daha önce engellendiyse adres çubuğundaki kamera veya site ayarları simgesinden kamera ve mikrofonu tekrar açın.'
+    : null;
   const gateStatusText = (() => {
     if (deviceCheckMessage) {
       return deviceCheckMessage;
     }
 
     if (deviceCheckState === 'requesting_permission') {
-      return 'Tarayicinin izin penceresini onaylayin.';
+      return 'Tarayıcının izin penceresini onaylayın.';
     }
 
     if (deviceCheckState === 'verifying_camera') {
-      return 'Kamera goruntusu kontrol ediliyor.';
+      return 'Kamera görüntüsü kontrol ediliyor.';
     }
 
     if (deviceCheckState === 'verifying_microphone') {
-      return 'Lutfen “Merhaba” gibi kisa bir cumle soyleyin. Mikrofon sinyali olculuyor.';
+      return 'Lütfen “Merhaba” gibi kısa bir cümle söyleyin. Mikrofon sinyali ölçülüyor.';
     }
 
     if (deviceCheckState === 'ready') {
-      return 'Kamera ve mikrofon hazir. Arastirmaya devam edebilirsiniz.';
+      return 'Kamera ve mikrofon hazır. Araştırmaya devam edebilirsiniz.';
     }
 
     if (deviceCheckFailureCode) {
       return getMicrophoneFailureMessage(deviceCheckFailureCode);
     }
 
-    return 'Arastirmaya girebilmek icin once kamera ve mikrofonunuzu acip dogrulayalim.';
+    return 'Araştırmaya girebilmek için önce kamera ve mikrofonunuzu açıp doğrulayalım.';
   })();
 
   if (loading) {
@@ -1084,8 +1090,8 @@ const StudySession = () => {
                     <p className="font-medium line-clamp-1">{screen.name || `Screen ${index + 1}`}</p>
                     <p className="text-text-muted">
                       {activeScreenIndex === index
-                        ? "Bu soruda gosterilen ekran"
-                        : "Siradaki ekran"}
+                        ? "Bu soruda gösterilen ekran"
+                        : "Sıradaki ekran"}
                     </p>
                   </div>
                 ))}
@@ -1129,7 +1135,7 @@ const StudySession = () => {
                         rel="noreferrer"
                         className="inline-flex items-center gap-2 rounded-full border border-brand-primary/20 bg-white px-5 py-3 text-sm font-medium text-brand-primary shadow-sm hover:border-brand-primary/40"
                       >
-                        Figma ekranini yeni sekmede ac
+                        Figma ekranını yeni sekmede aç
                         <ExternalLink className="w-4 h-4" />
                       </a>
                     ) : (
@@ -1178,8 +1184,8 @@ const StudySession = () => {
 
       {!cameraGateCompleted && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(15,23,42,0.45)] px-4 backdrop-blur-md">
-          <Card className="w-full max-w-3xl overflow-hidden rounded-[36px] border border-white/60 bg-white/95 shadow-[0_30px_80px_rgba(15,23,42,0.25)]">
-            <CardContent className="grid gap-8 p-6 md:grid-cols-[1.1fr_0.9fr] md:p-8">
+          <Card className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-[36px] border border-white/60 bg-white/95 shadow-[0_30px_80px_rgba(15,23,42,0.25)]">
+            <CardContent className="grid max-h-[92vh] gap-6 overflow-y-auto p-5 md:grid-cols-[1.1fr_0.9fr] md:p-8">
               <div className="space-y-5">
                 <div className="inline-flex items-center gap-2 rounded-full bg-brand-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-brand-primary">
                   <Camera className="h-3.5 w-3.5" />
@@ -1208,12 +1214,12 @@ const StudySession = () => {
                     </div>
                     <p className="mt-1 text-xs">
                       {cameraEnabled && cameraStreamVerified
-                        ? 'Hazir'
+                        ? 'Hazır'
                         : deviceCheckState === 'verifying_camera'
-                          ? 'Dogrulaniyor'
+                          ? 'Doğrulanıyor'
                           : hasCameraPermission
-                            ? 'Izin verildi'
-                            : 'Izin bekleniyor'}
+                            ? 'İzin verildi'
+                            : 'İzin bekleniyor'}
                     </p>
                   </div>
 
@@ -1230,12 +1236,12 @@ const StudySession = () => {
                     </div>
                     <p className="mt-1 text-xs">
                       {microphoneVerified
-                        ? 'Hazir'
+                        ? 'Hazır'
                         : deviceCheckState === 'verifying_microphone'
-                          ? 'Ses testi yapiliyor'
+                          ? 'Ses testi yapılıyor'
                           : hasMicrophonePermission
-                            ? 'Izin verildi'
-                            : 'Izin bekleniyor'}
+                            ? 'İzin verildi'
+                            : 'İzin bekleniyor'}
                     </p>
                   </div>
                 </div>
@@ -1248,12 +1254,12 @@ const StudySession = () => {
                       </p>
                       <p className="mt-1 text-sm text-text-secondary">
                         {deviceCheckState === 'verifying_microphone'
-                          ? 'Lutfen normal sesinizle kisa bir cumle soyleyin.'
-                          : 'Mikrofon seviyesini burada goreceksiniz.'}
+                          ? 'Lütfen normal sesinizle kısa bir cümle söyleyin.'
+                          : 'Mikrofon seviyesini burada göreceksiniz.'}
                       </p>
                     </div>
                     <span className="text-xs font-medium text-text-secondary">
-                      Esik {microphoneLevelThreshold.toFixed(1)}
+                      Eşik {microphoneLevelThreshold.toFixed(1)}
                     </span>
                   </div>
 
@@ -1276,8 +1282,8 @@ const StudySession = () => {
                       {deviceCheckState === 'verifying_microphone'
                         ? 'Ses bekleniyor'
                         : microphoneVerified
-                          ? 'Sinyal dogrulandi'
-                          : 'Hazir degil'}
+                          ? 'Sinyal doğrulandı'
+                          : 'Hazır değil'}
                     </span>
                   </div>
                 </div>
@@ -1325,15 +1331,21 @@ const StudySession = () => {
                 }`}>
                   {gateStatusText}
                 </div>
+
+                {permissionHelpText ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    {permissionHelpText}
+                  </div>
+                ) : null}
               </div>
 
               <div className="relative overflow-hidden rounded-[28px] border border-border/70 bg-slate-950 shadow-[0_20px_50px_rgba(15,23,42,0.24)]">
                 <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 py-3">
                   <div className="rounded-full bg-black/45 px-3 py-1 text-xs font-medium text-white backdrop-blur">
-                    {participantName || 'Katilimci'}
+                    {participantName || 'Katılımcı'}
                   </div>
                   <div className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-medium text-emerald-100 backdrop-blur">
-                    Canli onizleme
+                    Canlı önizleme
                   </div>
                 </div>
 
@@ -1367,8 +1379,8 @@ const StudySession = () => {
                           <Camera className="mx-auto h-12 w-12" />
                           <p className="text-sm leading-relaxed">
                             {cameraStreamVerified
-                              ? "Kamera aktif dogrulandi. Bu tarayici canli onizlemeyi gostermeyebilir."
-                              : "Canli goruntu hazirlaniyor. Birkac saniye icinde dogrulanmazsa yeniden deneyin."}
+                              ? "Kamera aktif doğrulandı. Bu tarayıcı canlı önizlemeyi göstermeyebilir."
+                              : "Canlı görüntü hazırlanıyor. Birkaç saniye içinde doğrulanmazsa yeniden deneyin."}
                           </p>
                         </div>
                       </div>
@@ -1378,7 +1390,7 @@ const StudySession = () => {
                   <div className="flex aspect-[4/3] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_45%),linear-gradient(180deg,_#1f2937_0%,_#0f172a_100%)]">
                     <div className="space-y-3 text-center text-white/80">
                       <Camera className="mx-auto h-12 w-12" />
-                      <p className="text-sm">Kamera onizlemesi burada gorunecek</p>
+                      <p className="text-sm">Kamera önizlemesi burada görünecek</p>
                     </div>
                   </div>
                 )}

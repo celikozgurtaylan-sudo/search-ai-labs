@@ -61,6 +61,11 @@ interface SendToLlmOptions {
   forceGuideEditPlan?: boolean;
 }
 
+const getPlanAckMessage = (hasExistingGuide: boolean) =>
+  hasExistingGuide
+    ? "Araştırma planını güncelledim. Soruları ilgili bölümlerde görebilirsiniz."
+    : "Araştırma planını hazırladım. Soruları sağ tarafta görebilirsiniz.";
+
 const THINKING_LABEL_DELAY_MS = 1000;
 const THINKING_DOT_DELAY_MS = 2200;
 const MIN_THINKING_VISIBLE_MS = 3200;
@@ -424,7 +429,10 @@ const ChatPanel = ({
 
       setConversationHistory(data.conversationHistory || []);
       const state = assistantStreamStateRef.current[assistantMessageId];
-      const finalReply = typeof data.reply === 'string' ? data.reply : (state?.pending ?? '');
+      const shouldCompactPlanReply = Boolean(data.researchPlan);
+      const hasExistingGuide = Array.isArray(discussionGuide?.sections) && discussionGuide.sections.length > 0;
+      const rawReply = typeof data.reply === 'string' ? data.reply : (state?.pending ?? '');
+      const finalReply = shouldCompactPlanReply ? getPlanAckMessage(hasExistingGuide) : rawReply;
       if (state) {
         state.pending = finalReply;
       }

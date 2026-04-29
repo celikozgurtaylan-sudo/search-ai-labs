@@ -58,6 +58,15 @@ type CaptureStartOptions = {
   resetDuration?: boolean;
 };
 
+type ResponseDiagnosticStage =
+  | 'draft_saved'
+  | 'transcription_pipeline_unhealthy'
+  | 'processing_timeout'
+  | 'transcription_error'
+  | 'capture_start_failed'
+  | 'submit_failed'
+  | 'media_attach_failed';
+
 const blobToBase64 = (blob: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -394,6 +403,57 @@ const SearchoAI = ({
     }
   }, [cameraStream, cleanupResponseRecording]);
 
+  const persistResponseDiagnostic = useCallback(async ({
+    questionId,
+    transcript,
+    durationMs,
+    stage,
+    failureCode,
+    error,
+    extraMetadata,
+  }: {
+    questionId?: string | null;
+    transcript?: string;
+    durationMs?: number;
+    stage: ResponseDiagnosticStage;
+    failureCode?: string | null;
+    error?: unknown;
+    extraMetadata?: Record<string, unknown>;
+  }) => {
+    if (!projectContext?.sessionId || !questionId) {
+      return;
+    }
+
+    const diagnosticMessage =
+      typeof error === 'string'
+        ? error
+        : error instanceof Error
+          ? error.message
+          : undefined;
+
+    try {
+      await interviewService.saveResponse(projectContext.sessionId, {
+        questionId,
+        participantId: projectContext.participantId,
+        transcription: transcript?.trim() || undefined,
+        responseText: transcript?.trim() || undefined,
+        audioDuration: typeof durationMs === 'number' ? Math.round(durationMs) : undefined,
+        metadata: {
+          responseDiagnostics: {
+            stage,
+            failureCode: failureCode ?? null,
+            message: diagnosticMessage ?? null,
+            attemptId: captureAttemptRef.current,
+            recordedAt: new Date().toISOString(),
+            ...extraMetadata,
+          },
+        },
+      });
+    } catch (diagnosticError) {
+      console.error('Failed to persist response diagnostic:', diagnosticError);
+    }
+  }, [projectContext?.participantId, projectContext?.sessionId]);
+
   const discardPendingResponseMedia = useCallback(async () => {
     pendingResponseMediaRef.current = null;
     await stopResponseRecording(true);
@@ -433,6 +493,7 @@ const SearchoAI = ({
         audioDuration: Math.round(media.durationMs),
         metadata: {
           mediaUploadCompletedAt: new Date().toISOString(),
+          captureAttemptId: captureAttemptRef.current,
         },
         videoBase64: base64Video,
         videoMimeType: media.blob.type || 'video/webm',
@@ -440,8 +501,18 @@ const SearchoAI = ({
       });
     } catch (error) {
       console.error('Background response media upload failed:', error);
+      await persistResponseDiagnostic({
+        questionId,
+        durationMs: media.durationMs,
+        stage: 'media_attach_failed',
+        failureCode: 'media_attach_failed',
+        error,
+        extraMetadata: {
+          responseId,
+        },
+      });
     }
-  }, [projectContext?.sessionId]);
+  }, [persistResponseDiagnostic, projectContext?.sessionId]);
 
   const mergeTranscriptSegments = useCallback((baseText: string, nextText: string) => {
     const normalizedBase = baseText.trim();
@@ -475,6 +546,7 @@ const SearchoAI = ({
           draftSavedAt: new Date().toISOString(),
           questionText: currentQuestion.question_text,
           responseMode: 'draft',
+          captureAttemptId: captureAttemptRef.current,
         },
       });
     } catch (error) {
@@ -512,6 +584,16 @@ const SearchoAI = ({
       shutdownActiveResponseCapture();
       setUserTranscript(draftTranscript);
       setEditableTranscript(draftTranscript);
+      void persistResponseDiagnostic({
+        questionId: currentQuestion?.id,
+        transcript: draftTranscript,
+        durationMs: draftAudioDurationMs,
+        stage: 'processing_timeout',
+        failureCode: 'processing_timeout',
+        extraMetadata: {
+          responseTimeRemaining,
+        },
+      });
       enterRecoveryState('Yanıtınız işlenirken zaman aşımı oluştu. Aynı soruda tekrar deneyebilir veya kaldığınız yerden devam edebilirsiniz.', {
         resume: true,
         allowGraceIfNeeded: true,
@@ -522,7 +604,7 @@ const SearchoAI = ({
         variant: 'destructive',
       });
     }, PROCESSING_PHASE_TIMEOUT_MS);
-  }, [clearProcessingWatchdog, draftTranscript, enterRecoveryState, shutdownActiveResponseCapture, toast]);
+  }, [clearProcessingWatchdog, currentQuestion?.id, draftAudioDurationMs, draftTranscript, enterRecoveryState, persistResponseDiagnostic, responseTimeRemaining, shutdownActiveResponseCapture, toast]);
 
   const applyInterviewState = useCallback((nextQuestion: InterviewQuestion | null, progress: InterviewProgress) => {
     clearTranscriptionHealthMonitor();
@@ -772,6 +854,7 @@ const SearchoAI = ({
           questionMetadata: activeQuestion.metadata ?? {},
           autoSaved: true,
           usedDraftTranscript: draftTranscript.trim().length > 0,
+          captureAttemptId: captureAttemptRef.current,
         },
       });
 
@@ -784,19 +867,27 @@ const SearchoAI = ({
       }
     } catch (error) {
       console.error('Failed to submit response:', error);
+      await persistResponseDiagnostic({
+        questionId: activeQuestion.id,
+        transcript: normalizedTranscript,
+        durationMs: Math.max(mediaToPersist?.durationMs ?? 0, draftAudioDurationMs),
+        stage: 'submit_failed',
+        failureCode: 'submit_failed',
+        error,
+      });
       pendingResponseMediaRef.current = mediaToPersist;
       setEditableTranscript(normalizedTranscript);
       setUserTranscript(normalizedTranscript);
       setInterviewPhase('review');
       toast({
         title: 'Hata',
-        description: 'Yanıt kaydedilemedi. Düzeltip tekrar deneyin.',
+        description: 'Yanıt kaydedilemedi. Aynı soruda kalındı; düzeltip tekrar deneyin.',
         variant: 'destructive',
       });
     } finally {
       setIsSubmittingResponse(false);
     }
-  }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, uploadResponseMedia]);
+  }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, persistResponseDiagnostic, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, uploadResponseMedia]);
 
   const requestMediaRecovery = useCallback((reason: MicFailureCode, message?: string | null) => {
     onMediaRecoveryRequested?.(reason);
@@ -864,6 +955,13 @@ const SearchoAI = ({
       }
 
       if (!isTranscriptionHealthy) {
+        void persistResponseDiagnostic({
+          questionId: currentQuestion.id,
+          transcript: nextDraftTranscript,
+          durationMs: draftAudioDurationMs,
+          stage: 'transcription_pipeline_unhealthy',
+          failureCode: 'transcription_service_unavailable',
+        });
         enterRecoveryState('Transcript servisi şu anda hazır değil. Yanıtınızın boşa gitmemesi için kayıt başlatılmadı.', {
           resume: true,
           allowGraceIfNeeded: false,
@@ -965,6 +1063,15 @@ const SearchoAI = ({
           return;
         }
 
+        void persistResponseDiagnostic({
+          questionId: currentQuestion?.id,
+          transcript: nextDraftTranscript,
+          durationMs: draftAudioDurationMs,
+          stage: 'transcription_error',
+          failureCode: error,
+          error,
+        });
+
         if (error === 'PREP_TIMEOUT') {
           setUserTranscript(nextDraftTranscript);
           setEditableTranscript(nextDraftTranscript);
@@ -988,7 +1095,7 @@ const SearchoAI = ({
             allowGraceIfNeeded: false,
           });
           toast({
-            title: 'Mikrofon sinyali algilanmadi',
+            title: 'Mikrofon sinyali algılanmadı',
             description: recoveryMessage,
             variant: 'destructive',
           });
@@ -1027,7 +1134,7 @@ const SearchoAI = ({
             allowGraceIfNeeded: false,
           });
           toast({
-            title: 'Mikrofon baglantisi kesildi',
+            title: 'Mikrofon bağlantısı kesildi',
             description: recoveryMessage,
             variant: 'destructive',
           });
@@ -1079,6 +1186,14 @@ const SearchoAI = ({
       console.error('Failed to start listening:', error);
       clearTranscriptionHealthMonitor();
       const failureCode = mapMediaAccessErrorToFailureCode(error);
+      void persistResponseDiagnostic({
+        questionId: currentQuestion?.id,
+        transcript: nextDraftTranscript,
+        durationMs: draftAudioDurationMs,
+        stage: 'capture_start_failed',
+        failureCode,
+        error,
+      });
       const recoveryMessage = requestMediaRecovery(failureCode);
       enterRecoveryState(recoveryMessage, {
         resume: true,
@@ -1108,6 +1223,7 @@ const SearchoAI = ({
     isSubmittingResponse,
     requestMediaRecovery,
     mergeTranscriptSegments,
+    persistResponseDiagnostic,
     persistDraftResponse,
     responseTimeRemaining,
     startResponseRecording,

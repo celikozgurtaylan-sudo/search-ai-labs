@@ -28,8 +28,11 @@ interface InvitationEmailRequest {
   projectDescription?: string;
 }
 
+const cleanText = (value: unknown) =>
+  typeof value === "string" ? value.trim() : "";
+
 const createEmailTemplate = (
-  participantName: string, 
+  participantName: string,
   invitationToken: string, 
   projectTitle: string, 
   expiresAt: string,
@@ -86,6 +89,8 @@ const createEmailTemplate = (
     }
     return 'Online görüşme ve kullanıcı deneyimi araştırması';
   };
+
+  const greeting = participantName ? `Merhaba ${participantName},` : "Merhaba,";
 
   return `
     <!DOCTYPE html>
@@ -278,9 +283,7 @@ const createEmailTemplate = (
         </div>
         
         <div class="content">
-          <div class="greeting">
-            Merhaba ${participantName ? participantName : 'Değerli Katılımcı'},
-          </div>
+          <div class="greeting">${greeting}</div>
           
           <div class="message">
             Kullanıcı deneyimi araştırmamıza katılmanız için sizi davet ediyoruz. Görüşleriniz, 
@@ -343,7 +346,7 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("RESEND_FROM_EMAIL must use a verified custom domain, not resend.dev");
     }
 
-    const { 
+    const {
       participantEmail, 
       participantName, 
       invitationToken, 
@@ -368,10 +371,13 @@ const handler = async (req: Request): Promise<Response> => {
     console.log('Invitation token:', invitationToken);
     console.log('Using sender address:', invitationFromAddress);
 
+    const normalizedProjectTitle = cleanText(projectTitle) || 'Kullanıcı Deneyimi Araştırması';
+    const normalizedParticipantName = cleanText(participantName);
+
     const emailHtml = createEmailTemplate(
-      participantName || participantEmail.split('@')[0], 
+      normalizedParticipantName,
       invitationToken, 
-      projectTitle || 'Kullanıcı Deneyimi Araştırması',
+      normalizedProjectTitle,
       expiresAt,
       studyType,
       targetDevice,
@@ -381,7 +387,7 @@ const handler = async (req: Request): Promise<Response> => {
     const emailResponse = await resend.emails.send({
       from: invitationFromAddress,
       to: [participantEmail],
-      subject: `🔬 Araştırma Davetiyesi - ${projectTitle || 'UX Araştırması'}`,
+      subject: `🔬 Araştırma Davetiyesi - ${normalizedProjectTitle}`,
       html: emailHtml,
     });
 

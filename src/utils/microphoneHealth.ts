@@ -94,21 +94,21 @@ export const mapMediaAccessErrorToFailureCode = (error: unknown): MicFailureCode
 export const getMicrophoneFailureMessage = (code: MicFailureCode) => {
   switch (code) {
     case 'permission_denied':
-      return 'Tarayici kamera veya mikrofon iznini vermedi. Arastirmaya girebilmek icin bu izinleri acmaniz gerekiyor.';
+      return 'Tarayıcı kamera veya mikrofon iznini vermedi. Araştırmaya girebilmek için bu izinleri açmanız gerekiyor.';
     case 'insecure_context':
-      return 'Bu sayfa guvenli baglamda acilmadi. Kamera ve mikrofon yalnizca HTTPS veya localhost uzerinde acilabilir.';
+      return 'Bu sayfa güvenli bağlamda açılmadı. Kamera ve mikrofon yalnızca HTTPS veya localhost üzerinde açılabilir.';
     case 'device_not_found':
-      return 'Kamera veya mikrofon bulunamadi. Cihazinizi baglayip tekrar deneyin.';
+      return 'Kamera veya mikrofon bulunamadı. Cihazınızı bağlayıp tekrar deneyin.';
     case 'device_busy':
-      return 'Kamera veya mikrofon baska bir uygulama tarafindan kullaniliyor olabilir. Diger uygulamalari kapatip tekrar deneyin.';
+      return 'Kamera veya mikrofon başka bir uygulama tarafından kullanılıyor olabilir. Diğer uygulamaları kapatıp tekrar deneyin.';
     case 'track_silent':
-      return 'Mikrofon acildi ama ses sinyali algilanmadi. Mikrofon seciminizi kontrol edin ve kisa bir cumle soyleyerek tekrar deneyin.';
+      return 'Mikrofon açıldı ama ses sinyali algılanmadı. Mikrofon seçiminizi kontrol edin ve kısa bir cümle söyleyerek tekrar deneyin.';
     case 'track_ended':
-      return 'Mikrofon baglantisi kesildi. Cihazinizi yeniden baglayip tekrar deneyin.';
+      return 'Mikrofon bağlantısı kesildi. Cihazınızı yeniden bağlayıp tekrar deneyin.';
     case 'browser_unsupported':
-      return 'Bu tarayici kamera veya mikrofon akisini desteklemiyor. Guncel Chrome, Edge veya Safari kullanin.';
+      return 'Bu tarayıcı kamera veya mikrofon akışını desteklemiyor. Güncel Chrome, Edge veya Safari kullanın.';
     default:
-      return 'Kamera ve mikrofon dogrulanamadi. Lutfen tekrar deneyin.';
+      return 'Kamera ve mikrofon doğrulanamadı. Lütfen tekrar deneyin.';
   }
 };
 
@@ -176,7 +176,7 @@ export const probeMicrophoneHealth = async (
         resolve({
           ok,
           failureCode,
-          message: ok ? 'Mikrofon sinyali dogrulandi.' : getMicrophoneFailureMessage(failureCode ?? 'unknown'),
+          message: ok ? 'Mikrofon sinyali doğrulandı.' : getMicrophoneFailureMessage(failureCode ?? 'unknown'),
           baselineLevel,
           peakLevel,
           averageLevel,
