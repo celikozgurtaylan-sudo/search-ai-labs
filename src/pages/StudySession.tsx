@@ -1041,7 +1041,7 @@ const StudySession = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background xl:h-screen xl:overflow-hidden">
+    <div className="min-h-screen bg-background lg:h-screen lg:overflow-hidden">
       {/* Design Mode Indicator */}
       {isDesignMode && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-brand-primary/90 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg backdrop-blur-sm">
@@ -1057,8 +1057,8 @@ const StudySession = () => {
       />
 
       {/* Main Content */}
-      <div className="min-h-screen xl:h-full xl:overflow-hidden">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 pt-2 pb-6 md:px-6 xl:h-full xl:overflow-hidden xl:pb-4">
+      <div className="min-h-screen lg:h-full lg:overflow-hidden">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 pt-2 pb-6 md:px-6 lg:h-full lg:overflow-hidden lg:gap-3 lg:pt-1 lg:pb-3">
           {showDesignPanels && (
             <div className="shrink-0 rounded-[28px] border border-border-light bg-white/96 p-4 backdrop-blur">
               <div className="mb-4 flex items-center justify-between gap-3">
@@ -1093,7 +1093,7 @@ const StudySession = () => {
             </div>
           )}
 
-          <div className={`grid flex-1 gap-4 xl:min-h-0 ${showDesignPanels ? "xl:grid-cols-[minmax(320px,0.92fr)_minmax(0,1.08fr)]" : ""}`}>
+          <div className={`grid flex-1 gap-4 lg:min-h-0 ${showDesignPanels ? "xl:grid-cols-[minmax(320px,0.92fr)_minmax(0,1.08fr)]" : ""}`}>
             {showDesignPanels && activeScreen && (
               <div className="xl:min-h-0 xl:self-stretch">
                 <div className="flex h-full flex-col overflow-hidden rounded-[32px] border border-border-light bg-white shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
@@ -1145,7 +1145,7 @@ const StudySession = () => {
             )}
 
             {sessionId && projectData && (
-              <div className="min-w-0 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
+              <div className="min-w-0 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
                 <SearchoAI
                   isActive={sessionStatus === 'active' && cameraGateCompleted}
                   cameraStream={cameraStream}

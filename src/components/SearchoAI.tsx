@@ -1257,6 +1257,7 @@ const SearchoAI = ({
   const isVoiceClearlyDetected = currentAudioLevel >= 8;
   const isUserResponding = isRecordingPhase || isReviewPhase || isProcessingPhase || isSubmittingResponse || Boolean(userTranscript);
   const shouldShowSpeaker = interviewPhase === 'asking' || isAwaitingAudioPlaybackPhase;
+  const shouldUseCompactTimerRail = isRecordingPhase || isProcessingPhase || isRecoveringPhase || isReviewPhase;
 
   const responseTimerLabel = isAwaitingAudioPlaybackPhase
     ? formatTimerLabel(RESPONSE_TIME_LIMIT_SECONDS)
@@ -1282,6 +1283,15 @@ const SearchoAI = ({
     : responseTimeRemaining <= 30
       ? 'text-amber-600'
       : 'text-foreground';
+  const compactTimerSummary = isRecordingPhase
+    ? 'Kayıt canlı, konuşmaya devam edin.'
+    : isProcessingPhase
+      ? 'Kaydınız yazıya çevriliyor.'
+      : isReviewPhase
+        ? 'Yanıtınızı düzenleyip kaydedin.'
+        : isRecoveringPhase
+          ? 'Aynı soruda tekrar deneyin.'
+          : responseTimerDescription;
 
   const renderResponsePanel = () => {
     if (isSubmittingResponse) {
@@ -1480,13 +1490,13 @@ const SearchoAI = ({
   }
 
   return (
-    <div className="flex min-h-full flex-col bg-background xl:h-full xl:min-h-0 xl:overflow-hidden">
+    <div className="flex min-h-full flex-col bg-background lg:h-full lg:min-h-0 lg:overflow-hidden">
       {!showTurkishPreamble && (
         <>
-          <div className="flex flex-1 flex-col overflow-hidden xl:min-h-0">
-            <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col xl:min-h-0">
+          <div className="flex flex-1 flex-col overflow-hidden lg:min-h-0">
+            <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col lg:min-h-0">
               {currentQuestion && !isPreamblePhase ? (
-                <div className={`flex flex-1 flex-col xl:min-h-0 ${shouldShowSpeaker ? 'gap-3' : 'gap-2'}`}>
+                <div className={`flex flex-1 flex-col lg:min-h-0 ${shouldShowSpeaker ? 'gap-3 lg:gap-2' : 'gap-2 lg:gap-1.5'}`}>
                   {shouldShowSpeaker ? (
                     <div className="flex shrink-0 justify-center">
                       <AvatarSpeaker
@@ -1510,7 +1520,7 @@ const SearchoAI = ({
                     </div>
                   ) : null}
 
-                  <div className="flex flex-1 flex-col overflow-hidden rounded-[28px] border bg-card p-4 shadow xl:min-h-0 xl:p-5">
+                  <div className="flex flex-1 flex-col overflow-hidden rounded-[28px] border bg-card p-4 shadow lg:min-h-0 lg:p-5">
                     <div className="shrink-0">
                       <div className="flex items-center justify-between gap-3">
                         <div>
@@ -1535,30 +1545,48 @@ const SearchoAI = ({
                       </div>
                     </div>
 
-                    <div className={`flex flex-1 flex-col gap-4 xl:min-h-0 ${shouldShowSpeaker ? 'mt-4' : 'mt-2'}`}>
-                      <div className="shrink-0 rounded-2xl border border-border/70 bg-muted/30 px-4 py-3">
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                              {responseTimerHeading}
-                            </p>
-                            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                              {responseTimerDescription}
-                            </p>
-                          </div>
-                          <div className={`text-xl font-semibold tabular-nums xl:text-2xl ${responseTimerTone}`}>
-                            {responseTimerLabel}
+                    <div className={`flex flex-1 flex-col gap-3 lg:min-h-0 ${shouldShowSpeaker ? 'mt-4 lg:mt-3' : 'mt-2'}`}>
+                      {shouldUseCompactTimerRail ? (
+                        <div className="shrink-0 rounded-2xl border border-border/70 bg-muted/20 px-3 py-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                {responseTimerHeading}
+                              </p>
+                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {compactTimerSummary}
+                              </p>
+                            </div>
+                            <div className={`shrink-0 text-lg font-semibold tabular-nums lg:text-xl ${responseTimerTone}`}>
+                              {responseTimerLabel}
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="shrink-0 rounded-2xl border border-border/70 bg-muted/30 px-4 py-3">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                                {responseTimerHeading}
+                              </p>
+                              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                {responseTimerDescription}
+                              </p>
+                            </div>
+                            <div className={`text-xl font-semibold tabular-nums lg:text-2xl ${responseTimerTone}`}>
+                              {responseTimerLabel}
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="shrink-0">
-                        <h3 className="text-lg font-semibold leading-relaxed text-foreground xl:text-xl">
+                        <h3 className={`font-semibold leading-snug text-foreground ${shouldUseCompactTimerRail ? 'text-base lg:text-lg' : 'text-lg lg:text-xl'}`}>
                           {currentQuestion.question_text}
                         </h3>
                       </div>
 
-                      <div className={`flex-1 xl:min-h-0 ${isReviewPhase ? 'xl:overflow-y-auto' : 'xl:overflow-hidden'}`}>
+                      <div className={`flex-1 lg:min-h-0 ${isReviewPhase ? 'lg:overflow-y-auto' : 'lg:overflow-hidden'}`}>
                         {renderResponsePanel()}
                       </div>
                     </div>
@@ -1596,7 +1624,7 @@ const SearchoAI = ({
 
           {!isCompletedPhase ? (
             <div className="shrink-0 border-t border-border bg-card/40 backdrop-blur-sm">
-              <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-2.5 xl:px-5">
+              <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-2 lg:px-5">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] ${
                     isRecordingVideo
@@ -1607,7 +1635,7 @@ const SearchoAI = ({
                   </span>
                 </div>
 
-                <div className="font-mono text-xs text-muted-foreground xl:text-sm">
+                <div className="font-mono text-[11px] text-muted-foreground lg:text-xs">
                   {getSessionDuration()}
                 </div>
 
