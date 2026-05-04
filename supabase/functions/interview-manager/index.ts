@@ -11,6 +11,12 @@ import {
   getResearchModeFromAnalysis,
   normalizeAIEnhancedBrief,
 } from "../_shared/ai-enhanced.ts";
+import {
+  CONVERSATIONAL_WARMUP_TURN_COUNT,
+  buildConversationalWarmupFallbacks,
+  generateConversationalWarmupQuestion,
+  isConversationalWarmupSectionTitle,
+} from "../_shared/conversational-warmup.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -187,7 +193,7 @@ async function resolveDiscussionGuideForSession(projectId: string, sessionId: st
 
   const { data: project, error: projectError } = await supabase
     .from('projects')
-    .select('analysis')
+    .select('title, description, analysis')
     .eq('id', projectId)
     .maybeSingle();
 
@@ -256,6 +262,7 @@ async function resolveDiscussionGuideForSession(projectId: string, sessionId: st
 
   return {
     session,
+    project,
     analysis,
     discussionGuide,
     assignmentMetadata: {
@@ -364,6 +371,300 @@ async function insertAIEnhancedQuestion(input: {
   }
 
   return data;
+}
+
+const createWarmupGroupId = (sectionIndex: number) => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `warmup-${sectionIndex + 1}-${crypto.randomUUID()}`;
+  }
+
+  return `warmup-${sectionIndex + 1}-${Date.now()}`;
+};
+
+const getQuestionMetadata = (question: Record<string, unknown> | null | undefined) =>
+  isRecord(question?.metadata) ? question.metadata as Record<string, unknown> : {};
+
+const getResponseMetadata = (response: Record<string, unknown> | null | undefined) =>
+  isRecord(response?.metadata) ? response.metadata as Record<string, unknown> : {};
+
+const getWarmupTurnIndex = (metadata: Record<string, unknown>) =>
+  typeof metadata.warmupTurnIndex === "number" ? metadata.warmupTurnIndex : 1;
+
+const getWarmupTotalTurns = (metadata: Record<string, unknown>) =>
+  typeof metadata.warmupTotalTurns === "number"
+    ? metadata.warmupTotalTurns
+    : CONVERSATIONAL_WARMUP_TURN_COUNT;
+
+const isConversationalWarmupQuestion = (question: Record<string, unknown> | null | undefined) => {
+  if (!question) return false;
+
+  const metadata = getQuestionMetadata(question);
+  return (
+    question.question_type === "warmup_conversational" ||
+    (metadata.sectionKind === "warmup" && metadata.warmupDynamic === true)
+  );
+};
+
+const buildConversationalWarmupQuestionRows = async ({
+  projectId,
+  sessionId,
+  section,
+  sectionIndex,
+  startOrder,
+  project,
+}: {
+  projectId: string;
+  sessionId: string;
+  section: Record<string, unknown>;
+  sectionIndex: number;
+  startOrder: number;
+  project?: Record<string, unknown> | null;
+}) => {
+  const sectionTitle = asString(section.title) || "Isınma";
+  const plannedQuestions = asArray<unknown>(section.questions)
+    .map((question) => asString(question))
+    .filter(Boolean);
+  const fallbackQuestions = buildConversationalWarmupFallbacks(plannedQuestions);
+  const warmupGroupId = createWarmupGroupId(sectionIndex);
+  const firstTurn = await generateConversationalWarmupQuestion({
+    projectTitle: asString(project?.title),
+    projectDescription: asString(project?.description),
+    sectionTitle,
+    turnIndex: 1,
+    existingWarmupQuestions: fallbackQuestions,
+    previousTurns: [],
+  });
+
+  return Array.from({ length: CONVERSATIONAL_WARMUP_TURN_COUNT }, (_, index) => {
+    const turnIndex = index + 1;
+    const isFirstTurn = turnIndex === 1;
+
+    return {
+      project_id: projectId,
+      session_id: sessionId,
+      question_text: isFirstTurn
+        ? firstTurn.questionText
+        : (fallbackQuestions[index] || fallbackQuestions[0]),
+      question_order: startOrder + index,
+      section: sectionTitle,
+      question_type: "warmup_conversational",
+      is_follow_up: turnIndex > 1,
+      metadata: {
+        interviewMode: "structured",
+        sectionKind: "warmup",
+        source: isFirstTurn ? "warmup_llm_initial" : "warmup_placeholder",
+        warmupDynamic: true,
+        warmupGroupId,
+        warmupTurnIndex: turnIndex,
+        warmupTotalTurns: CONVERSATIONAL_WARMUP_TURN_COUNT,
+        fallbackQuestions,
+        warmupGeneration: isFirstTurn
+          ? {
+              source: firstTurn.source,
+              fallbackUsed: firstTurn.fallbackUsed,
+              answerSummary: firstTurn.answerSummary,
+              readinessSignal: firstTurn.readinessSignal,
+              bridgeReason: firstTurn.bridgeReason,
+              generatedAt: new Date().toISOString(),
+            }
+          : {
+              source: "placeholder",
+              status: "pending_previous_answer",
+            },
+      },
+    };
+  });
+};
+
+async function getLatestResponsesByQuestion(sessionId: string, questionIds: string[]) {
+  if (questionIds.length === 0) {
+    return new Map<string, Record<string, unknown>>();
+  }
+
+  const { data, error } = await supabase
+    .from("interview_responses")
+    .select("*")
+    .eq("session_id", sessionId)
+    .in("question_id", questionIds)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to load warm-up responses: ${error.message}`);
+  }
+
+  const responsesByQuestion = new Map<string, Record<string, unknown>>();
+  asArray<Record<string, unknown>>(data).forEach((response) => {
+    const questionId = asString(response.question_id);
+    if (questionId) {
+      responsesByQuestion.set(questionId, response);
+    }
+  });
+
+  return responsesByQuestion;
+}
+
+async function updateWarmupResponseAnalysis(
+  response: Record<string, unknown>,
+  warmupAnalysis: Record<string, unknown>,
+) {
+  const responseId = asString(response.id);
+  if (!responseId) {
+    return response;
+  }
+
+  const { data, error } = await supabase
+    .from("interview_responses")
+    .update({
+      metadata: {
+        ...getResponseMetadata(response),
+        warmupAnalysis,
+      },
+    })
+    .eq("id", responseId)
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    console.warn("Failed to persist warm-up response analysis:", error);
+    return response;
+  }
+
+  return data ?? response;
+}
+
+async function advanceConversationalWarmup(
+  sessionId: string,
+  response: Record<string, unknown>,
+) {
+  const questionId = asString(response.question_id);
+  if (!questionId) {
+    return response;
+  }
+
+  const currentQuestion = await getQuestionRecord(questionId);
+  if (!isConversationalWarmupQuestion(currentQuestion)) {
+    return response;
+  }
+
+  const currentMetadata = getQuestionMetadata(currentQuestion);
+  const warmupGroupId = asString(currentMetadata.warmupGroupId);
+  const turnIndex = getWarmupTurnIndex(currentMetadata);
+  const totalTurns = getWarmupTotalTurns(currentMetadata);
+  const fallbackQuestions = asArray<string>(currentMetadata.fallbackQuestions)
+    .map((question) => asString(question))
+    .filter(Boolean);
+  const analyzedAt = new Date().toISOString();
+
+  const baseAnalysis = {
+    sectionKind: "warmup",
+    warmupDynamic: true,
+    warmupGroupId,
+    warmupTurnIndex: turnIndex,
+    warmupTotalTurns: totalTurns,
+    analyzedAt,
+  };
+
+  if (!warmupGroupId || turnIndex >= totalTurns) {
+    return await updateWarmupResponseAnalysis(response, {
+      ...baseAnalysis,
+      warmupCompleted: true,
+    });
+  }
+
+  const allQuestions = await getSessionQuestionRows(sessionId);
+  const groupQuestions = allQuestions
+    .filter((question) => {
+      const metadata = getQuestionMetadata(question);
+      return metadata.warmupGroupId === warmupGroupId;
+    })
+    .sort((left, right) => Number(left.question_order) - Number(right.question_order));
+
+  const nextQuestion = groupQuestions.find((question) =>
+    getWarmupTurnIndex(getQuestionMetadata(question)) === turnIndex + 1
+  );
+
+  if (!nextQuestion) {
+    return await updateWarmupResponseAnalysis(response, {
+      ...baseAnalysis,
+      warmupCompleted: true,
+      warning: "Next conversational warm-up question was not found.",
+    });
+  }
+
+  const responsesByQuestion = await getLatestResponsesByQuestion(
+    sessionId,
+    groupQuestions.map((question) => asString(question.id)).filter(Boolean),
+  );
+  responsesByQuestion.set(questionId, response);
+
+  const previousTurns = groupQuestions
+    .filter((question) => getWarmupTurnIndex(getQuestionMetadata(question)) <= turnIndex)
+    .map((question) => {
+      const questionResponse = responsesByQuestion.get(asString(question.id));
+      const responseMetadata = getResponseMetadata(questionResponse);
+
+      return {
+        turnIndex: getWarmupTurnIndex(getQuestionMetadata(question)),
+        questionText: asString(question.question_text),
+        answerText: asString(questionResponse?.transcription) || asString(questionResponse?.response_text),
+        skipped: Boolean(responseMetadata.skipped),
+      };
+    });
+
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select("title, description")
+    .eq("id", currentQuestion.project_id)
+    .maybeSingle();
+
+  if (projectError) {
+    throw new Error(`Failed to load project for warm-up generation: ${projectError.message}`);
+  }
+
+  const generation = await generateConversationalWarmupQuestion({
+    projectTitle: asString(project?.title),
+    projectDescription: asString(project?.description),
+    sectionTitle: asString(currentQuestion.section) || "Isınma",
+    turnIndex: turnIndex + 1,
+    existingWarmupQuestions: fallbackQuestions,
+    previousTurns,
+  });
+
+  const nextQuestionMetadata = getQuestionMetadata(nextQuestion);
+  const { error: updateQuestionError } = await supabase
+    .from("interview_questions")
+    .update({
+      question_text: generation.questionText,
+      metadata: {
+        ...nextQuestionMetadata,
+        source: "warmup_llm_followup",
+        warmupGeneration: {
+          source: generation.source,
+          fallbackUsed: generation.fallbackUsed,
+          answerSummary: generation.answerSummary,
+          readinessSignal: generation.readinessSignal,
+          bridgeReason: generation.bridgeReason,
+          generatedFromQuestionId: questionId,
+          generatedAt: analyzedAt,
+        },
+      },
+    })
+    .eq("id", nextQuestion.id);
+
+  if (updateQuestionError) {
+    throw new Error(`Failed to update conversational warm-up question: ${updateQuestionError.message}`);
+  }
+
+  return await updateWarmupResponseAnalysis(response, {
+    ...baseAnalysis,
+    answerSummary: generation.answerSummary,
+    readinessSignal: generation.readinessSignal,
+    bridgeReason: generation.bridgeReason,
+    nextQuestionId: nextQuestion.id,
+    nextQuestionText: generation.questionText,
+    nextQuestionSource: generation.source,
+    fallbackUsed: generation.fallbackUsed,
+  });
 }
 
 async function initializeAIEnhancedQuestions(
@@ -822,16 +1123,39 @@ async function initializeQuestions(projectId: string, sessionId: string, discuss
   let order = 1;
 
   if (resolvedGuide?.sections) {
-    for (const section of resolvedGuide.sections) {
-      if (!section?.questions) continue;
+    for (const [sectionIndex, section] of asArray<Record<string, unknown>>(resolvedGuide.sections).entries()) {
+      if (!isRecord(section)) continue;
 
-      for (const question of section.questions) {
+      const sectionTitle = asString(section.title) || `Bölüm ${sectionIndex + 1}`;
+
+      if (isConversationalWarmupSectionTitle(sectionTitle)) {
+        const warmupRows = await buildConversationalWarmupQuestionRows({
+          projectId,
+          sessionId,
+          section: {
+            ...section,
+            title: sectionTitle,
+          },
+          sectionIndex,
+          startOrder: order,
+          project: resolved.project,
+        });
+        questions.push(...warmupRows);
+        order += CONVERSATIONAL_WARMUP_TURN_COUNT;
+        continue;
+      }
+
+      const sectionQuestions = asArray<unknown>(section.questions)
+        .map((question) => asString(question))
+        .filter(Boolean);
+
+      for (const question of sectionQuestions) {
         questions.push({
           project_id: projectId,
           session_id: sessionId,
           question_text: question,
           question_order: order++,
-          section: section.title,
+          section: sectionTitle,
           question_type: 'open_ended',
         });
       }
@@ -875,13 +1199,14 @@ async function saveResponse(sessionId: string, responseData: ResponsePayload) {
 
 async function completeQuestion(sessionId: string, questionId: string) {
   console.log('Completing question:', questionId);
-  const response = await saveOrUpdateResponse(sessionId, {
+  let response = await saveOrUpdateResponse(sessionId, {
     questionId,
     isComplete: true,
     metadata: {
       completedAt: new Date().toISOString(),
     },
   });
+  response = await advanceConversationalWarmup(sessionId, response);
   const state = await buildInterviewState(sessionId);
   await finalizeCompletedSession(sessionId, state);
 
@@ -893,7 +1218,7 @@ async function completeQuestion(sessionId: string, questionId: string) {
 
 async function submitResponse(sessionId: string, responseData: ResponsePayload) {
   console.log('Submitting response for session:', sessionId, 'question:', responseData.questionId);
-  const response = await saveOrUpdateResponse(sessionId, {
+  let response = await saveOrUpdateResponse(sessionId, {
     ...responseData,
     isComplete: true,
     metadata: {
@@ -901,6 +1226,7 @@ async function submitResponse(sessionId: string, responseData: ResponsePayload) 
       ...(responseData.metadata ?? {}),
     },
   });
+  response = await advanceConversationalWarmup(sessionId, response);
   await advanceAIEnhancedInterview(sessionId, response);
   const state = await buildInterviewState(sessionId);
   await finalizeCompletedSession(sessionId, state);
@@ -913,7 +1239,7 @@ async function submitResponse(sessionId: string, responseData: ResponsePayload) 
 
 async function skipQuestion(sessionId: string, questionId: string, metadata: Record<string, unknown>) {
   console.log('Skipping question:', questionId);
-  const response = await saveOrUpdateResponse(sessionId, {
+  let response = await saveOrUpdateResponse(sessionId, {
     questionId,
     transcription: '',
     responseText: '',
@@ -924,6 +1250,7 @@ async function skipQuestion(sessionId: string, questionId: string, metadata: Rec
       ...metadata,
     },
   });
+  response = await advanceConversationalWarmup(sessionId, response);
   await advanceAIEnhancedInterview(sessionId, response);
   const state = await buildInterviewState(sessionId);
   await finalizeCompletedSession(sessionId, state);
