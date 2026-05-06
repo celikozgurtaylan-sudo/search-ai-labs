@@ -70,6 +70,7 @@ type ResponseDiagnosticStage =
 type SubmitResponseOptions = {
   audioDurationMs?: number;
   metadata?: Record<string, unknown>;
+  skipReviewOnFailure?: boolean;
 };
 
 const blobToBase64 = (blob: Blob): Promise<string> =>
@@ -141,13 +142,35 @@ const shouldRequireTranscriptReview = (transcript: string) => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const normalizeWarmupLabel = (value: unknown) =>
+  String(value ?? '')
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ç/g, 'c')
+    .replace(/ğ/g, 'g')
+    .replace(/ı/g, 'i')
+    .replace(/ö/g, 'o')
+    .replace(/ş/g, 's')
+    .replace(/ü/g, 'u');
+
+const isWarmupLabel = (value: unknown) => {
+  const normalized = normalizeWarmupLabel(value);
+  return (
+    normalized.includes('isinma') ||
+    normalized.includes('warmup') ||
+    normalized.includes('warm-up') ||
+    normalized.includes('warm up')
+  );
+};
+
 const isConversationalWarmupQuestion = (question?: InterviewQuestion | null) => {
   if (!question) return false;
 
   const metadata = isRecord(question.metadata) ? question.metadata : {};
   return (
     question.question_type === 'warmup_conversational' ||
-    (metadata.sectionKind === 'warmup' && metadata.warmupDynamic === true)
+    (metadata.sectionKind === 'warmup' && metadata.warmupDynamic === true) ||
+    isWarmupLabel(question.section) ||
+    isWarmupLabel(metadata.sectionTitle)
   );
 };
 
@@ -897,6 +920,19 @@ const SearchoAI = ({
       pendingResponseMediaRef.current = mediaToPersist;
       setEditableTranscript(normalizedTranscript);
       setUserTranscript(normalizedTranscript);
+      if (options.skipReviewOnFailure) {
+        enterRecoveryState('Isınma yanıtı otomatik kaydedilemedi. Aynı soruda yeniden deneyebilirsiniz.', {
+          resume: false,
+          allowGraceIfNeeded: false,
+        });
+        toast({
+          title: 'Isınma yanıtı kaydedilemedi',
+          description: 'Onay kutusu açılmadan aynı soruda yeniden kayıt alabilirsiniz.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       setInterviewPhase('review');
       toast({
         title: 'Hata',
@@ -906,7 +942,7 @@ const SearchoAI = ({
     } finally {
       setIsSubmittingResponse(false);
     }
-  }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, persistResponseDiagnostic, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, toast, uploadResponseMedia]);
+  }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, enterRecoveryState, persistResponseDiagnostic, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, toast, uploadResponseMedia]);
 
   const requestMediaRecovery = useCallback((reason: MicFailureCode, message?: string | null) => {
     onMediaRecoveryRequested?.(reason);
@@ -1072,6 +1108,7 @@ const SearchoAI = ({
 
           await submitCurrentResponse(normalizedTranscript, {
             audioDurationMs: totalDurationMs,
+            skipReviewOnFailure: true,
             metadata: {
               autoSubmittedWarmup: true,
               transcriptReviewSkipped: true,

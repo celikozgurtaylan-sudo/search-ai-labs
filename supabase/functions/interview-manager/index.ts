@@ -421,7 +421,8 @@ const isConversationalWarmupQuestion = (question: Record<string, unknown> | null
   const metadata = getQuestionMetadata(question);
   return (
     question.question_type === "warmup_conversational" ||
-    (metadata.sectionKind === "warmup" && metadata.warmupDynamic === true)
+    (metadata.sectionKind === "warmup" && metadata.warmupDynamic === true) ||
+    isConversationalWarmupSectionTitle(asString(question.section))
   );
 };
 
