@@ -1,9 +1,11 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { restoreTurkishCharacters } from "../_shared/turkish-text.ts";
 
 const elevenlabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
-const DEFAULT_VOICE = '9BWtsMINqrJLrRacOk9x';
-const ELEVENLABS_MODEL = 'eleven_multilingual_v2';
+const PRIMARY_TURKISH_VOICE = Deno.env.get('ELEVENLABS_TURKISH_VOICE_ID') || 'Hvrobr8BhLPfiaSv2cHi'; // Gamze Özdemir - Turkish Female Narrator
+const FALLBACK_VOICE = Deno.env.get('ELEVENLABS_FALLBACK_VOICE_ID') || '9BWtsMINqrJLrRacOk9x';
+const ELEVENLABS_MODEL = Deno.env.get('ELEVENLABS_TTS_MODEL') || 'eleven_multilingual_v2';
 const ELEVENLABS_TIMEOUT_MS = 12000;
 
 class TTSError extends Error {
@@ -55,7 +57,7 @@ const toBase64Audio = (arrayBuffer: ArrayBuffer) => {
 };
 
 const normalizeTextForSpeech = (value: string) => {
-  const collapsedWhitespace = value
+  const collapsedWhitespace = restoreTurkishCharacters(value)
     .replace(/\s+/g, ' ')
     .replace(/\s+([,.;:!?])/g, '$1')
     .replace(/([.!?])(?=[^\s])/g, '$1 ')
@@ -70,7 +72,7 @@ const normalizeTextForSpeech = (value: string) => {
     : `${collapsedWhitespace}?`;
 };
 
-async function generateWithElevenLabs(text: string) {
+async function generateWithElevenLabs(text: string, voiceId: string) {
   if (!elevenlabsApiKey) {
     throw new TTSError('ElevenLabs API key not configured', 500, 'missing_elevenlabs_key');
   }
@@ -79,7 +81,7 @@ async function generateWithElevenLabs(text: string) {
   const timeoutId = setTimeout(() => controller.abort(), ELEVENLABS_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${DEFAULT_VOICE}`, {
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
       headers: {
         'Accept': 'audio/mpeg',
@@ -101,17 +103,23 @@ async function generateWithElevenLabs(text: string) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      let parsedError: any = null;
+      let parsedError: Record<string, unknown> | null = null;
 
       try {
-        parsedError = JSON.parse(errorText);
+        const errorJson = JSON.parse(errorText);
+        parsedError = typeof errorJson === 'object' && errorJson !== null
+          ? errorJson as Record<string, unknown>
+          : null;
       } catch {
         parsedError = null;
       }
 
-      const quotaStatus = parsedError?.detail?.status;
-      const quotaMessage = parsedError?.detail?.message;
-      const quotaMatch = typeof quotaMessage === 'string'
+      const detail = parsedError?.detail && typeof parsedError.detail === 'object'
+        ? parsedError.detail as Record<string, unknown>
+        : null;
+      const quotaStatus = detail?.status;
+      const quotaMessage = typeof detail?.message === 'string' ? detail.message : null;
+      const quotaMatch = quotaMessage
         ? quotaMessage.match(/have\s+(\d+)\s+credits\s+remaining,\s+while\s+(\d+)\s+credits\s+are\s+required/i)
         : null;
 
@@ -177,16 +185,40 @@ serve(async (req) => {
     }
 
     console.log('Generating Turkish TTS for text:', normalizedText.substring(0, 50) + '...');
-    console.log('Using fixed ElevenLabs voice:', DEFAULT_VOICE);
+    console.log('Using ElevenLabs Turkish voice:', PRIMARY_TURKISH_VOICE);
 
-    const audioContent = await generateWithElevenLabs(normalizedText);
+    let voiceId = PRIMARY_TURKISH_VOICE;
+    let audioContent: string;
+
+    try {
+      audioContent = await generateWithElevenLabs(normalizedText, voiceId);
+    } catch (error) {
+      const canRetryWithFallback =
+        voiceId !== FALLBACK_VOICE &&
+        error instanceof TTSError &&
+        error.providerStatus !== undefined &&
+        [400, 403, 404].includes(error.providerStatus) &&
+        error.code !== 'quota_exceeded';
+
+      if (!canRetryWithFallback) {
+        throw error;
+      }
+
+      console.warn('Primary Turkish ElevenLabs voice unavailable, falling back to Aria:', {
+        voiceId,
+        providerStatus: error.providerStatus,
+      });
+      voiceId = FALLBACK_VOICE;
+      audioContent = await generateWithElevenLabs(normalizedText, voiceId);
+    }
 
     return new Response(
       JSON.stringify({
         audioContent,
         text: normalizedText,
         source: 'elevenlabs',
-        voiceId: DEFAULT_VOICE,
+        voiceId,
+        modelId: ELEVENLABS_MODEL,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

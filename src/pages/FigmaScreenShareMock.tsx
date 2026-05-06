@@ -26,12 +26,12 @@ const createScreenSvg = (accent: string, title: string, subtitle: string, cta: s
       <rect x="108" y="230" width="204" height="24" rx="12" fill="rgba(91,50,168,0.18)"/>
       <rect x="108" y="280" width="434" height="120" rx="28" fill="#FFFFFF"/>
       <rect x="108" y="432" width="208" height="72" rx="36" fill="${accent}"/>
-      <text x="360" y="672" text-anchor="middle" font-family="Arial, sans-serif" font-size="58" font-weight="700" fill="#1F1635">${title}</text>
-      <text x="360" y="746" text-anchor="middle" font-family="Arial, sans-serif" font-size="32" fill="#4C4460">${subtitle}</text>
+      <text x="360" y="672" text-anchor="middle" font-family="Noto Sans, Arial, sans-serif" font-size="58" font-weight="700" fill="#1F1635">${title}</text>
+      <text x="360" y="746" text-anchor="middle" font-family="Noto Sans, Arial, sans-serif" font-size="32" fill="#4C4460">${subtitle}</text>
       <rect x="88" y="836" width="544" height="126" rx="38" fill="rgba(255,255,255,0.92)"/>
-      <text x="360" y="914" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#2F1B55">${cta}</text>
+      <text x="360" y="914" text-anchor="middle" font-family="Noto Sans, Arial, sans-serif" font-size="36" font-weight="700" fill="#2F1B55">${cta}</text>
       <rect x="88" y="990" width="544" height="92" rx="34" fill="rgba(46,20,96,0.08)" stroke="rgba(46,20,96,0.18)" stroke-width="4"/>
-      <text x="360" y="1048" text-anchor="middle" font-family="Arial, sans-serif" font-size="32" fill="#5B4C7E">Ikincil eylem</text>
+      <text x="360" y="1048" text-anchor="middle" font-family="Noto Sans, Arial, sans-serif" font-size="32" fill="#5B4C7E">İkincil eylem</text>
       <rect x="248" y="1154" width="224" height="10" rx="5" fill="rgba(31,22,53,0.18)"/>
     </svg>
   `);
@@ -42,36 +42,36 @@ const mockScreens = [
     name: "Promosyon Pop-up",
     source: "Figma paste",
     device: "Mobil",
-    url: createScreenSvg("#7C4DFF", "Ramazan Hediyesi", "Ilk gorunuste net mi?", "Hemen Katil"),
+    url: createScreenSvg("#7C4DFF", "Ramazan Hediyesi", "İlk görünüşte net mi?", "Hemen Katıl"),
   },
   {
     id: "signup-sheet",
-    name: "Kayit Alt Ekrani",
+    name: "Kayıt Alt Ekranı",
     source: "Figma paste",
     device: "Mobil",
-    url: createScreenSvg("#5B8CFF", "Dakikalar Icinde Kayit", "Form alanlari guven veriyor mu?", "Kaydi Baslat"),
+    url: createScreenSvg("#5B8CFF", "Dakikalar İçinde Kayıt", "Form alanları güven veriyor mu?", "Kaydı Başlat"),
   },
   {
     id: "plan-compare",
-    name: "Paket Karsilastirma",
+    name: "Paket Karşılaştırma",
     source: "Figma paste",
     device: "Desktop",
-    url: createScreenSvg("#B48CFF", "Paketini Sec", "Karar vermek yeterince kolay mi?", "Devam Et"),
+    url: createScreenSvg("#B48CFF", "Paketini Seç", "Karar vermek yeterince kolay mı?", "Devam Et"),
   },
 ];
 
 const questionCards = [
-  "Bu ekran ilk bakista ne anlatiyor?",
-  "Katilimciyi en hizli hangi goreve yonlendirmeliyiz?",
-  "Hangi metin veya buton guven duygusunu zedeliyor olabilir?",
-  "Katilimci neyi yanlis anlayabilir ya da atlayabilir?",
+  "Bu ekran ilk bakışta ne anlatıyor?",
+  "Katılımcıyı en hızlı hangi göreve yönlendirmeliyiz?",
+  "Hangi metin veya buton güven duygusunu zedeliyor olabilir?",
+  "Katılımcı neyi yanlış anlayabilir ya da atlayabilir?",
 ];
 
 const FigmaScreenShareMock = () => {
   const [activeScreenId, setActiveScreenId] = useState(mockScreens[0].id);
-  const [objective, setObjective] = useState("Bu promosyon pop-up'inin ilk gorunuste ne kadar anlasildigini ve kullanicinin ana CTA'yi fark edip etmedigini olcmek istiyorum.");
-  const [primaryTask, setPrimaryTask] = useState("Kullanicidan kampanyaya katilmak isteyip istemedigine karar vermesini ve uygun aksiyonu secmesini bekliyoruz.");
-  const [targetUsers, setTargetUsers] = useState("Mobil bankacilik kullanan, kampanya ve cekilis deneyimine asina yetiskinler");
+  const [objective, setObjective] = useState("Bu promosyon pop-up'ının ilk görünüşte ne kadar anlaşıldığını ve kullanıcının ana CTA'yı fark edip etmediğini ölçmek istiyorum.");
+  const [primaryTask, setPrimaryTask] = useState("Kullanıcıdan kampanyaya katılmak isteyip istemediğine karar vermesini ve uygun aksiyonu seçmesini bekliyoruz.");
+  const [targetUsers, setTargetUsers] = useState("Mobil bankacılık kullanan, kampanya ve çekiliş deneyimine aşina yetişkinler");
 
   const activeScreen = useMemo(
     () => mockScreens.find((screen) => screen.id === activeScreenId) ?? mockScreens[0],
@@ -88,7 +88,7 @@ const FigmaScreenShareMock = () => {
               className="inline-flex items-center gap-2 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary"
             >
               <ArrowLeft className="h-4 w-4" />
-              Ana sayfaya don
+              Ana sayfaya dön
             </Link>
             <div className="space-y-2">
               <div className="flex items-center gap-3">
@@ -100,18 +100,18 @@ const FigmaScreenShareMock = () => {
                 </Badge>
               </div>
               <h1 className="text-3xl font-semibold tracking-tight text-text-primary md:text-5xl">
-                Figma ekran paylasimi icin canli mock
+                Figma ekran paylaşımı için canlı mock
               </h1>
               <p className="max-w-3xl text-base leading-7 text-text-secondary md:text-lg">
-                Bu yuzey backend bagimsizdir. Placeholder ekranlar ve usability intake ile screen-share deneyimini
-                localhost'ta hizli iterate etmek icin hazirlandi.
+                Bu yüzey backend bağımsızdır. Placeholder ekranlar ve usability intake ile screen-share deneyimini
+                localhost'ta hızlı iterate etmek için hazırlandı.
               </p>
             </div>
           </div>
 
           <Button asChild className="rounded-full bg-brand-primary px-6 text-white hover:bg-brand-primary-hover">
             <a href="http://127.0.0.1:5173/mock/figma-screen-share" target="_self" rel="noreferrer">
-              Bu mock'u acik tut
+              Bu mock'u açık tut
             </a>
           </Button>
         </div>
@@ -124,9 +124,9 @@ const FigmaScreenShareMock = () => {
                 Figma intake
               </div>
               <div className="space-y-2">
-                <CardTitle className="text-2xl text-text-primary">Paste-first ekran girisi</CardTitle>
+                <CardTitle className="text-2xl text-text-primary">Paste-first ekran girişi</CardTitle>
                 <CardDescription className="text-sm leading-6 text-text-secondary">
-                  Figma'dan kopyalanmis ekranlar Searcho'ya gelir. Burada sadece placeholder kullaniyoruz.
+                  Figma'dan kopyalanmış ekranlar Searcho'ya gelir. Burada sadece placeholder kullanıyoruz.
                 </CardDescription>
               </div>
             </CardHeader>
@@ -138,9 +138,9 @@ const FigmaScreenShareMock = () => {
                     <ImageIcon className="h-5 w-5 text-brand-primary" />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-sm font-medium text-text-primary">Figma ekranini yapistir</p>
+                    <p className="text-sm font-medium text-text-primary">Figma ekranını yapıştır</p>
                     <p className="text-sm leading-6 text-text-secondary">
-                      Bu local mock'ta gercek paste gerekmiyor. Asagidaki ekranlar placeholder olarak yuklu geldi.
+                      Bu local mock'ta gerçek paste gerekmiyor. Aşağıdaki ekranlar placeholder olarak yüklü geldi.
                     </p>
                   </div>
                 </div>
@@ -148,7 +148,7 @@ const FigmaScreenShareMock = () => {
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-text-primary">Hazir ekranlar</p>
+                  <p className="text-sm font-medium text-text-primary">Hazır ekranlar</p>
                   <Badge variant="outline" className="rounded-full">
                     {mockScreens.length} ekran
                   </Badge>
@@ -213,8 +213,8 @@ const FigmaScreenShareMock = () => {
                   </div>
                   <CardTitle className="text-2xl text-text-primary">{activeScreen.name}</CardTitle>
                   <CardDescription className="text-sm leading-6 text-text-secondary">
-                    Burasi gorusmede katilimciya gosterilecek ekranin mock sahnesi. Boyut, hiza ve readability burada
-                    tartisilabilir.
+                    Burası görüşmede katılımcıya gösterilecek ekranın mock sahnesi. Boyut, hizalama ve readability burada
+                    tartışılabilir.
                   </CardDescription>
                 </div>
 
@@ -248,18 +248,18 @@ const FigmaScreenShareMock = () => {
                     </div>
                     <div className="space-y-3 text-sm leading-6 text-text-secondary">
                       <p>
-                        Bu panelde aktif ekran buyuk ve ortali duruyor. Katilimcinin gorevi okumadan once ekranin kendi
-                        kendini ne kadar anlattigi degerlendirilebilir.
+                        Bu panelde aktif ekran büyük ve ortalı duruyor. Katılımcının görevi okumadan önce ekranın kendi
+                        kendini ne kadar anlattığı değerlendirilebilir.
                       </p>
                       <p>
-                        Intake cevaplari sadece placeholder; istersen burada copy, spacing veya framing degisikliklerini
-                        birlikte hizli iterate edebiliriz.
+                        Intake cevapları sadece placeholder; istersen burada copy, spacing veya framing değişikliklerini
+                        birlikte hızlı iterate edebiliriz.
                       </p>
                     </div>
                   </div>
 
                   <div className="rounded-[28px] border border-border-light bg-white p-5">
-                    <p className="mb-4 text-sm font-medium text-text-primary">Katilimciya sorulacak ornek sorular</p>
+                    <p className="mb-4 text-sm font-medium text-text-primary">Katılımcıya sorulacak örnek sorular</p>
                     <div className="space-y-3">
                       {questionCards.map((question) => (
                         <div key={question} className="rounded-2xl border border-border-light bg-[#f8f7fb] px-4 py-3 text-sm text-text-primary">

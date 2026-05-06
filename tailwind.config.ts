@@ -135,7 +135,7 @@ export default {
     		},
     		fontFamily: {
     			sans: [
-    				'Lato',
+            'Noto Sans',
     				'ui-sans-serif',
     				'system-ui',
     				'-apple-system',
@@ -144,11 +144,10 @@ export default {
     				'Roboto',
     				'Helvetica Neue',
     				'Arial',
-    				'Noto Sans',
     				'sans-serif'
     			],
     			serif: [
-    				'EB Garamond',
+            'Noto Serif',
     				'ui-serif',
     				'Georgia',
     				'Cambria',
@@ -157,7 +156,7 @@ export default {
     				'serif'
     			],
     			mono: [
-    				'Fira Code',
+            'Noto Sans Mono',
     				'ui-monospace',
     				'SFMono-Regular',
     				'Menlo',

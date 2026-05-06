@@ -3,6 +3,10 @@ import {
   cleanQuestion,
   normalizeForMatch,
 } from "./question-quality.ts";
+import {
+  restoreTurkishCharacters,
+  TURKISH_ORTHOGRAPHY_PROMPT,
+} from "./turkish-text.ts";
 
 const MODEL = Deno.env.get("ORCHESTRATOR_MODEL") || "gpt-4.1";
 
@@ -87,7 +91,7 @@ const normalizeQuestion = (value: unknown) => {
   const firstLine = typeof value === "string"
     ? value.split("\n").map((line) => line.trim()).find(Boolean) || ""
     : "";
-  const cleaned = cleanQuestion(firstLine)
+  const cleaned = cleanQuestion(restoreTurkishCharacters(firstLine))
     .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
     .replace(/^\d+[.)]\s*/, "")
     .replace(/^[-*]\s*/, "");
@@ -114,7 +118,7 @@ const getFallbackLeadIn = (input: GenerateConversationalWarmupQuestionInput) => 
 
 const normalizeLeadIn = (value: unknown, input: GenerateConversationalWarmupQuestionInput) => {
   const cleaned = typeof value === "string"
-    ? cleanQuestion(value)
+    ? cleanQuestion(restoreTurkishCharacters(value))
       .replace(/[?]+/g, "")
       .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
     : "";
@@ -183,7 +187,7 @@ export const buildConversationalWarmupFallbacks = (existingWarmupQuestions: stri
   ]).slice(0, CONVERSATIONAL_WARMUP_TURN_COUNT);
 
 const getFallbackQuestion = (input: GenerateConversationalWarmupQuestionInput) => {
-  const themeTitle = input.warmupContext?.themes?.map((theme) => cleanQuestion(theme)).find(Boolean);
+  const themeTitle = input.warmupContext?.themes?.map((theme) => cleanQuestion(restoreTurkishCharacters(theme))).find(Boolean);
   if (themeTitle) {
     const themeFallbacks = [
       `${themeTitle} denince aklınıza ilk ne geliyor?`,
@@ -210,7 +214,7 @@ const stringifyPreviousTurns = (previousTurns: WarmupPreviousTurn[] = []) => {
       const answer = turn.skipped
         ? "[katılımcı bu soruyu atladı]"
         : (turn.answerText || "[boş yanıt]");
-      return `${turn.turnIndex}. Soru: ${turn.questionText}\nYanıt: ${answer}`;
+      return `${turn.turnIndex}. Soru: ${restoreTurkishCharacters(turn.questionText)}\nYanıt: ${restoreTurkishCharacters(answer)}`;
     })
     .join("\n\n");
 };
@@ -221,11 +225,11 @@ const stringifyWarmupContext = (context?: ConversationalWarmupContext) => {
   }
 
   const lines = [
-    `Amaç: ${context.objective || "Belirtilmedi"}`,
-    `Hedef kitle: ${context.audience || "Belirtilmedi"}`,
-    `Karar alanı: ${context.decisionScope || "Belirtilmedi"}`,
-    `Temalar: ${context.themes?.filter(Boolean).join(" | ") || "Belirtilmedi"}`,
-    `Mutlaka kapsanacak alanlar: ${context.mustCover?.filter(Boolean).join(" | ") || "Belirtilmedi"}`,
+    `Amaç: ${restoreTurkishCharacters(context.objective || "Belirtilmedi")}`,
+    `Hedef kitle: ${restoreTurkishCharacters(context.audience || "Belirtilmedi")}`,
+    `Karar alanı: ${restoreTurkishCharacters(context.decisionScope || "Belirtilmedi")}`,
+    `Temalar: ${context.themes?.filter(Boolean).map(restoreTurkishCharacters).join(" | ") || "Belirtilmedi"}`,
+    `Mutlaka kapsanacak alanlar: ${context.mustCover?.filter(Boolean).map(restoreTurkishCharacters).join(" | ") || "Belirtilmedi"}`,
   ];
 
   return lines.join("\n");
@@ -237,8 +241,8 @@ const buildPrompt = (input: GenerateConversationalWarmupQuestionInput) => {
     .join("\n");
 
   return `Mod: ${input.interviewMode === "ai_enhanced" ? "Agentic / AI Enhanced" : "Structured"}
-Proje başlığı: ${input.projectTitle || "Belirtilmedi"}
-Proje açıklaması: ${input.projectDescription || "Belirtilmedi"}
+Proje başlığı: ${restoreTurkishCharacters(input.projectTitle || "Belirtilmedi")}
+Proje açıklaması: ${restoreTurkishCharacters(input.projectDescription || "Belirtilmedi")}
 Bölüm: ${input.sectionTitle || "Isınma"}
 Isınma turu: ${input.turnIndex} / ${CONVERSATIONAL_WARMUP_TURN_COUNT}
 
@@ -269,6 +273,7 @@ Amaç:
 
 Kurallar:
 - Türkçe karakterleri eksiksiz kullan.
+- ${TURKISH_ORTHOGRAPHY_PROMPT}
 - Soru gündelik, düşük baskılı ve konuşma dilinde olsun.
 - Soru tek cümle, tek odak ve kısa olsun.
 - spokenLeadIn soru içermesin; katılımcıyı mekanik şekilde özetlemesin.

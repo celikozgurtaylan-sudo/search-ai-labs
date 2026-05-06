@@ -1,5 +1,9 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  restoreTurkishCharacters,
+  TURKISH_ORTHOGRAPHY_PROMPT,
+} from "../_shared/turkish-text.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -87,36 +91,37 @@ const RESPONSE_FORMAT = {
   },
 };
 
-const SYSTEM_PROMPT = `Sen Searcho'nun AI enhanced arastirma planlama asistanisin.
+const SYSTEM_PROMPT = `Sen Searcho'nun AI enhanced araştırma planlama asistanısın.
 
-Gorevin sabit soru listesi gostermek degil, once arastirma baglamini yuzde yuz anlamak.
+Görevin sabit soru listesi göstermek değil, önce araştırma bağlamını yüzde yüz anlamak.
 
 Kurallar:
-- Kullaniciya tek seferde en fazla 1 netlestirici soru sor.
+- Kullanıcıya tek seferde en fazla 1 netleştirici soru sor.
 - Robotik, kurumsal ve yapay nezaket kullanma.
-- Kisa yaz, net yaz.
-- Baglam tam degilse isReady=false don.
-- Baglam tam ise isReady=true don ve yarı yapılandırılmış gorusme icin ortak anchor planini hazirla.
-- Anchor plan tum katilimcilarda ayni omurgayi korumali.
-- Follow-up sorular interview sirasinda dinamik olacagi icin brief icinde yalnizca ortak theme ve anchor sorularini tut.
-- Anchor sorular tek odakli, tarafsiz ve acik uclu olmali.
-- Anchor soru metninde mumkunse "ve" kullanma.
+- Kısa yaz, net yaz.
+- Bağlam tam değilse isReady=false dön.
+- Bağlam tam ise isReady=true dön ve yarı yapılandırılmış görüşme için ortak anchor planını hazırla.
+- Anchor plan tüm katılımcılarda aynı omurgayı korumalı.
+- Follow-up sorular interview sırasında dinamik olacağı için brief içinde yalnızca ortak theme ve anchor sorularını tut.
+- Anchor sorular tek odaklı, tarafsız ve açık uçlu olmalı.
+- Anchor soru metninde mümkünse "ve" kullanma.
+- ${TURKISH_ORTHOGRAPHY_PROMPT}
 
 Readiness kriteri:
 - objective net
 - audience net
 - decisionScope net
-- mustCover basliklari yeterince acik
+- mustCover başlıkları yeterince açık
 
-Readiness 100 degilse anchor plani eksik birakabilirsin veya bos donebilirsin.
+Readiness 100 değilse anchor planı eksik bırakabilirsin veya boş dönebilirsin.
 Readiness 100 ise:
-- 3 ila 5 theme uret
-- 5 ila 7 anchor soru uret
+- 3 ila 5 theme üret
+- 5 ila 7 anchor soru üret
 - isReady=true
 - brief.status="ready"
 
-Tum cevaplar Turkce olacak.
-Yalnizca gecerli JSON dondur.`;
+Tüm cevaplar Türkçe olacak.
+Yalnızca geçerli JSON döndür.`;
 
 const sanitizeId = (value: string, fallback: string) =>
   value
@@ -148,7 +153,7 @@ const buildConversationWindow = (history: Array<Record<string, unknown>>, existi
   const derivedSummary = olderHistory
     .slice(-MAX_SUMMARY_ITEMS)
     .map((entry) =>
-      `${entry.role === "assistant" ? "Asistan" : "Kullanici"}: ${truncateText(entry.content, MAX_SUMMARY_CHARS)}`,
+      `${entry.role === "assistant" ? "Asistan" : "Kullanıcı"}: ${truncateText(entry.content, MAX_SUMMARY_CHARS)}`,
     )
     .join("\n");
 
@@ -335,7 +340,7 @@ ${themes}
 Anchor sorular:
 ${anchorQuestions}
 
-Bu brief'i guncelle ve eksik kisimlari tamamla.`;
+Bu brief'i güncelle ve eksik kısımları tamamla.`;
 };
 
 const normalizePlannerOutput = (raw: Record<string, unknown>) => {
@@ -343,8 +348,8 @@ const normalizePlannerOutput = (raw: Record<string, unknown>) => {
   const normalizedThemes = asArray<Record<string, unknown>>(rawBrief.themes)
     .map((theme, index) => ({
       id: sanitizeId(asString(theme.id) || asString(theme.title), `theme-${index + 1}`),
-      title: asString(theme.title) || `Tema ${index + 1}`,
-      goal: asString(theme.goal),
+      title: restoreTurkishCharacters(asString(theme.title) || `Tema ${index + 1}`),
+      goal: restoreTurkishCharacters(asString(theme.goal)),
     }))
     .filter((theme) => theme.title.length > 0);
 
@@ -355,15 +360,15 @@ const normalizePlannerOutput = (raw: Record<string, unknown>) => {
         asString(question.themeId) || normalizedThemes[index % Math.max(normalizedThemes.length, 1)]?.id || "theme-1",
         `theme-${(index % Math.max(normalizedThemes.length, 1)) + 1}`,
       ),
-      text: asString(question.text),
+      text: restoreTurkishCharacters(asString(question.text)),
     }))
     .filter((question) => question.text.length > 0);
 
-  const objective = asString(rawBrief.objective);
-  const audience = asString(rawBrief.audience);
-  const decisionScope = asString(rawBrief.decisionScope);
-  const constraints = asString(rawBrief.constraints);
-  const mustCover = asArray<string>(rawBrief.mustCover).map((item) => asString(item)).filter(Boolean);
+  const objective = restoreTurkishCharacters(asString(rawBrief.objective));
+  const audience = restoreTurkishCharacters(asString(rawBrief.audience));
+  const decisionScope = restoreTurkishCharacters(asString(rawBrief.decisionScope));
+  const constraints = restoreTurkishCharacters(asString(rawBrief.constraints));
+  const mustCover = asArray<string>(rawBrief.mustCover).map((item) => restoreTurkishCharacters(asString(item))).filter(Boolean);
 
   const hasReadyCore =
     objective.length > 0 &&
@@ -377,7 +382,7 @@ const normalizePlannerOutput = (raw: Record<string, unknown>) => {
   const isReady = Boolean(raw.isReady) && readiness >= 100 && hasReadyCore;
 
   return {
-    reply: asString(raw.reply) || "Bağlamı biraz daha netleştirelim.",
+    reply: restoreTurkishCharacters(asString(raw.reply)) || "Bağlamı biraz daha netleştirelim.",
     contextReadiness: isReady ? 100 : Math.min(readiness, 95),
     isReady,
     brief: {
@@ -424,15 +429,15 @@ serve(async (req) => {
       { role: "system", content: SYSTEM_PROMPT },
       {
         role: "user",
-        content: `Proje basligi: ${projectTitle || "Belirtilmedi"}
-Ilk proje aciklamasi: ${projectDescription || "Belirtilmedi"}`,
+        content: `Proje başlığı: ${projectTitle || "Belirtilmedi"}
+İlk proje açıklaması: ${projectDescription || "Belirtilmedi"}`,
       },
     ];
 
     if (summary) {
       messages.push({
         role: "system",
-        content: `Konusmanin onceki ozeti:\n${summary}`,
+        content: `Konuşmanın önceki özeti:\n${summary}`,
       });
     }
 

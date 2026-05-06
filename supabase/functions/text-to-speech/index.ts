@@ -1,4 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { restoreTurkishCharacters } from "../_shared/turkish-text.ts";
+
+const PRIMARY_TURKISH_VOICE = Deno.env.get('ELEVENLABS_TURKISH_VOICE_ID') || 'Hvrobr8BhLPfiaSv2cHi'; // Gamze Özdemir - Turkish Female Narrator
+const FALLBACK_VOICE = Deno.env.get('ELEVENLABS_FALLBACK_VOICE_ID') || '9BWtsMINqrJLrRacOk9x';
+const ELEVENLABS_MODEL = Deno.env.get('ELEVENLABS_TTS_MODEL') || 'eleven_multilingual_v2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,11 +28,15 @@ serve(async (req) => {
       throw new Error('ElevenLabs API key not configured');
     }
 
-    console.log('Converting text to speech:', text.substring(0, 50) + '...');
+    const normalizedText = restoreTurkishCharacters(String(text)).replace(/\s+/g, ' ').trim();
+    if (!normalizedText) {
+      throw new Error('Text is required');
+    }
 
-    // Use Aria voice (Turkish-friendly) with Multilingual v2 model
-    const voiceId = '9BWtsMINqrJLrRacOk9x'; // Aria
-    const response = await fetch(
+    console.log('Converting text to speech:', normalizedText.substring(0, 50) + '...');
+
+    let voiceId = PRIMARY_TURKISH_VOICE;
+    let response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       {
         method: 'POST',
@@ -37,17 +46,46 @@ serve(async (req) => {
           'xi-api-key': elevenLabsApiKey,
         },
         body: JSON.stringify({
-          text,
-          model_id: 'eleven_multilingual_v2',
+          text: normalizedText,
+          model_id: ELEVENLABS_MODEL,
           voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            style: 0.0,
-            use_speaker_boost: true,
+            stability: 0.68,
+            similarity_boost: 0.72,
+            style: 0.04,
+            use_speaker_boost: false,
           },
         }),
       }
     );
+
+    if (!response.ok && voiceId !== FALLBACK_VOICE && [400, 403, 404].includes(response.status)) {
+      console.warn('Primary Turkish ElevenLabs voice unavailable, falling back to Aria:', {
+        voiceId,
+        providerStatus: response.status,
+      });
+      voiceId = FALLBACK_VOICE;
+      response = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Accept': 'audio/mpeg',
+            'Content-Type': 'application/json',
+            'xi-api-key': elevenLabsApiKey,
+          },
+          body: JSON.stringify({
+            text: normalizedText,
+            model_id: ELEVENLABS_MODEL,
+            voice_settings: {
+              stability: 0.68,
+              similarity_boost: 0.72,
+              style: 0.04,
+              use_speaker_boost: false,
+            },
+          }),
+        }
+      );
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -64,7 +102,7 @@ serve(async (req) => {
     console.log('Successfully generated audio, size:', audioBuffer.byteLength);
 
     return new Response(
-      JSON.stringify({ audioContent: base64Audio }),
+      JSON.stringify({ audioContent: base64Audio, voiceId, modelId: ELEVENLABS_MODEL }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }

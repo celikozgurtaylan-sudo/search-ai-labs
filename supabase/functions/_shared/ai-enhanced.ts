@@ -1,4 +1,8 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import {
+  restoreTurkishCharacters,
+  TURKISH_ORTHOGRAPHY_PROMPT,
+} from "./turkish-text.ts";
 
 const MODEL = Deno.env.get("ORCHESTRATOR_MODEL") || "o4-mini-2025-04-16";
 
@@ -58,8 +62,8 @@ export const normalizeAIEnhancedBrief = (value: unknown): AIEnhancedBrief | null
   const themes = asArray<Record<string, unknown>>(value.themes)
     .map((theme, index) => ({
       id: sanitizeId(asString(theme.id) || asString(theme.title), `theme-${index + 1}`),
-      title: asString(theme.title) || `Tema ${index + 1}`,
-      goal: asString(theme.goal),
+      title: restoreTurkishCharacters(asString(theme.title)) || `Tema ${index + 1}`,
+      goal: restoreTurkishCharacters(asString(theme.goal)),
     }))
     .filter((theme) => theme.title.length > 0);
 
@@ -67,7 +71,7 @@ export const normalizeAIEnhancedBrief = (value: unknown): AIEnhancedBrief | null
     .map((question, index) => ({
       id: sanitizeId(asString(question.id) || asString(question.text), `anchor-${index + 1}`),
       themeId: sanitizeId(asString(question.themeId), themes[0]?.id || `theme-${(index % Math.max(themes.length, 1)) + 1}`),
-      text: asString(question.text),
+      text: restoreTurkishCharacters(asString(question.text)),
     }))
     .filter((question) => question.text.length > 0);
 
@@ -75,11 +79,11 @@ export const normalizeAIEnhancedBrief = (value: unknown): AIEnhancedBrief | null
     mode: "ai_enhanced",
     status: value.status === "ready" ? "ready" : "collecting",
     contextReadiness: typeof value.contextReadiness === "number" ? Math.max(0, Math.min(100, Math.round(value.contextReadiness))) : 0,
-    objective: asString(value.objective),
-    audience: asString(value.audience),
-    decisionScope: asString(value.decisionScope),
-    constraints: asString(value.constraints),
-    mustCover: asArray<string>(value.mustCover).map((item) => asString(item)).filter(Boolean),
+    objective: restoreTurkishCharacters(asString(value.objective)),
+    audience: restoreTurkishCharacters(asString(value.audience)),
+    decisionScope: restoreTurkishCharacters(asString(value.decisionScope)),
+    constraints: restoreTurkishCharacters(asString(value.constraints)),
+    mustCover: asArray<string>(value.mustCover).map((item) => restoreTurkishCharacters(asString(item))).filter(Boolean),
     themes,
     anchorQuestions,
     plannerTranscript: asArray<Record<string, unknown>>(value.plannerTranscript)
@@ -128,30 +132,31 @@ export async function generateAIEnhancedFollowUp(input: {
     };
   }
 
-  const systemPrompt = `Sen Searcho'nun AI enhanced gorusme moderasyon motorusun.
+  const systemPrompt = `Sen Searcho'nun AI enhanced görüşme moderasyon motorusun.
 
-Amac:
-- Tum katilimcilarda ayni anchor omurgayi koru
-- Cevaba gore en fazla 1 tarafsiz derinlestirme sorusu uret
+Amaç:
+- Tüm katılımcılarda aynı anchor omurgayı koru
+- Cevaba göre en fazla 1 tarafsız derinleştirme sorusu üret
 - Gereksiz tekrar yapma
 
 Kurallar:
-- Follow-up tek odakli olsun
-- Mumkunse soru metninde "ve" kullanma
-- Yonlendirici, varsayim iceren veya cevabi ima eden soru sorma
-- Katilimci zaten detayli yanit verdiyse decision=next_anchor don
-- Yeni soru gerekliyse decision=follow_up don ve followUpQuestion doldur
-- Cevap bosa yakin veya skip ise decision=next_anchor don`;
+- Follow-up tek odaklı olsun
+- Mümkünse soru metninde "ve" kullanma
+- Yönlendirici, varsayım içeren veya cevabı ima eden soru sorma
+- Katılımcı zaten detaylı yanıt verdiyse decision=next_anchor dön
+- Yeni soru gerekliyse decision=follow_up dön ve followUpQuestion doldur
+- Cevap boşa yakın veya skip ise decision=next_anchor dön
+- ${TURKISH_ORTHOGRAPHY_PROMPT}`;
 
-  const userPrompt = `Arastirma amaci: ${input.brief.objective}
+  const userPrompt = `Araştırma amacı: ${input.brief.objective}
 Hedef kitle: ${input.brief.audience}
-Karar alani: ${input.brief.decisionScope}
+Karar alanı: ${input.brief.decisionScope}
 Tema: ${input.themeTitle}
 Anchor soru: ${input.anchorQuestion.text}
-Katilimci cevabi: ${input.participantAnswer || "[bos]"}
-Bu anchor icin daha once sorulan follow-up'lar: ${input.previousFollowUps.join(" | ") || "Yok"}
+Katılımcı cevabı: ${input.participantAnswer || "[boş]"}
+Bu anchor için daha önce sorulan follow-up'lar: ${input.previousFollowUps.join(" | ") || "Yok"}
 
-Yalnizca gecerli JSON don.`;
+Yalnızca geçerli JSON dön.`;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -188,7 +193,7 @@ Yalnizca gecerli JSON don.`;
   try {
     const parsed = JSON.parse(content);
     const decision = parsed.decision === "follow_up" ? "follow_up" : "next_anchor";
-    const followUpQuestion = asString(parsed.followUpQuestion) || null;
+    const followUpQuestion = restoreTurkishCharacters(asString(parsed.followUpQuestion)) || null;
     return {
       decision: decision === "follow_up" && followUpQuestion ? "follow_up" : "next_anchor",
       followUpQuestion: decision === "follow_up" && followUpQuestion ? followUpQuestion : null,

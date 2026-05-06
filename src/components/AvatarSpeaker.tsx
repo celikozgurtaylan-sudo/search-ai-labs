@@ -167,7 +167,7 @@ export const AvatarSpeaker = ({
         if (isAutoplayBlockedError(error)) {
           setOrbState('blocked');
           setManualStartRequired(true);
-          setLastErrorMessage('Tarayici otomatik sesi engelledi. Sesi manuel olarak baslatin; yanit suresi ses tamamlandiginda baslayacak.');
+          setLastErrorMessage('Tarayıcı otomatik sesi engelledi. Sesi manuel olarak başlatın; yanıt süresi ses tamamlandığında başlayacak.');
           onPlaybackInterruptedRef.current('blocked');
           return;
         }
@@ -241,26 +241,26 @@ export const AvatarSpeaker = ({
   const isPreparing = orbState === 'preparing' || orbState === 'retrying';
   const isSpeaking = orbState === 'speaking';
   const statusLabel = orbState === 'speaking'
-            ? 'Searcho konusuyor'
+            ? 'Searcho konuşuyor'
             : orbState === 'blocked'
               ? 'Searcho sesi engellendi'
               : orbState === 'textOnly'
                 ? 'Searcho metin modunda'
                 : orbState === 'error'
-          ? 'Searcho sesi baglanamadi'
+          ? 'Searcho sesi bağlanamadı'
           : orbState === 'listening'
             ? 'Searcho dinliyor'
-            : 'Searcho sesi baglaniyor';
+            : 'Searcho sesi bağlanıyor';
   const helperText = manualStartRequired
     ? lastErrorMessage
     : orbState === 'textOnly'
-      ? (lastErrorMessage || 'Ses kotasi doldu. Yanit suresi baslamadi; ses tekrar denenmeli.')
+      ? (lastErrorMessage || 'Ses kotası doldu. Yanıt süresi başlamadı; ses tekrar denenmeli.')
       : orbState === 'error'
-        ? (lastErrorMessage || 'ElevenLabs sesine ulasilamadi. Yanit suresi baslamadi; tekrar deneyin.')
+        ? (lastErrorMessage || 'ElevenLabs sesine ulaşılamadı. Yanıt süresi başlamadı; tekrar deneyin.')
         : orbState === 'retrying'
-          ? `ElevenLabs sesi baglaniyor. Deneme ${retryAttempt}.`
+          ? `ElevenLabs sesi bağlanıyor. Deneme ${retryAttempt}.`
           : showListeningHint
-            ? 'Ses tamamlandi. Kayit otomatik olarak baslatiliyor.'
+            ? 'Ses tamamlandı. Kayıt otomatik olarak başlatılıyor.'
             : '';
 
   const shellClassName = compact

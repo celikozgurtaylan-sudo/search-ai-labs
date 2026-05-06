@@ -41,12 +41,12 @@ const createMockScreen = (accent: string, title: string, subtitle: string, cta: 
       <rect x="116" y="222" width="214" height="24" rx="12" fill="rgba(43,17,98,0.14)"/>
       <rect x="116" y="274" width="420" height="110" rx="26" fill="#FFFFFF"/>
       <rect x="116" y="412" width="224" height="72" rx="36" fill="${accent}"/>
-      <text x="360" y="646" text-anchor="middle" font-family="Arial, sans-serif" font-size="58" font-weight="700" fill="#1F1635">${title}</text>
-      <text x="360" y="720" text-anchor="middle" font-family="Arial, sans-serif" font-size="31" fill="#4E4662">${subtitle}</text>
+      <text x="360" y="646" text-anchor="middle" font-family="Noto Sans, Arial, sans-serif" font-size="58" font-weight="700" fill="#1F1635">${title}</text>
+      <text x="360" y="720" text-anchor="middle" font-family="Noto Sans, Arial, sans-serif" font-size="31" fill="#4E4662">${subtitle}</text>
       <rect x="88" y="830" width="544" height="124" rx="38" fill="rgba(255,255,255,0.94)"/>
-      <text x="360" y="907" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#2F1B55">${cta}</text>
+      <text x="360" y="907" text-anchor="middle" font-family="Noto Sans, Arial, sans-serif" font-size="36" font-weight="700" fill="#2F1B55">${cta}</text>
       <rect x="88" y="986" width="544" height="92" rx="34" fill="rgba(46,20,96,0.08)" stroke="rgba(46,20,96,0.18)" stroke-width="4"/>
-      <text x="360" y="1044" text-anchor="middle" font-family="Arial, sans-serif" font-size="31" fill="#5B4C7E">Daha sonra bakacagim</text>
+      <text x="360" y="1044" text-anchor="middle" font-family="Noto Sans, Arial, sans-serif" font-size="31" fill="#5B4C7E">Daha sonra bakacağım</text>
       <rect x="248" y="1154" width="224" height="10" rx="5" fill="rgba(31,22,53,0.18)"/>
     </svg>
   `);
@@ -54,18 +54,18 @@ const createMockScreen = (accent: string, title: string, subtitle: string, cta: 
 // Mock data for design mode
 const MOCK_PROJECT_DATA = {
   id: 'mock-project-id',
-  title: 'Pop-up Ekrani Ilk Gorunus ve Algilama Testi',
+  title: 'Pop-up Ekranı İlk Görünüş ve Algılama Testi',
   description: 'Bu bir örnek usability araştırması. Katılımcının kopyalanıp yapıştırılmış Figma ekranını ilk görünüşte nasıl yorumladığını anlamak için tasarlandı.',
   analysis: {
     designScreens: [
       {
         name: 'Promosyon Pop-up',
-        url: createMockScreen('#6E3BFF', 'Ramazan Hediyesi', 'Ilk bakista anlasilir mi?', 'Hemen Katil'),
+        url: createMockScreen('#6E3BFF', 'Ramazan Hediyesi', 'İlk bakışta anlaşılır mı?', 'Hemen Katıl'),
         source: 'upload'
       },
       {
-        name: 'Kayit Alt Ekrani',
-        url: createMockScreen('#4D8DFF', 'Dakikalar Icinde Kayit', 'Form alanlari net mi?', 'Kaydi Baslat'),
+        name: 'Kayıt Alt Ekranı',
+        url: createMockScreen('#4D8DFF', 'Dakikalar İçinde Kayıt', 'Form alanları net mi?', 'Kaydı Başlat'),
         source: 'upload'
       }
     ],
@@ -74,20 +74,47 @@ const MOCK_PROJECT_DATA = {
         {
           title: 'Giriş ve Isınma',
           questions: [
-            'Bu ekrani ilk gordugunuzde size ne anlatiyor?',
-            'Burada ilk olarak ne yapmaniz beklendigini nasil anladiniz?'
+            'Bu ekranı ilk gördüğünüzde size ne anlatıyor?',
+            'Burada ilk olarak ne yapmanız beklendiğini nasıl anladınız?'
           ]
         },
         {
           title: 'Ana Sorular',
           questions: [
-            'Bu pop-up size guven veriyor mu, neden?',
-            'Dikkatinizi dagitan veya kararsiz birakan alanlar var mi?'
+            'Bu pop-up size güven veriyor mu, neden?',
+            'Dikkatinizi dağıtan veya kararsız bırakan alanlar var mı?'
           ]
         }
       ]
     }
   }
+};
+
+type DesignScreen = {
+  name?: string;
+  url: string;
+  source?: string;
+};
+
+type StudyProjectData = {
+  id?: string;
+  description?: string;
+  analysis?: {
+    designScreens?: DesignScreen[];
+    discussionGuide?: unknown;
+    researchMode?: string;
+    aiEnhancedBrief?: unknown;
+  };
+};
+
+type ParticipantSummary = {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
+};
+
+type SessionMetadata = Record<string, unknown> & {
+  deviceCheck?: Record<string, unknown>;
 };
 
 const StudySession = () => {
@@ -104,7 +131,7 @@ const StudySession = () => {
   const [sessionId, setSessionId] = useState<string | null>(isDesignMode ? 'mock-session-id' : null);
   const [participantId, setParticipantId] = useState<string | null>(isDesignMode ? 'mock-participant-id' : null);
   const [participantName, setParticipantName] = useState<string | null>(isDesignMode ? 'Örnek Katılımcı' : null);
-  const [projectData, setProjectData] = useState<any>(isDesignMode ? MOCK_PROJECT_DATA : null);
+  const [projectData, setProjectData] = useState<StudyProjectData | null>(isDesignMode ? MOCK_PROJECT_DATA : null);
   const [sessionStatus, setSessionStatus] = useState<'waiting' | 'active' | 'completed'>(isDesignMode ? 'active' : 'waiting');
   const [activeScreenIndex, setActiveScreenIndex] = useState(0);
   const [currentInterviewQuestion, setCurrentInterviewQuestion] = useState<InterviewQuestion | null>(null);
@@ -133,7 +160,7 @@ const StudySession = () => {
   const cameraGateVideoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(sessionId);
-  const sessionMetadataRef = useRef<any>(null);
+  const sessionMetadataRef = useRef<SessionMetadata | null>(null);
   const deviceCheckRetryCountRef = useRef(0);
   const hasShownCameraFailureRef = useRef(false);
 
@@ -151,10 +178,10 @@ const StudySession = () => {
       return;
     }
 
-    const currentMetadata = sessionMetadataRef.current && typeof sessionMetadataRef.current === 'object'
+    const currentMetadata: SessionMetadata = sessionMetadataRef.current && typeof sessionMetadataRef.current === 'object'
       ? sessionMetadataRef.current
       : {};
-    const previousDeviceCheck = currentMetadata.deviceCheck && typeof currentMetadata.deviceCheck === 'object'
+    const previousDeviceCheck: Record<string, unknown> = currentMetadata.deviceCheck && typeof currentMetadata.deviceCheck === 'object'
       ? currentMetadata.deviceCheck
       : {};
     const checkedAt = new Date().toISOString();
@@ -643,7 +670,7 @@ const StudySession = () => {
       }
 
       const cachedParticipantSession = localStorage.getItem('participant-session');
-      let cachedParticipant: any = null;
+      let cachedParticipant: ParticipantSummary | null = null;
 
       if (cachedParticipantSession && sessionToken) {
         try {
@@ -661,7 +688,9 @@ const StudySession = () => {
 
       console.log('Session access resolved:', access);
       sessionIdRef.current = session.id || null;
-      sessionMetadataRef.current = session.metadata && typeof session.metadata === 'object' ? session.metadata : {};
+      sessionMetadataRef.current = session.metadata && typeof session.metadata === 'object'
+        ? session.metadata as SessionMetadata
+        : {};
       setSessionId(session.id || null);
       setParticipantId(session.participant_id || participant?.id || null);
       setParticipantName(participant?.name || participant?.email || 'Katılımcı');
@@ -885,7 +914,7 @@ const StudySession = () => {
       setDeviceCheckState('ready');
       setDeviceCheckFailureCode(null);
       setDeviceCheckMessage(validation.message ?? 'Kamera ve mikrofon hazır. Araştırmaya devam edebilirsiniz.');
-      await persistDeviceCheckSnapshot('ready', null, validation.message ?? 'Kamera ve mikrofon hazir.');
+      await persistDeviceCheckSnapshot('ready', null, validation.message ?? 'Kamera ve mikrofon hazır.');
       return true;
     } catch (error) {
       console.error('Error accessing camera:', error);
@@ -910,7 +939,7 @@ const StudySession = () => {
     setSessionStatus('completed');
   };
 
-  const designScreens: Array<{ name?: string; url: string; source?: string }> = projectData?.analysis?.designScreens || [];
+  const designScreens: DesignScreen[] = projectData?.analysis?.designScreens || [];
   const showDesignPanels = !isOnboardingActive && designScreens.length > 0;
   const questionsPerScreen = designScreens.length > 0 && currentInterviewProgress.total > 0
     ? Math.max(1, Math.ceil(currentInterviewProgress.total / designScreens.length))

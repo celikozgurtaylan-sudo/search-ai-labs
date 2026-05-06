@@ -13,6 +13,10 @@ import {
   formatQuestionLearningHints,
   loadQuestionLearningHints,
 } from "../_shared/question-learning.ts";
+import {
+  restoreTurkishCharacters,
+  TURKISH_ORTHOGRAPHY_PROMPT,
+} from "../_shared/turkish-text.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -65,8 +69,8 @@ const requestSuggestionRewrite = async ({
       messages: [
         {
           role: "system",
-          content: `Sen deneyimli bir UX arastirma metodologusun.
-- Verilen soruyu tarafsiz, acik uclu, tek odakli ve dogal Turkce olacak sekilde yeniden yaz.
+          content: `Sen deneyimli bir UX araştırma metodologusun.
+- Verilen soruyu tarafsız, açık uçlu, tek odaklı ve doğal Türkçe olacak şekilde yeniden yaz.
 - Her soru tek basina anlamli olsun; onceki soru veya cevaba yaslanan follow-up dili kullanma.
 - "Bu kaynaklari", "bu tercihleri", "bunlari", "bunlardan", "bunun nedeni" gibi onceki cevaba yaslanan referans ifadeleri kullanma.
 - Katilimciya problem, duygu veya yargi empoze etme.
@@ -75,6 +79,7 @@ const requestSuggestionRewrite = async ({
 - "Peki", "az once soylediginiz", "buna gore", "bu size nasil hissettirdi" gibi kaliplari kullanma.
 - "Nasıl anlıyorsunuz" gibi kullanicinin anlamini senin çerçevelediğin kaliplari kullanma.
 - Eger ilk bolumse, soru hafif bir isinma tonu tasiyabilir; konuya mumkunse hic girme ve duyguyu dogrudan sorma.
+- ${TURKISH_ORTHOGRAPHY_PROMPT}
 - Sadece JSON dondur.`,
         },
         {
@@ -109,8 +114,8 @@ Su formatta cevap ver:
   }
 
   return {
-    suggestedRewrite: cleanQuestion(parsed.suggestedRewrite),
-    reason: typeof parsed.reason === "string" ? parsed.reason.trim() : "",
+    suggestedRewrite: cleanQuestion(restoreTurkishCharacters(parsed.suggestedRewrite)),
+    reason: typeof parsed.reason === "string" ? restoreTurkishCharacters(parsed.reason).trim() : "",
   };
 };
 
@@ -129,7 +134,7 @@ serve(async (req) => {
       mode,
     } = await req.json();
 
-    const cleanedQuestion = cleanQuestion(question);
+    const cleanedQuestion = cleanQuestion(restoreTurkishCharacters(question));
     const resolvedMode = resolveQuestionMode({
       researchMode: typeof mode === "string" ? mode : null,
       hasUsabilityContext: typeof mode === "string" && mode === "usability",

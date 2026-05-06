@@ -351,14 +351,14 @@ export const getTTSErrorMessage = (error: unknown) => {
     typeof error.quota?.remainingCredits === "number" &&
     typeof error.quota?.requiredCredits === "number"
   ) {
-    return `Ses kotasi doldu. ${error.quota.remainingCredits} kredi kaldi, bu soru icin ${error.quota.requiredCredits} kredi gerekiyor. Soru yazili olarak devam ediyor.`;
+    return `Ses kotası doldu. ${error.quota.remainingCredits} kredi kaldı, bu soru için ${error.quota.requiredCredits} kredi gerekiyor. Soru yazılı olarak devam ediyor.`;
   }
 
   if (error instanceof Error && error.message.trim()) {
     return error.message;
   }
 
-  return "ElevenLabs sesi su anda baglanamiyor.";
+  return "ElevenLabs sesi şu anda bağlanamıyor.";
 };
 
 export const textToSpeech = async (text: string): Promise<ArrayBuffer> => {

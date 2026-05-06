@@ -15,6 +15,10 @@ import {
   formatQuestionLearningHints,
   loadQuestionLearningHints,
 } from "../_shared/question-learning.ts";
+import {
+  restoreTurkishCharacters,
+  TURKISH_ORTHOGRAPHY_PROMPT,
+} from "../_shared/turkish-text.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -378,19 +382,19 @@ const inferSectionTitle = (questions: string[], index: number) => {
   const corpus = normalizeForMatch(questions.join(' '));
 
   if (/(ilk|ilk bakis|izlenim|dikkat|mesaj|ilk gordugunuzde|ilk gordugunde|anlad)/.test(corpus)) {
-    return 'Ilk Algi ve Mesaj';
+    return 'İlk Algı ve Mesaj';
   }
 
   if (/(gorev|akis|adim|ilerl|tamamla|nasil yap|nasil kullan|yolculuk|is akis)/.test(corpus)) {
-    return 'Akis ve Gorev Adimlari';
+    return 'Akış ve Görev Adımları';
   }
 
   if (/(acik|net|anlas|guven|karar|beklenti|tercih)/.test(corpus)) {
-    return 'Karar Verme ve Anlasilirlik';
+    return 'Karar Verme ve Anlaşılırlık';
   }
 
   if (/(deger|fayda|motivasyon|neden tercih|neden kullan|ihtiyac|cozum)/.test(corpus)) {
-    return 'Deger ve Motivasyon';
+    return 'Değer ve Motivasyon';
   }
 
   if (/(karsilast|rakip|alternatif)/.test(corpus)) {
@@ -423,12 +427,12 @@ const normalizeResearchPlan = (plan: any, mode: ResearchQuestionMode = "intervie
     .map((section: any, index: number) => {
       const rawQuestions = Array.isArray(section?.questions)
         ? section.questions
-            .map((question: string) => cleanText(question))
+            .map((question: string) => cleanText(restoreTurkishCharacters(question)))
             .filter(Boolean)
             .slice(0, 4)
         : [];
 
-      const rawTitle = cleanText(section?.title);
+      const rawTitle = cleanText(restoreTurkishCharacters(section?.title));
       const repairedQuestions = repairGeneratedQuestions(rawQuestions, {
         sectionTitle: rawTitle,
         sectionIndex: index,
@@ -483,7 +487,7 @@ const normalizeResearchPlan = (plan: any, mode: ResearchQuestionMode = "intervie
 
   return ensureWarmupSection({
     ...plan,
-    title: cleanText(plan.title, 'Kullanıcı Araştırması'),
+    title: cleanText(restoreTurkishCharacters(plan.title), 'Kullanıcı Araştırması'),
     sections: normalizedSections,
   });
 };
@@ -780,25 +784,25 @@ const requestStructuredResponseStream = async (
 
 const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
   const usability = researchContext?.usabilityTesting || {};
-  const titleBase = usability.objective || message || "Kullanilabilirlik Testi";
+  const titleBase = restoreTurkishCharacters(usability.objective || message || "Kullanılabilirlik Testi");
 
   const sections = [
     {
       id: slugifySectionId("task_flow"),
-      title: "Ilk Gorev Algi ve Beklentiler",
+      title: "İlk Görev Algısı ve Beklentiler",
       questions: [
         `Paylaşılan ekranlara baktığınızda ilk olarak ne yapmanız gerektiğini size hangi işaretler anlatıyor?`,
         `Ana görevi tamamlamayı düşünürken aklınızdan nasıl bir ilerleme akışı geçiyor?`,
-        `Bu gorev akisinda size en az net gelen adim hangisi oluyor?`,
+        `Bu görev akışında size en az net gelen adım hangisi oluyor?`,
       ],
     },
     {
       id: slugifySectionId("clarity_and_trust"),
-      title: "Karar Verme ve Ekran Netligi",
+      title: "Karar Verme ve Ekran Netliği",
       questions: [
-        `Bu ekranlarda karar vermenize en cok hangi bilgi yardimci oluyor?`,
-        `Karar vermeden once hangi noktada biraz daha aciklama gormek istersiniz?`,
-        `Bu ekranlarda ilk bakista size en anlasilir gelen isaret ne oluyor?`,
+        `Bu ekranlarda karar vermenize en çok hangi bilgi yardımcı oluyor?`,
+        `Karar vermeden önce hangi noktada biraz daha açıklama görmek istersiniz?`,
+        `Bu ekranlarda ilk bakışta size en anlaşılır gelen işaret ne oluyor?`,
       ],
     },
     {
@@ -892,6 +896,7 @@ serve(async (req) => {
 
     const messages: any[] = [
       { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: TURKISH_ORTHOGRAPHY_PROMPT },
     ];
 
     if (learningHintsPrompt) {
@@ -1002,6 +1007,8 @@ Bu plan uzerinde degisiklik acikca istenmedikce action=CHAT tercih et.`,
         console.log('[Searcho] Model returned CHAT while PLAN was required, using fallback usability plan');
         parsed = buildUsabilityFallbackPlan(normalizedMessage, researchContext);
       }
+
+      parsed.chatResponse = restoreTurkishCharacters(cleanText(parsed.chatResponse));
 
       const isResearchPlan = parsed.action === 'PLAN' && parsed.researchPlan !== null;
 
