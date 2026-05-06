@@ -68,6 +68,7 @@ const requestSuggestionRewrite = async ({
           content: `Sen deneyimli bir UX arastirma metodologusun.
 - Verilen soruyu tarafsiz, acik uclu, tek odakli ve dogal Turkce olacak sekilde yeniden yaz.
 - Her soru tek basina anlamli olsun; onceki soru veya cevaba yaslanan follow-up dili kullanma.
+- "Bu kaynaklari", "bu tercihleri", "bunlari", "bunlardan", "bunun nedeni" gibi onceki cevaba yaslanan referans ifadeleri kullanma.
 - Katilimciya problem, duygu veya yargi empoze etme.
 - Soru metninde standalone "ve", "veya" ya da "hem...hem" kullanma.
 - "Kendi cümlelerinizle" gibi zorlayici paraphrase kaliplari kullanma.

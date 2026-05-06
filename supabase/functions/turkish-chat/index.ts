@@ -149,6 +149,7 @@ Her mesajda su karari ver:
 - Coklu hedefleri tek soruya sikistirma; her hedefi tek odakli ayri soru veya bolumle temsil et
 - Sorular tek odakli olmali; ayni soruda iki farkli seyi sorma
 - Her soru tek basina anlamli olmali; onceki soru veya cevaba yaslanan follow-up kaliplari kurma
+- "Bu kaynaklari", "bu tercihleri", "bunlari", "bunlardan", "bunun nedeni" gibi onceki cevaptaki listeye referans veren soru yazma; her soruda nesneyi acik ve bagimsiz kur
 - Sorular kullanicinin bir problem yasadigini varsaymamali
 - Soru metninde standalone "ve", "veya" ya da "hem...hem" kullanma; iki farkli odagi ayri sorulara bol
 - "Kendi cumlelerinizle" gibi zorlayici paraphrase kaliplari kullanma
@@ -310,6 +311,7 @@ Yanit:
 - Her zaman kullanicinin konusuna ozel, baglama uygun yanit ver
 - Arastirma sorulari acik uclu olmali (evet/hayir degil)
 - Her soru tek basina anlamli olmali; onceki soru veya cevaba referans vermemeli
+- "Bu kaynaklari", "bu tercihleri", "bunlari", "bunlardan", "bunun nedeni" gibi onceki cevaba yaslanan referans ifadeleri kullanma
 - Arastirma soru metinlerinde standalone "ve", "veya" ya da "hem...hem" kullanma; tek odakli soru kur
 - "Kendi cumlelerinizle" yazma
 - "Peki", "az once soylediginiz", "buna gore" gibi follow-up kaliplari kullanma

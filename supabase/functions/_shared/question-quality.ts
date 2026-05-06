@@ -185,6 +185,69 @@ const QUESTION_DEPENDENCY_PATTERNS = [
   "buna dayanarak",
 ];
 
+const REFERENTIAL_QUESTION_DEPENDENCY_PATTERNS = [
+  "bunlar",
+  "bunlari",
+  "bunları",
+  "bunlardan",
+  "bunlara",
+  "bunlarin",
+  "bunların",
+  "bunun nedeni",
+  "bunun sebebi",
+  "bunun gerekcesi",
+  "bunun gerekçesi",
+  "bu kaynaklar",
+  "bu kaynaklari",
+  "bu kaynakları",
+  "bu kaynaklardan",
+  "bu kanallar",
+  "bu kanallari",
+  "bu kanalları",
+  "bu kanallardan",
+  "bu bilgileri",
+  "bu bilgiler",
+  "bu bilgilerden",
+  "bu unsurlar",
+  "bu unsurlari",
+  "bu unsurları",
+  "bu noktalari",
+  "bu noktaları",
+  "bu noktalardan",
+  "bu tercihi",
+  "bu tercihleri",
+  "bu secimi",
+  "bu seçimi",
+  "bu secimleri",
+  "bu seçimleri",
+  "bu kriterler",
+  "bu kriterleri",
+  "bu faktorler",
+  "bu faktörler",
+  "bu faktorleri",
+  "bu faktörleri",
+  "bu yontemler",
+  "bu yöntemler",
+  "bu yontemleri",
+  "bu yöntemleri",
+  "bu araclar",
+  "bu araçlar",
+  "bu araclari",
+  "bu araçları",
+  "bu secenekler",
+  "bu seçenekler",
+  "bu secenekleri",
+  "bu seçenekleri",
+  "bu sebepler",
+  "bu sebepleri",
+  "bu nedenler",
+  "bu nedenleri",
+  "bu gerekceler",
+  "bu gerekçeler",
+  "bu gerekceleri",
+  "bu gerekçeleri",
+];
+
 const WARMUP_DIRECT_EMOTION_PATTERNS = [
   "nasil hissediyorsunuz",
   "nasıl hissediyorsunuz",
@@ -289,7 +352,8 @@ const hasWarmupTopicDependency = (normalized: string) =>
   WARMUP_TOPIC_DEPENDENCY_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
 
 const hasQuestionDependency = (normalized: string) =>
-  QUESTION_DEPENDENCY_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
+  QUESTION_DEPENDENCY_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern))) ||
+  REFERENTIAL_QUESTION_DEPENDENCY_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
 
 const hasWarmupDirectEmotion = (normalized: string) =>
   WARMUP_DIRECT_EMOTION_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
@@ -638,7 +702,7 @@ export const assessQuestionQuality = ({
     issues.push({
       code: "question_dependency",
       label: "Önceki soruya yaslanıyor",
-      detail: 'Soru "peki", "az önce" veya "bu size nasıl hissettirdi" gibi follow-up diliyle önceki turne yaslanıyor.',
+      detail: 'Soru "bu kaynakları", "bunları", "peki" veya "az önce" gibi önceki soru/cevaba yaslanan referans dili taşıyor.',
       severity: "problematic",
     });
   }
@@ -864,6 +928,24 @@ export const buildFallbackRewrite = ({
 
   if (warmupSection) {
     return buildWarmupQuestions()[0];
+  }
+
+  if (
+    normalizedQuestion.includes("kaynak") ||
+    normalizedQuestion.includes("kanal") ||
+    normalizedTitle.includes("kaynak") ||
+    normalizedTitle.includes("kanal")
+  ) {
+    return "Bilgi kaynaklarınızı seçerken sizin için en belirleyici kriter ne oluyor?";
+  }
+
+  if (
+    normalizedQuestion.includes("tercih") ||
+    normalizedQuestion.includes("secim") ||
+    normalizedQuestion.includes("seçim") ||
+    normalizedQuestion.includes("kriter")
+  ) {
+    return "Bu alanda tercihinizi en çok ne şekillendiriyor?";
   }
 
   if (normalizedTitle.includes("ilk izlenim") || normalizedTitle.includes("ilk algi")) {
