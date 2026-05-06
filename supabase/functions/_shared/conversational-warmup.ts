@@ -19,9 +19,10 @@ const RESPONSE_FORMAT = {
         answerSummary: { type: "string" },
         readinessSignal: { type: "string" },
         bridgeReason: { type: "string" },
+        spokenLeadIn: { type: "string" },
         questionText: { type: "string" },
       },
-      required: ["answerSummary", "readinessSignal", "bridgeReason", "questionText"],
+      required: ["answerSummary", "readinessSignal", "bridgeReason", "spokenLeadIn", "questionText"],
       additionalProperties: false,
     },
   },
@@ -57,6 +58,7 @@ type GenerateConversationalWarmupQuestionInput = {
 
 export type ConversationalWarmupGeneration = {
   questionText: string;
+  spokenLeadIn: string;
   answerSummary: string;
   readinessSignal: string;
   bridgeReason: string;
@@ -96,6 +98,44 @@ const normalizeQuestion = (value: unknown) => {
 
   const question = cleaned.endsWith("?") ? cleaned : `${cleaned.replace(/[.!]+$/g, "")}?`;
   return question.slice(0, 180).trim();
+};
+
+const getFallbackLeadIn = (input: GenerateConversationalWarmupQuestionInput) => {
+  if (input.turnIndex <= 1) {
+    return "Kısa bir ısınmayla başlayalım.";
+  }
+
+  if (input.turnIndex >= CONVERSATIONAL_WARMUP_TURN_COUNT) {
+    return "Tamam, son bir ısınma sorusu sorayım.";
+  }
+
+  return "Anladım, buradan devam edelim.";
+};
+
+const normalizeLeadIn = (value: unknown, input: GenerateConversationalWarmupQuestionInput) => {
+  const cleaned = typeof value === "string"
+    ? cleanQuestion(value)
+      .replace(/[?]+/g, "")
+      .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
+    : "";
+  const wordCount = countWords(cleaned);
+  const normalized = normalizeForMatch(cleaned);
+  const unsafe = [
+    "az once soylediginiz",
+    "az önce söylediğiniz",
+    "soylediginiz",
+    "söylediğiniz",
+    "buna gore",
+    "buna göre",
+    "cevabiniz",
+    "cevabınız",
+  ].some((pattern) => normalized.includes(normalizeForMatch(pattern)));
+
+  if (!cleaned || wordCount < 2 || wordCount > 12 || unsafe) {
+    return getFallbackLeadIn(input);
+  }
+
+  return cleaned.endsWith(".") ? cleaned.slice(0, 120) : `${cleaned.replace(/[!]+$/g, "")}.`.slice(0, 120);
 };
 
 const hasUnsafeWarmupLanguage = (question: string) => {
@@ -211,7 +251,9 @@ ${existingQuestions || "Yok"}
 Önceki ısınma konuşması:
 ${stringifyPreviousTurns(input.previousTurns)}
 
-Bir sonraki ısınma sorusunu üret.`;
+Bir sonraki ısınma turunu üret:
+- spokenLeadIn: Sesli okunacak, 2-8 kelimelik doğal bir geçiş cümlesi.
+- questionText: Ayrı ve net soru cümlesi.`;
 };
 
 const SYSTEM_PROMPT = `Sen Searcho'nun görüşme başındaki Isınma moderatörüsün.
@@ -223,11 +265,14 @@ Amaç:
 - Araştırma temasına yumuşak bir giriş yap; hazırlanmış soru ya da anchor soru sorma.
 - Katılımcının enerji, açıklık, çekince ve konuya yaklaşımını dolaylı olarak anlamaya çalış.
 - 2. ve 3. turda son yanıttan doğal, anlık bir follow-up çıkar; önceki yanıtı uzun alıntılama.
+- Her turda önce kısa ve insani bir geçiş cümlesi üret, sonra soruyu sor.
 
 Kurallar:
 - Türkçe karakterleri eksiksiz kullan.
 - Soru gündelik, düşük baskılı ve konuşma dilinde olsun.
 - Soru tek cümle, tek odak ve kısa olsun.
+- spokenLeadIn soru içermesin; katılımcıyı mekanik şekilde özetlemesin.
+- spokenLeadIn "Güzel", "Anladım", "Tamam", "Buradan devam edelim" gibi kısa ve doğal olabilir.
 - İlk soru güne, o ana veya günlük ritme hafifçe dokunsun.
 - Ana araştırma sorularını erkenden cevaplatma; sadece ısınma seviyesinde kal.
 - Duyguyu doğrudan "nasıl hissediyorsunuz" diye sorma.
@@ -245,6 +290,7 @@ export async function generateConversationalWarmupQuestion(
   if (!openaiApiKey) {
     return {
       questionText: fallbackQuestion,
+      spokenLeadIn: getFallbackLeadIn(input),
       answerSummary: "",
       readinessSignal: "OpenAI anahtarı olmadığı için güvenli fallback kullanıldı.",
       bridgeReason: "fallback",
@@ -282,9 +328,11 @@ export async function generateConversationalWarmupQuestion(
 
     const parsed = JSON.parse(content);
     const questionText = normalizeQuestion(parsed.questionText);
+    const spokenLeadIn = normalizeLeadIn(parsed.spokenLeadIn, input);
     if (!isUsableWarmupQuestion(questionText)) {
       return {
         questionText: fallbackQuestion,
+        spokenLeadIn,
         answerSummary: typeof parsed.answerSummary === "string" ? parsed.answerSummary.trim() : "",
         readinessSignal: typeof parsed.readinessSignal === "string" ? parsed.readinessSignal.trim() : "",
         bridgeReason: "LLM sorusu güvenli ısınma kurallarını geçemedi.",
@@ -295,6 +343,7 @@ export async function generateConversationalWarmupQuestion(
 
     return {
       questionText,
+      spokenLeadIn,
       answerSummary: typeof parsed.answerSummary === "string" ? parsed.answerSummary.trim() : "",
       readinessSignal: typeof parsed.readinessSignal === "string" ? parsed.readinessSignal.trim() : "",
       bridgeReason: typeof parsed.bridgeReason === "string" ? parsed.bridgeReason.trim() : "",
@@ -305,6 +354,7 @@ export async function generateConversationalWarmupQuestion(
     console.error("Conversational warm-up generation failed:", error);
     return {
       questionText: fallbackQuestion,
+      spokenLeadIn: getFallbackLeadIn(input),
       answerSummary: "",
       readinessSignal: error instanceof Error ? error.message : "Bilinmeyen LLM hatası",
       bridgeReason: "fallback",

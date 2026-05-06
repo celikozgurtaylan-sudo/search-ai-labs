@@ -489,6 +489,7 @@ const buildConversationalWarmupQuestionRows = async ({
           ? {
               source: firstTurn.source,
               fallbackUsed: firstTurn.fallbackUsed,
+              spokenLeadIn: firstTurn.spokenLeadIn,
               answerSummary: firstTurn.answerSummary,
               readinessSignal: firstTurn.readinessSignal,
               bridgeReason: firstTurn.bridgeReason,
@@ -676,6 +677,7 @@ async function advanceConversationalWarmup(
         warmupGeneration: {
           source: generation.source,
           fallbackUsed: generation.fallbackUsed,
+          spokenLeadIn: generation.spokenLeadIn,
           answerSummary: generation.answerSummary,
           readinessSignal: generation.readinessSignal,
           bridgeReason: generation.bridgeReason,
@@ -695,6 +697,7 @@ async function advanceConversationalWarmup(
     answerSummary: generation.answerSummary,
     readinessSignal: generation.readinessSignal,
     bridgeReason: generation.bridgeReason,
+    spokenLeadIn: generation.spokenLeadIn,
     nextQuestionId: nextQuestion.id,
     nextQuestionText: generation.questionText,
     nextQuestionSource: generation.source,

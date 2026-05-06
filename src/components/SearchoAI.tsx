@@ -97,9 +97,9 @@ interface SearchoAIProps {
   cameraStream?: MediaStream | null;
   projectContext?: {
     description: string;
-    discussionGuide?: any;
+    discussionGuide?: unknown;
     researchMode?: 'structured' | 'ai_enhanced';
-    aiEnhancedBrief?: any;
+    aiEnhancedBrief?: unknown;
     template?: string;
     sessionId?: string;
     sessionToken?: string;
@@ -172,6 +172,23 @@ const isConversationalWarmupQuestion = (question?: InterviewQuestion | null) => 
     isWarmupLabel(question.section) ||
     isWarmupLabel(metadata.sectionTitle)
   );
+};
+
+const getQuestionSpeechText = (question?: InterviewQuestion | null) => {
+  if (!question) return "";
+
+  const questionText = question.question_text || "";
+  if (!isConversationalWarmupQuestion(question)) {
+    return questionText;
+  }
+
+  const metadata = isRecord(question.metadata) ? question.metadata : {};
+  const warmupGeneration = isRecord(metadata.warmupGeneration) ? metadata.warmupGeneration : {};
+  const spokenLeadIn = typeof warmupGeneration.spokenLeadIn === 'string'
+    ? warmupGeneration.spokenLeadIn.trim()
+    : "";
+
+  return spokenLeadIn ? `${spokenLeadIn} ${questionText}` : questionText;
 };
 
 const SearchoAI = ({
@@ -670,7 +687,7 @@ const SearchoAI = ({
 
     if (nextQuestion?.question_text) {
       setInterviewPhase('asking');
-      void prefetchTextToSpeech(nextQuestion.question_text);
+      void prefetchTextToSpeech(getQuestionSpeechText(nextQuestion));
       return;
     }
 
@@ -1701,6 +1718,7 @@ const SearchoAI = ({
                       <AvatarSpeaker
                         key={currentQuestion.id}
                         questionText={currentQuestion.question_text}
+                        speechText={getQuestionSpeechText(currentQuestion)}
                         isUserResponding={isUserResponding}
                         compact
                         onSpeakingStart={() => {

@@ -8,6 +8,7 @@ import {
 
 interface AvatarSpeakerProps {
   questionText: string;
+  speechText?: string;
   isUserResponding?: boolean;
   compact?: boolean;
   onSpeakingStart: () => void;
@@ -42,6 +43,7 @@ const isAutoplayBlockedError = (error: unknown) => {
 
 export const AvatarSpeaker = ({
   questionText,
+  speechText,
   isUserResponding = false,
   compact = false,
   onSpeakingStart,
@@ -110,7 +112,8 @@ export const AvatarSpeaker = ({
   };
 
   const startPlayback = async () => {
-    if (!questionText) return;
+    const playbackText = (speechText || questionText).trim();
+    if (!playbackText) return;
 
     const token = playbackTokenRef.current + 1;
     playbackTokenRef.current = token;
@@ -126,7 +129,7 @@ export const AvatarSpeaker = ({
     while (playbackTokenRef.current === token) {
       try {
         let speechStarted = false;
-        const tts = new SequentialTTS(questionText);
+        const tts = new SequentialTTS(playbackText);
         ttsRef.current = tts;
 
         await new Promise<void>((resolve, reject) => {
@@ -194,14 +197,14 @@ export const AvatarSpeaker = ({
   };
 
   useEffect(() => {
-    if (!questionText) return;
+    if (!questionText && !speechText) return;
 
     void startPlayback();
 
     return () => {
       cancelPlayback();
     };
-  }, [questionText]);
+  }, [questionText, speechText]);
 
   useEffect(() => {
     if (listeningHintTimerRef.current) {
