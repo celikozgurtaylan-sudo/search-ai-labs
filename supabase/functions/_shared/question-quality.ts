@@ -1,5 +1,6 @@
 export const WARMUP_SECTION_TITLE = "Isınma";
 export const WARMUP_SECTION_ID = "warmup_context";
+export const MAX_RESEARCH_PLAN_SECTIONS = 8;
 
 export type ResearchQuestionMode = "structured" | "usability" | "interview" | "ai_enhanced";
 export type QuestionSectionKind = "warmup" | "main";
@@ -204,6 +205,7 @@ const METHODOLOGY_MUST_RULES_BY_CODE: Record<string, string> = {
   leading: "Katılımcıya sorun, duygu veya yargı empoze etme.",
   assumptive: "Katılımcının belirli bir deneyim yaşadığını peşinen varsayma.",
   yes_no: "Soru mümkün olduğunca açık uçlu olmalı.",
+  double_barreled: "Tek soruda tek araştırma odağı kullan; iki soruyu aynı cümlede birleştirme.",
   contains_ve: "Tek soruda tek odak kullan; iki odağı ayır.",
   question_dependency: "Her soru tek başına anlamlı olsun; önceki soru veya cevaba yaslanan follow-up kalıbı kullanma.",
   forced_paraphrase: "\"Kendi cümlelerinizle\" gibi zorlayıcı paraphrase kalıplarını kullanma.",
@@ -431,12 +433,19 @@ const hasAssumptiveLanguage = (normalized: string) =>
   ASSUMPTIVE_LANGUAGE_PATTERNS.some((pattern) => normalized.startsWith(normalizeForMatch(pattern)));
 
 const hasDoubleBarrelStructure = (normalized: string) => {
+  const questionMarkCount = (normalized.match(/\?/g) || []).length;
+  if (questionMarkCount > 1) {
+    return true;
+  }
+
   const multiPromptPatterns = [
-    /ne .* ve ne /,
-    /nasil .* ve nasil /,
-    /hangi .* ve hangi /,
-    /ne kadar .* ve ne kadar /,
-    /hem .* hem /,
+    /\bne\b.*\bve\b.*\bne\b/,
+    /\bnasil\b.*\bve\b.*\bnasil\b/,
+    /\bhangi\b.*\bve\b.*\bhangi\b/,
+    /\bne kadar\b.*\bve\b.*\bne kadar\b/,
+    /\bhem\b.*\bhem\b/,
+    /\bveya\b/,
+    /\b(neyi|neye|neden|nasil|hangi|kim|kime|nerede|nereden|ne zaman)\b[^?]*[,;:][^?]*\b(neyi|neye|neden|nasil|hangi|kim|kime|nerede|nereden|ne zaman)\b/,
   ];
 
   if (multiPromptPatterns.some((pattern) => pattern.test(normalized))) {
@@ -491,6 +500,14 @@ export const extractLearningPhrases = (question: string) => {
     phrases.push("ve");
   }
 
+  if (/\bveya\b/.test(normalized)) {
+    phrases.push("veya");
+  }
+
+  if (/\bhem\b.*\bhem\b/.test(normalized)) {
+    phrases.push("hem...hem");
+  }
+
   return uniqueStrings(phrases);
 };
 
@@ -527,6 +544,8 @@ export const assessQuestionQuality = ({
   const usabilityContextFit = mode !== "usability" || warmupSection || (!hasGenericUsabilityPrompt(normalized) && hasUsabilityContextAnchor(normalized));
   const methodologyMatches = detectMethodologyMatches(normalized);
   const methodologyFit =
+    singleFocus &&
+    noStandaloneVe &&
     questionIndependent &&
     methodologyMatches.forcedParaphraseMatches.length === 0 &&
     methodologyMatches.interpretationPromptingMatches.length === 0 &&
@@ -566,7 +585,7 @@ export const assessQuestionQuality = ({
       code: "double_barreled",
       label: "Tek odaklı değil",
       detail: "Soru aynı anda birden fazla şeyi sormaya çalışıyor.",
-      severity: "caution",
+      severity: "problematic",
     });
   }
 
@@ -824,7 +843,7 @@ export const ensureWarmupSection = (plan: any) => {
 
   return {
     ...plan,
-    sections: [warmupSection, ...sections].slice(0, 4),
+    sections: [warmupSection, ...sections].slice(0, MAX_RESEARCH_PLAN_SECTIONS),
   };
 };
 

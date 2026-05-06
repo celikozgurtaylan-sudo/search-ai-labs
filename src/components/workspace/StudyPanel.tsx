@@ -57,6 +57,35 @@ interface QuestionReviewResult {
   suggestionReason?: string;
 }
 
+const normalizeForWarmupMatch = (value: unknown) =>
+  String(value ?? "")
+    .toLocaleLowerCase("tr-TR")
+    .replace(/ç/g, "c")
+    .replace(/ğ/g, "g")
+    .replace(/ı/g, "i")
+    .replace(/ö/g, "o")
+    .replace(/ş/g, "s")
+    .replace(/ü/g, "u");
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isWarmupGuideSection = (section: unknown) => {
+  const record = isRecord(section) ? section : {};
+  const normalizedTitle = normalizeForWarmupMatch(record.title);
+  const normalizedId = normalizeForWarmupMatch(record.id);
+
+  return (
+    normalizedTitle.includes("isinma") ||
+    normalizedTitle.includes("warmup") ||
+    normalizedTitle.includes("warm-up") ||
+    normalizedTitle.includes("warm up") ||
+    normalizedId.includes("warmup") ||
+    normalizedId.includes("warm-up") ||
+    normalizedId.includes("warm up")
+  );
+};
+
 const StudyPanel = ({
   discussionGuide,
   participants,
@@ -1175,7 +1204,7 @@ const StudyPanel = ({
                   ? 'Katılımcıları yönet, anchor omurgayı görüntüle ve AI native görüşme akışını takip et'
                   : 'Katılımcıları yönet, görüşmeleri takip et ve gerekirse soru setini güncelle')
                 : (isAIEnhancedMode
-                  ? 'Agent Enhanced modda herkese aynı anchor omurga sorulur, follow-up sorular agent tarafından canlı üretilir'
+                  ? 'Agent Enhanced modda canlı ısınma sonrası aynı anchor omurga sorulur'
                   : 'Kullanıcılara sorulacak sorular')}
             </p>
           </div>
@@ -1224,7 +1253,7 @@ const StudyPanel = ({
                       Araştırma {new Date(researchPausedAt).toLocaleString('tr-TR')} tarihinde duraklatıldı. Aynı linkler araştırmaya devam dediğiniz anda yeniden çalışır.
                     </p> : null}
                   {isAIEnhancedMode && aiEnhancedBrief?.themes?.length ? <p>
-                      Bu modda tüm katılımcılar aynı anchor omurgayla başlar. AI follow-up soruları cevaplara göre canlı üretir ve tüm turn'ler analizde ayrı gösterilir.
+                      Bu modda tüm katılımcılar canlı ısınma sonrası aynı anchor omurgaya geçer. AI follow-up soruları cevaplara göre canlı üretir.
                     </p> : null}
                   {!isAIEnhancedMode && questionSetVersionNumber && questionSetVersionNumber > 1 && questionSetUpdatedAt ? <p>
                       Sorular {new Date(questionSetUpdatedAt).toLocaleString('tr-TR')} tarihinde güncellendi. Bu andan sonra gönderdiğiniz yeni davetler güncel soru setini kullanır. Aktif veya tamamlanmış oturumlar etkilenmez.
@@ -1246,14 +1275,30 @@ const StudyPanel = ({
               /> : null}
 
             {/* Discussion Guide Sections */}
-            {discussionGuide.sections.map((section: any) => {
+            {discussionGuide.sections.map((section: any, sectionIndex: number) => {
             const isSectionEditing = editingSection === section.id || editingQuestion?.startsWith(`${section.id}-`);
             const isDragged = draggedSectionId === section.id;
-            return <Card key={section.id} draggable={!isSectionEditing} onDragStart={event => handleSectionDragStart(event, section.id)} onDragEnd={handleSectionDragEnd} className={`p-6 transition-all ${dragOverSectionId === section.id ? 'border-brand-primary bg-brand-primary-light/20' : ''} ${isDragged ? 'opacity-60 scale-[0.99] shadow-lg' : ''} ${!isSectionEditing ? 'cursor-grab active:cursor-grabbing' : ''}`} onDragOver={event => handleSectionDragOver(event, section.id)} onDrop={event => handleSectionDrop(event, section.id)}>
+            const isWarmupSection = isWarmupGuideSection(section);
+            const sectionQuestions = Array.isArray(section.questions) ? section.questions : [];
+            const canEditSection = allowGuideEditing && !isWarmupSection;
+            const canDragSection = canEditSection && !isSectionEditing;
+            return <Card key={section.id} draggable={canDragSection} onDragStart={event => {
+              if (canDragSection) {
+                handleSectionDragStart(event, section.id);
+              }
+            }} onDragEnd={handleSectionDragEnd} className={`p-6 transition-all ${isWarmupSection ? 'warmup-section-glow border-violet-300/70 bg-white/95' : ''} ${dragOverSectionId === section.id ? 'border-brand-primary bg-brand-primary-light/20' : ''} ${isDragged ? 'opacity-60 scale-[0.99] shadow-lg' : ''} ${canDragSection ? 'cursor-grab active:cursor-grabbing' : ''}`} onDragOver={event => {
+              if (canDragSection) {
+                handleSectionDragOver(event, section.id);
+              }
+            }} onDrop={event => {
+              if (canDragSection) {
+                handleSectionDrop(event, section.id);
+              }
+            }}>
                 <CardHeader className="p-0 mb-4">
                   <div className="flex items-start justify-between gap-3">
                     <CardTitle className="text-base font-semibold text-text-primary group flex-1 min-w-0">
-                      {isGuideLoading ? <Skeleton className="h-5 w-44" /> : editingSection === section.id ? <div className="space-y-2">
+                      {isGuideLoading ? <Skeleton className="h-5 w-44" /> : editingSection === section.id && canEditSection ? <div className="space-y-2">
                           <Input value={editSectionValue} onChange={e => setEditSectionValue(e.target.value)} autoFocus />
                           <div className="flex items-center gap-2">
                             <Button size="sm" onClick={() => handleSaveSectionTitle(section.id)}>
@@ -1268,15 +1313,15 @@ const StudyPanel = ({
                               İptal
                             </Button>
                           </div>
-                        </div> : allowGuideEditing ? <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditSection(section.id, section.title)}>
-                          {showSectionTypewriters[section.id] ? <TypewriterText text={section.title} speed={24} delay={discussionGuide.sections.indexOf(section) * 180} enableControls={true} onComplete={() => setShowSectionTypewriters(prev => ({
+                        </div> : canEditSection ? <button type="button" className="text-left hover:text-brand-primary transition-colors" onClick={() => handleEditSection(section.id, section.title)}>
+                          {showSectionTypewriters[section.id] ? <TypewriterText text={section.title} speed={24} delay={sectionIndex * 180} enableControls={true} onComplete={() => setShowSectionTypewriters(prev => ({
                       ...prev,
                       [section.id]: false
                     }))} /> : section.title}
                         </button> : <span>{section.title}</span>}
                     </CardTitle>
 
-                    {allowGuideEditing ? <div className="flex items-center gap-1">
+                    {canEditSection ? <div className="flex items-center gap-1">
                       <Button size="sm" variant="ghost" draggable={false} className={`cursor-grab active:cursor-grabbing text-text-secondary hover:text-text-primary ${isGuideLoading ? 'invisible pointer-events-none' : ''}`} aria-label="Bölümü sürükleyerek yeniden sırala">
                         <GripVertical className="w-3 h-3" />
                       </Button>
@@ -1291,7 +1336,23 @@ const StudyPanel = ({
                 </CardHeader>
                 
                 <CardContent className="p-0 space-y-3">
-                  {section.questions.map((question: string, index: number) => {
+                  {isWarmupSection ? <div className="rounded-lg border border-violet-200/80 bg-white/80 px-4 py-3 shadow-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className="border-violet-300/80 bg-violet-50/80 text-violet-800">
+                          Canlı AI
+                        </Badge>
+                        <Badge variant="outline" className="border-violet-300/80 bg-white/80 text-violet-800">
+                          3 tur
+                        </Badge>
+                        <Badge variant="outline" className="border-violet-300/80 bg-white/80 text-violet-800">
+                          Follow-up
+                        </Badge>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-text-secondary">
+                        Katılımcı yanıt verdikçe AI bu bölümdeki sıradaki ısınma sorusunu canlı üretir.
+                      </p>
+                    </div> : <>
+                  {sectionQuestions.map((question: string, index: number) => {
               const questionKey = getQuestionKey(section.id, index);
               const isQuestionVisible = !isGuideLoading && (useQuestionSkeletonReveal ? visibleQuestions[questionKey] === true : true);
               const currentReview = questionReviews[questionKey];
@@ -1385,7 +1446,7 @@ const StudyPanel = ({
                   
                    {!isGuideLoading && loadingQuestions[section.id] && <div className="group grid grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-2">
                       <span className="pt-2 text-right text-xs text-text-muted">
-                        {section.questions.length + 1}.
+                        {sectionQuestions.length + 1}.
                       </span>
                       <div className="min-w-0 rounded-md border border-border-light bg-surface/60 px-3 py-3">
                         <div className="flex items-center gap-2 text-xs text-text-secondary mb-2">
@@ -1396,7 +1457,7 @@ const StudyPanel = ({
                       </div>
                     </div>}
                   
-                  {!isGuideLoading && allowGuideEditing ? <div className="flex items-center space-x-2">
+                  {!isGuideLoading && canEditSection ? <div className="flex items-center space-x-2">
                     <Button size="sm" variant="ghost" onClick={() => handleAddQuestion(section.id)} className="flex items-center space-x-1 text-text-secondary hover:text-text-primary" disabled={generatingQuestions[section.id]}>
                       <Plus className="w-3 h-3" />
                       <span>Soru ekle</span>
@@ -1407,6 +1468,7 @@ const StudyPanel = ({
                       <span>AI soru üret</span>
                     </Button>
                   </div> : null}
+                  </>}
                 </CardContent>
               </Card>;
             })}

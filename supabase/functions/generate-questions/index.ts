@@ -156,6 +156,7 @@ ${usabilityContextPrompt ? `${usabilityContextPrompt}
 ` : ""}${warmupSection ? `Bu bölüm görüşmenin ilk ısınma bölümüdür.
 - Katılımcıyı rahatlatan, düşük baskılı ve konuşmayı açan sorular üret.
 - Sorular kısa, tek cümleli ve birbirinden bağımsız olsun.
+- Soru metninde standalone "ve" kullanma.
 - Her soru tek başına anlamlı olsun; önceki soruya referans verme.
 - İlk soru katılımcının gününe dokunsun.
 - Mümkünse ürün, proje veya araştırma konusuna hiç girme; önce gündelik ve genel bir sohbet aç.
@@ -164,6 +165,7 @@ ${usabilityContextPrompt ? `${usabilityContextPrompt}
 - Konudan söz etmek gerçekten gerekiyorsa belirsiz zamir kullanma; "${warmupTopicLabel || "araştırılan konu"}" gibi açık bir isimle bahset.` : `Bu bölüm görüşmenin ana araştırma bölümüdür.
 - Warm-up sorusu üretme.
 - Soruları bu bölümün araştırma odağına sadık, açık uçlu ve tek odaklı kur.
+- Soru metninde standalone "ve" kullanma.
 - Her soru tek başına anlamlı olsun; önceki soru veya cevaba yaslanan follow-up kalıpları kurma.
 - "Peki", "az önce söylediğiniz", "buna göre", "bu size nasıl hissettirdi", "bu gününüzü nasıl etkiledi" gibi ifadeleri kullanma.
 ${isUsabilityMode ? `- Her soruyu somut bir ekran, görev adımı, karar anı, bilgi mesajı veya kullanıcı hareketine bağla.
@@ -241,7 +243,7 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 - Warm-up olmayan bölümlerde rapport yerine doğrudan araştırma odağına gir
 - Her soru tek bir amaca hizmet etsin
 - Her soru tek başına anlamlı olsun; önceki soru veya cevaba yaslanan follow-up dili kullanma
-- Mümkünse soru metninde "ve" kullanma; tek soruda tek odak koru
+- Soru metninde standalone "ve" kullanma; tek soruda tek odak koru
 - "Kendi cümlelerinizle" gibi gereksiz paraphrase kalıplarını kullanma
 - "Peki", "az önce söylediğiniz", "buna göre", "bu size nasıl hissettirdi", "bu gününüzü nasıl etkiledi" gibi referanslı kalıpları kullanma
 - Kullanıcının anlamını senin çerçevelediğin "nasıl anlıyorsunuz" gibi kalıplardan kaçın
@@ -275,7 +277,8 @@ Verilen proje açıklamasını derinlemesine analiz et ve o bölüm için profes
 - Sorunun içinde "karışıklık", "sorun", "problem", "eksik", "güven verdi", "ikna edici" gibi yargı veya varsayım gömme
 - Evet/hayır ile cevaplanabilecek şekilde soru kurma
 - Kullanıcının olumsuz bir deneyim yaşadığını varsayma
-- Soru metninde "ve" ile iki odağı birleştirme
+- Soru metninde standalone "ve" kullanma
+- "veya" ya da "hem...hem" ile iki odağı tek soruya sıkıştırma
 - "Kendi cümlelerinizle" yazma
 - "Peki", "az önce söylediğiniz", "buna göre" gibi önceki turne yaslanan dil kullanma
 - Warm-up'ta "nasıl hissettiniz", "size ne hissettirdi" gibi duyguyu doğrudan soran kalıplar kurma
@@ -414,7 +417,7 @@ Yanıt formatı: {"isResearchProject": true/false, "reason": "kısa açıklama"}
 Aşağıdaki sorular leading, varsayımsız değil veya yeterince açık uçlu olmadığı için reddedildi:
 ${questions.map((question, index) => `${index + 1}. ${question}`).join('\n')}
 
-Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warmupSection ? 'Bu bölüm warm-up olduğu için sorular hafif, sohbet açıcı, tek cümleli ve birbirinden bağımsız olsun. Mümkünse ürün veya konu adı geçmesin. "Bu konu", "bu konuyla", "bununla ilgili", "buraya gelmeden önce", "en son karşılaştığınız an", "nasıl hissettiniz", "size ne hissettirdi" gibi kalıpları kullanma.' : 'Warm-up sorusu üretme. Her soru tek başına anlamlı olsun ve önceki soru veya cevaba referans verme.'} "Oldu mu?", "yaşadınız mı?", "karışıklık", "sorun", "problem", "güven verdi mi?", "kendi cümlelerinizle", "nasıl anlıyorsunuz", "Peki", "az önce söylediğiniz", "buna göre", "bu size nasıl hissettirdi", "bu gününüzü nasıl etkiledi" gibi kalıpları kullanma.`;
+Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. Soru metninde standalone "ve", "veya" ya da "hem...hem" kullanma. ${warmupSection ? 'Bu bölüm warm-up olduğu için sorular hafif, sohbet açıcı, tek cümleli ve birbirinden bağımsız olsun. Mümkünse ürün veya konu adı geçmesin. "Bu konu", "bu konuyla", "bununla ilgili", "buraya gelmeden önce", "en son karşılaştığınız an", "nasıl hissettiniz", "size ne hissettirdi" gibi kalıpları kullanma.' : 'Warm-up sorusu üretme. Her soru tek başına anlamlı olsun; önceki soru ya da cevaba referans verme.'} "Oldu mu?", "yaşadınız mı?", "karışıklık", "sorun", "problem", "güven verdi mi?", "kendi cümlelerinizle", "nasıl anlıyorsunuz", "Peki", "az önce söylediğiniz", "buna göre", "bu size nasıl hissettirdi", "bu gününüzü nasıl etkiledi" gibi kalıpları kullanma.`;
 
       const retryResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
@@ -448,12 +451,23 @@ Sadece nötr, açık uçlu ve varsayımsız ${requestedCount} soru üret. ${warm
     let fallbackUsed = false;
 
     if (valid.length === 0) {
-      valid = buildFallbackQuestions(sectionTitle, sectionIndex, resolvedMode);
+      valid = repairGeneratedQuestions(
+        buildFallbackQuestions(sectionTitle, sectionIndex, resolvedMode),
+        { sectionTitle, sectionIndex, mode: resolvedMode },
+      );
       fallbackUsed = true;
     }
 
     if (valid.length < requestedCount) {
-      valid = [...valid, ...buildFallbackQuestions(sectionTitle, sectionIndex, resolvedMode)].slice(0, requestedCount);
+      const fallbackQuestions = repairGeneratedQuestions(
+        buildFallbackQuestions(sectionTitle, sectionIndex, resolvedMode),
+        { sectionTitle, sectionIndex, mode: resolvedMode },
+      );
+      ({ valid } = sanitizeGeneratedQuestions(
+        [...valid, ...fallbackQuestions],
+        { sectionTitle, sectionIndex, mode: resolvedMode },
+      ));
+      valid = valid.slice(0, requestedCount);
       fallbackUsed = true;
     }
 

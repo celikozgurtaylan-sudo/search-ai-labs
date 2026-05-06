@@ -279,6 +279,22 @@
   }
 }
 
+@keyframes warmup-section-glow-cycle {
+  0%,
+  100% {
+    border-color: hsl(267 88% 72% / 0.58);
+    box-shadow: 0 0 0 1px hsl(267 88% 72% / 0.18), 0 12px 32px hsl(267 88% 62% / 0.12);
+  }
+  50% {
+    border-color: hsl(292 82% 70% / 0.78);
+    box-shadow: 0 0 0 1px hsl(292 82% 70% / 0.24), 0 14px 38px hsl(292 82% 58% / 0.18);
+  }
+}
+
+.warmup-section-glow {
+  animation: warmup-section-glow-cycle 5.8s ease-in-out infinite;
+}
+
 .animation-delay-75 {
   animation-delay: 75ms;
 }

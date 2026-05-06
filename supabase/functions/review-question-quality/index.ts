@@ -69,6 +69,7 @@ const requestSuggestionRewrite = async ({
 - Verilen soruyu tarafsiz, acik uclu, tek odakli ve dogal Turkce olacak sekilde yeniden yaz.
 - Her soru tek basina anlamli olsun; onceki soru veya cevaba yaslanan follow-up dili kullanma.
 - Katilimciya problem, duygu veya yargi empoze etme.
+- Soru metninde standalone "ve", "veya" ya da "hem...hem" kullanma.
 - "Kendi cümlelerinizle" gibi zorlayici paraphrase kaliplari kullanma.
 - "Peki", "az once soylediginiz", "buna gore", "bu size nasil hissettirdi" gibi kaliplari kullanma.
 - "Nasıl anlıyorsunuz" gibi kullanicinin anlamini senin çerçevelediğin kaliplari kullanma.
@@ -178,7 +179,14 @@ serve(async (req) => {
             learningHintsPrompt,
           });
 
-          if (rewrite.suggestedRewrite) {
+          const rewriteReview = assessQuestionQuality({
+            question: rewrite.suggestedRewrite,
+            sectionTitle,
+            sectionIndex,
+            mode: resolvedMode,
+          });
+
+          if (rewrite.suggestedRewrite && rewriteReview.status !== "problematic") {
             suggestedRewrite = rewrite.suggestedRewrite;
             suggestionReason = rewrite.reason;
           }

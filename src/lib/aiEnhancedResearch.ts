@@ -101,13 +101,20 @@ export const buildAIEnhancedDisplayGuide = (brief: AIEnhancedBrief | null | unde
 
   return {
     title: "Agent Enhanced Görüşme Blueprint'i",
-    sections: brief.themes.map((theme) => ({
-      id: theme.id,
-      title: theme.title,
-      questions: brief.anchorQuestions
-        .filter((question) => question.themeId === theme.id)
-        .map((question) => question.text),
-    })).filter((section) => section.questions.length > 0),
+    sections: [
+      {
+        id: "agentic-warmup",
+        title: "Isınma",
+        questions: [],
+      },
+      ...brief.themes.map((theme) => ({
+        id: theme.id,
+        title: theme.title,
+        questions: brief.anchorQuestions
+          .filter((question) => question.themeId === theme.id)
+          .map((question) => question.text),
+      })).filter((section) => section.questions.length > 0),
+    ],
   };
 };
 

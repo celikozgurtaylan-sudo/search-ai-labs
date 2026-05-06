@@ -7,6 +7,7 @@ import {
   repairGeneratedQuestions,
   resolveQuestionMode,
   sanitizeGeneratedQuestions,
+  MAX_RESEARCH_PLAN_SECTIONS,
   WARMUP_SECTION_TITLE,
   type ResearchQuestionMode,
 } from "../_shared/question-quality.ts";
@@ -62,7 +63,7 @@ const RESPONSE_FORMAT = {
             sections: {
               type: "array",
               minItems: 3,
-              maxItems: 4,
+              maxItems: MAX_RESEARCH_PLAN_SECTIONS,
               items: {
                 type: "object",
                 properties: {
@@ -144,10 +145,12 @@ Her mesajda su karari ver:
 - Isınma soruları mümkünse ürün, proje veya araştırma konusuna hiç girmemeli
 - Isınma soruları duyguyu doğrudan sormamalı; kullanıcının ritmini ve zihinsel yükünü dolaylı anlamaya çalışmalı
 - Sonraki bolumler genisten ozele ilerlemeli: baglam/davranis -> ana deneyim/gorev -> degerlendirme/iyilestirme
+- Kullanici net ve coklu arastirma hedefleri verdiyse bu hedefleri kaybetme; gerekirse ayri bolum veya tema ac
+- Coklu hedefleri tek soruya sikistirma; her hedefi tek odakli ayri soru veya bolumle temsil et
 - Sorular tek odakli olmali; ayni soruda iki farkli seyi sorma
 - Her soru tek basina anlamli olmali; onceki soru veya cevaba yaslanan follow-up kaliplari kurma
 - Sorular kullanicinin bir problem yasadigini varsaymamali
-- Mümkünse soru metninde "ve" kullanma; iki farkli odagi ayri sorulara bol
+- Soru metninde standalone "ve", "veya" ya da "hem...hem" kullanma; iki farkli odagi ayri sorulara bol
 - "Kendi cumlelerinizle" gibi zorlayici paraphrase kaliplari kullanma
 - "Peki", "az once soylediginiz", "buna gore", "bu size nasil hissettirdi", "bu gununuzu nasil etkiledi" gibi referansli kaliplari kullanma
 - "Nasil anliyorsunuz" gibi yorum yonlendiren kaliplari kullanma
@@ -156,9 +159,11 @@ Her mesajda su karari ver:
 # ARASTIRMA PLANI KURALLARI
 - chatResponse: Baglama uygun, spesifik bir yanit. Kullanicinin konusuna ozel giris yap.
 - researchPlan.title: Arastirma basligini olustur
-- researchPlan.sections: En az 3 bolum, her bolumde 2-4 soru
+- researchPlan.sections: En az 3 bolum, gerekirse ${MAX_RESEARCH_PLAN_SECTIONS} bolume kadar cikabilir; her bolumde 2-4 soru
 - Ilk bolumun title'i mutlaka "${WARMUP_SECTION_TITLE}" olmali
 - Sorular acik uclu, kesfedici ve konuya ozel olmali
+- Net verilen tum hedefler soru metnine yigilmasin; kapsam bolum/tema duzeyinde genisletilerek korunmali
+- Hedef sayisi ${MAX_RESEARCH_PLAN_SECTIONS} bolum sinirini asarsa yakin hedefleri ayni tema altinda grupla; sessizce atlama
 - Section id'leri anlamli ingilizce kisaltmalar olmali (ornek: "onboarding_experience", "preferences", "improvements")
 
 # ORNEK 1: Spesifik Talep → PLAN
@@ -274,7 +279,7 @@ Yanit:
         "questions": [
           "Sepetinizdeki urunleri satin almaktan vazgectiginizde genellikle nedeni nedir?",
           "Odeme sayfasinda sizi durup yeniden dusunmeye iten seyler neler oluyor?",
-          "Kargo ucreti veya teslimat suresi kararinizda nasil bir rol oynuyor?"
+          "Teslimat kosullari kararinizda nasil bir rol oynuyor?"
         ]
       },
       {
@@ -305,12 +310,12 @@ Yanit:
 - Her zaman kullanicinin konusuna ozel, baglama uygun yanit ver
 - Arastirma sorulari acik uclu olmali (evet/hayir degil)
 - Her soru tek basina anlamli olmali; onceki soru veya cevaba referans vermemeli
-- Arastirma sorularinda mümkünse "ve" kullanma; tek odakli soru kur
+- Arastirma soru metinlerinde standalone "ve", "veya" ya da "hem...hem" kullanma; tek odakli soru kur
 - "Kendi cumlelerinizle" yazma
 - "Peki", "az once soylediginiz", "buna gore" gibi follow-up kaliplari kullanma
 - "(...) nasil anliyorsunuz" gibi framing yapma
 - Section id'leri snake_case Ingilizce olmali
-- researchPlan.sections sayisi 3 veya 4 olmali, 5. bolum ASLA uretme
+- researchPlan.sections sayisi 3 ile ${MAX_RESEARCH_PLAN_SECTIONS} arasinda olmali; net coklu hedefler varsa bolum sayisini artir
 - Section title'lari sabit ve jenerik kaliplar olmasin; her title o bolumun arastirma odagini net anlatsin
 - "Giris", "Ana Sorular", "Detayli Kesif", "Son Dusunceler" gibi genel title'lari tekrar etme`;
 
@@ -412,7 +417,7 @@ const normalizeResearchPlan = (plan: any, mode: ResearchQuestionMode = "intervie
   const usedTitles = new Set<string>();
   const normalizedSections = plan.sections
     .filter(Boolean)
-    .slice(0, 4)
+    .slice(0, MAX_RESEARCH_PLAN_SECTIONS)
     .map((section: any, index: number) => {
       const rawQuestions = Array.isArray(section?.questions)
         ? section.questions
@@ -435,8 +440,23 @@ const normalizeResearchPlan = (plan: any, mode: ResearchQuestionMode = "intervie
       });
 
       if (questions.length < 2) {
-        questions = [...questions, ...buildFallbackQuestions(rawTitle, index, mode)]
-          .slice(0, 4);
+        const fallbackQuestions = repairGeneratedQuestions(
+          buildFallbackQuestions(rawTitle, index, mode),
+          {
+            sectionTitle: rawTitle,
+            sectionIndex: index,
+            mode,
+          },
+        );
+        const { valid: repairedFallbacks } = sanitizeGeneratedQuestions(
+          [...questions, ...fallbackQuestions],
+          {
+            sectionTitle: rawTitle,
+            sectionIndex: index,
+            mode,
+          },
+        );
+        questions = repairedFallbacks.slice(0, 4);
       }
 
       const preferredTitle = rawTitle && !isGenericSectionTitle(rawTitle)
@@ -759,21 +779,14 @@ const requestStructuredResponseStream = async (
 const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
   const usability = researchContext?.usabilityTesting || {};
   const titleBase = usability.objective || message || "Kullanilabilirlik Testi";
-  const primaryTask = usability.primaryTask || "Belirtilmedi";
-  const targetUsers = usability.targetUsers || "Belirtilmedi";
-  const successSignals = usability.successSignals || "Belirtilmedi";
-  const riskAreas = usability.riskAreas || "Belirtilmedi";
-  const screenNames = Array.isArray(researchContext?.designScreens) && researchContext.designScreens.length > 0
-    ? researchContext.designScreens.map((screen: any, index: number) => screen?.name || `Screen ${index + 1}`).join(", ")
-    : "Paylasilan ekranlar";
 
   const sections = [
     {
       id: slugifySectionId("task_flow"),
       title: "Ilk Gorev Algi ve Beklentiler",
       questions: [
-        `${screenNames} ekranlarina baktiginizda ilk olarak ne yapmaniz gerektigini size hangi isaretler anlatiyor?`,
-        `${primaryTask} gorevini tamamlarken aklinizdan nasil bir ilerleme akisi geciyor?`,
+        `Paylaşılan ekranlara baktığınızda ilk olarak ne yapmanız gerektiğini size hangi işaretler anlatıyor?`,
+        `Ana görevi tamamlamayı düşünürken aklınızdan nasıl bir ilerleme akışı geçiyor?`,
         `Bu gorev akisinda size en az net gelen adim hangisi oluyor?`,
       ],
     },
@@ -790,8 +803,8 @@ const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
       id: slugifySectionId("friction_and_improvements"),
       title: "Sürtünme ve İyileştirme Fırsatları",
       questions: [
-        `${riskAreas} başlığına baktığınızda dikkatinizi en çok hangi ekran veya adım çekiyor?`,
-        `${successSignals} hedefine ulaşmak için bu deneyimde hangi değişiklikler en çok fark yaratır?`,
+        `Riskli alanları düşününce dikkatinizi en çok hangi nokta çekiyor?`,
+        `Başarı hedeflerine yaklaşmak için bu deneyimde hangi değişiklik en çok fark yaratır?`,
         `Bu görevi tamamlamayı sizin için kolaylaştıracak ilk değişiklik ne olurdu?`,
       ],
     },

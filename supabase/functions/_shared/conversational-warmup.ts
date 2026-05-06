@@ -34,10 +34,22 @@ type WarmupPreviousTurn = {
   skipped?: boolean;
 };
 
+export type ConversationalWarmupInterviewMode = "structured" | "ai_enhanced";
+
+export type ConversationalWarmupContext = {
+  objective?: string;
+  audience?: string;
+  decisionScope?: string;
+  themes?: string[];
+  mustCover?: string[];
+};
+
 type GenerateConversationalWarmupQuestionInput = {
+  interviewMode?: ConversationalWarmupInterviewMode;
   projectTitle?: string;
   projectDescription?: string;
   sectionTitle?: string;
+  warmupContext?: ConversationalWarmupContext;
   turnIndex: number;
   existingWarmupQuestions?: string[];
   previousTurns?: WarmupPreviousTurn[];
@@ -90,40 +102,26 @@ const hasUnsafeWarmupLanguage = (question: string) => {
   const normalized = normalizeForMatch(question);
 
   return [
-    "peki",
-    "az once",
-    "az önce",
-    "soylediginiz",
-    "söylediğiniz",
-    "buna gore",
-    "buna göre",
-    "bu konu",
-    "bu konuyla",
-    "bununla ilgili",
-    "buraya gelmeden once",
-    "buraya gelmeden önce",
     "nasil hissettiniz",
     "nasıl hissettiniz",
+    "nasil hissediyorsunuz",
+    "nasıl hissediyorsunuz",
     "size ne hissettirdi",
-    "arastirma",
-    "araştırma",
-    "urun",
-    "ürün",
-    "ekran",
-    "gorusme",
-    "görüşme",
   ].some((pattern) => normalized.includes(normalizeForMatch(pattern)));
 };
 
 const isUsableWarmupQuestion = (question: string) => {
   const wordCount = countWords(question);
   const questionMarkCount = (question.match(/\?/g) || []).length;
+  const normalized = normalizeForMatch(question);
 
   return (
     question.endsWith("?") &&
     questionMarkCount === 1 &&
     wordCount >= 4 &&
     wordCount <= 18 &&
+    !/\b(ve|veya)\b/.test(normalized) &&
+    !/\bhem\b.*\bhem\b/.test(normalized) &&
     !hasUnsafeWarmupLanguage(question)
   );
 };
@@ -145,6 +143,19 @@ export const buildConversationalWarmupFallbacks = (existingWarmupQuestions: stri
   ]).slice(0, CONVERSATIONAL_WARMUP_TURN_COUNT);
 
 const getFallbackQuestion = (input: GenerateConversationalWarmupQuestionInput) => {
+  const themeTitle = input.warmupContext?.themes?.map((theme) => cleanQuestion(theme)).find(Boolean);
+  if (themeTitle) {
+    const themeFallbacks = [
+      `${themeTitle} denince aklınıza ilk ne geliyor?`,
+      `${themeTitle} tarafında bugün dikkatinizi ne çekiyor?`,
+      `${themeTitle} hakkında konuşmaya nereden başlamak istersiniz?`,
+    ];
+    const fallback = themeFallbacks[Math.max(0, input.turnIndex - 1)];
+    if (isUsableWarmupQuestion(fallback)) {
+      return fallback;
+    }
+  }
+
   const fallbacks = buildConversationalWarmupFallbacks(input.existingWarmupQuestions);
   return fallbacks[Math.max(0, input.turnIndex - 1)] || buildWarmupQuestions()[0];
 };
@@ -164,15 +175,35 @@ const stringifyPreviousTurns = (previousTurns: WarmupPreviousTurn[] = []) => {
     .join("\n\n");
 };
 
+const stringifyWarmupContext = (context?: ConversationalWarmupContext) => {
+  if (!context) {
+    return "Ek bağlam yok.";
+  }
+
+  const lines = [
+    `Amaç: ${context.objective || "Belirtilmedi"}`,
+    `Hedef kitle: ${context.audience || "Belirtilmedi"}`,
+    `Karar alanı: ${context.decisionScope || "Belirtilmedi"}`,
+    `Temalar: ${context.themes?.filter(Boolean).join(" | ") || "Belirtilmedi"}`,
+    `Mutlaka kapsanacak alanlar: ${context.mustCover?.filter(Boolean).join(" | ") || "Belirtilmedi"}`,
+  ];
+
+  return lines.join("\n");
+};
+
 const buildPrompt = (input: GenerateConversationalWarmupQuestionInput) => {
   const existingQuestions = buildConversationalWarmupFallbacks(input.existingWarmupQuestions)
     .map((question, index) => `${index + 1}. ${question}`)
     .join("\n");
 
-  return `Proje başlığı: ${input.projectTitle || "Belirtilmedi"}
+  return `Mod: ${input.interviewMode === "ai_enhanced" ? "Agentic / AI Enhanced" : "Structured"}
+Proje başlığı: ${input.projectTitle || "Belirtilmedi"}
 Proje açıklaması: ${input.projectDescription || "Belirtilmedi"}
 Bölüm: ${input.sectionTitle || "Isınma"}
 Isınma turu: ${input.turnIndex} / ${CONVERSATIONAL_WARMUP_TURN_COUNT}
+
+Araştırma bağlamı:
+${stringifyWarmupContext(input.warmupContext)}
 
 Planlanan güvenli ısınma soruları:
 ${existingQuestions || "Yok"}
@@ -189,16 +220,18 @@ Amaç:
 - Katılımcıyı araştırmaya girmeden önce rahatlat.
 - Tam olarak 3 turluk kısa bir sohbet akışı kur.
 - Her turda yalnızca 1 soru üret.
-- 2. ve 3. turda önceki yanıttan doğal bir sonraki soru çıkar; ama önceki yanıtı alıntılama.
+- Araştırma temasına yumuşak bir giriş yap; hazırlanmış soru ya da anchor soru sorma.
+- Katılımcının enerji, açıklık, çekince ve konuya yaklaşımını dolaylı olarak anlamaya çalış.
+- 2. ve 3. turda son yanıttan doğal, anlık bir follow-up çıkar; önceki yanıtı uzun alıntılama.
 
 Kurallar:
 - Türkçe karakterleri eksiksiz kullan.
 - Soru gündelik, düşük baskılı ve konuşma dilinde olsun.
 - Soru tek cümle, tek odak ve kısa olsun.
 - İlk soru güne, o ana veya günlük ritme hafifçe dokunsun.
-- Ürün, ekran, araştırma konusu veya görüşmenin ana konusuna girme.
-- Duyguyu doğrudan sorma.
-- "Peki", "az önce söylediğiniz", "buna göre", "bu konu", "buraya gelmeden önce", "nasıl hissettiniz", "size ne hissettirdi" gibi kalıpları kullanma.
+- Ana araştırma sorularını erkenden cevaplatma; sadece ısınma seviyesinde kal.
+- Duyguyu doğrudan "nasıl hissediyorsunuz" diye sorma.
+- "ve", "veya", "hem ... hem ..." kullanma; çift namlulu soru sorma.
 - Yanıt yoksa ya da soru atlandıysa güvenli, genel bir ısınma sorusuyla devam et.
 
 Yalnızca geçerli JSON döndür.`;

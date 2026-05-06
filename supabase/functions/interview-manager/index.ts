@@ -17,6 +17,10 @@ import {
   generateConversationalWarmupQuestion,
   isConversationalWarmupSectionTitle,
 } from "../_shared/conversational-warmup.ts";
+import type {
+  ConversationalWarmupContext,
+  ConversationalWarmupInterviewMode,
+} from "../_shared/conversational-warmup.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -300,6 +304,22 @@ const withAIEnhancedSessionState = (
   },
 });
 
+const buildAIEnhancedWarmupContext = (
+  brief: ReturnType<typeof normalizeAIEnhancedBrief>,
+): ConversationalWarmupContext | undefined => {
+  if (!brief) {
+    return undefined;
+  }
+
+  return {
+    objective: brief.objective,
+    audience: brief.audience,
+    decisionScope: brief.decisionScope,
+    themes: brief.themes.map((theme) => theme.title).filter(Boolean),
+    mustCover: brief.mustCover,
+  };
+};
+
 async function getQuestionRecord(questionId: string) {
   const { data, error } = await supabase
     .from("interview_questions")
@@ -412,6 +432,8 @@ const buildConversationalWarmupQuestionRows = async ({
   sectionIndex,
   startOrder,
   project,
+  interviewMode = "structured",
+  warmupContext,
 }: {
   projectId: string;
   sessionId: string;
@@ -419,6 +441,8 @@ const buildConversationalWarmupQuestionRows = async ({
   sectionIndex: number;
   startOrder: number;
   project?: Record<string, unknown> | null;
+  interviewMode?: ConversationalWarmupInterviewMode;
+  warmupContext?: ConversationalWarmupContext;
 }) => {
   const sectionTitle = asString(section.title) || "Isınma";
   const plannedQuestions = asArray<unknown>(section.questions)
@@ -427,9 +451,11 @@ const buildConversationalWarmupQuestionRows = async ({
   const fallbackQuestions = buildConversationalWarmupFallbacks(plannedQuestions);
   const warmupGroupId = createWarmupGroupId(sectionIndex);
   const firstTurn = await generateConversationalWarmupQuestion({
+    interviewMode,
     projectTitle: asString(project?.title),
     projectDescription: asString(project?.description),
     sectionTitle,
+    warmupContext,
     turnIndex: 1,
     existingWarmupQuestions: fallbackQuestions,
     previousTurns: [],
@@ -450,7 +476,7 @@ const buildConversationalWarmupQuestionRows = async ({
       question_type: "warmup_conversational",
       is_follow_up: turnIndex > 1,
       metadata: {
-        interviewMode: "structured",
+        interviewMode,
         sectionKind: "warmup",
         source: isFirstTurn ? "warmup_llm_initial" : "warmup_placeholder",
         warmupDynamic: true,
@@ -613,7 +639,7 @@ async function advanceConversationalWarmup(
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
-    .select("title, description")
+    .select("title, description, analysis")
     .eq("id", currentQuestion.project_id)
     .maybeSingle();
 
@@ -621,10 +647,18 @@ async function advanceConversationalWarmup(
     throw new Error(`Failed to load project for warm-up generation: ${projectError.message}`);
   }
 
+  const projectAnalysis = isRecord(project?.analysis) ? project.analysis : {};
+  const warmupInterviewMode = currentMetadata.interviewMode === "ai_enhanced" ? "ai_enhanced" : "structured";
+  const warmupBrief = warmupInterviewMode === "ai_enhanced"
+    ? normalizeAIEnhancedBrief(projectAnalysis.aiEnhancedBrief)
+    : null;
+
   const generation = await generateConversationalWarmupQuestion({
+    interviewMode: warmupInterviewMode,
     projectTitle: asString(project?.title),
     projectDescription: asString(project?.description),
     sectionTitle: asString(currentQuestion.section) || "Isınma",
+    warmupContext: buildAIEnhancedWarmupContext(warmupBrief),
     turnIndex: turnIndex + 1,
     existingWarmupQuestions: fallbackQuestions,
     previousTurns,
@@ -672,6 +706,7 @@ async function initializeAIEnhancedQuestions(
   sessionId: string,
   analysis: Record<string, unknown>,
   session: Record<string, unknown>,
+  project?: Record<string, unknown> | null,
 ) {
   const brief = normalizeAIEnhancedBrief(analysis.aiEnhancedBrief);
   if (!brief || brief.anchorQuestions.length === 0) {
@@ -709,26 +744,60 @@ async function initializeAIEnhancedQuestions(
     throw new Error(`Failed to mark AI enhanced session active: ${updateSessionError.message}`);
   }
 
-  const insertedQuestion = await insertAIEnhancedQuestion({
+  const warmupRows = await buildConversationalWarmupQuestionRows({
     projectId,
     sessionId,
-    questionText: firstAnchor.text,
-    questionOrder: 1,
-    section: firstTheme?.title || "AI Enhanced",
-    questionType: "anchor",
-    isFollowUp: false,
-    metadata: {
-      interviewMode: "ai_enhanced",
-      source: "anchor",
-      anchorId: firstAnchor.id,
-      anchorIndex: 0,
-      themeId: firstAnchor.themeId,
-      turnIndex: 1,
+    section: {
+      id: "agentic-warmup",
+      title: "Isınma",
+      questions: [],
     },
+    sectionIndex: 0,
+    startOrder: 1,
+    project: {
+      title: asString(project?.title),
+      description: asString(project?.description) || brief.objective,
+    },
+    interviewMode: "ai_enhanced",
+    warmupContext: buildAIEnhancedWarmupContext(brief),
   });
 
+  const questionRows = [
+    ...warmupRows,
+    {
+      project_id: projectId,
+      session_id: sessionId,
+      question_text: firstAnchor.text,
+      question_order: CONVERSATIONAL_WARMUP_TURN_COUNT + 1,
+      section: firstTheme?.title || "AI Enhanced",
+      question_type: "anchor",
+      is_follow_up: false,
+      metadata: {
+        interviewMode: "ai_enhanced",
+        source: "anchor",
+        anchorId: firstAnchor.id,
+        anchorIndex: 0,
+        themeId: firstAnchor.themeId,
+        turnIndex: 1,
+      },
+    },
+  ];
+
+  const { data, error } = await supabase
+    .from("interview_questions")
+    .insert(questionRows)
+    .select();
+
+  if (error) {
+    throw new Error(`Failed to initialize AI enhanced questions: ${error.message}`);
+  }
+
+  const orderedQuestions = (data ?? []).sort((left, right) =>
+    Number(left.question_order) - Number(right.question_order)
+  );
+
   return new Response(
-    JSON.stringify({ success: true, questions: [insertedQuestion] }),
+    JSON.stringify({ success: true, questions: orderedQuestions }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
 }
@@ -739,7 +808,7 @@ async function advanceAIEnhancedInterview(
 ) {
   const questionId = asString(response.question_id);
   const currentQuestion = await getQuestionRecord(questionId);
-  if (!currentQuestion) {
+  if (!currentQuestion || isConversationalWarmupQuestion(currentQuestion)) {
     return;
   }
 
@@ -1062,7 +1131,7 @@ async function initializeQuestions(projectId: string, sessionId: string, discuss
 
   const resolved = await resolveDiscussionGuideForSession(projectId, sessionId, discussionGuide);
   if (getResearchModeFromAnalysis(resolved.analysis) === "ai_enhanced") {
-    return await initializeAIEnhancedQuestions(projectId, sessionId, resolved.analysis, resolved.session);
+    return await initializeAIEnhancedQuestions(projectId, sessionId, resolved.analysis, resolved.session, resolved.project);
   }
 
   const resolvedGuide = resolved.discussionGuide;

@@ -67,6 +67,11 @@ type ResponseDiagnosticStage =
   | 'submit_failed'
   | 'media_attach_failed';
 
+type SubmitResponseOptions = {
+  audioDurationMs?: number;
+  metadata?: Record<string, unknown>;
+};
+
 const blobToBase64 = (blob: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -131,6 +136,19 @@ const shouldRequireTranscriptReview = (transcript: string) => {
   const wordCount = normalizedTranscript.split(/\s+/).filter(Boolean).length;
 
   return normalizedTranscript.length < AUTO_SAVE_MIN_CHARACTERS || wordCount < AUTO_SAVE_MIN_WORDS;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isConversationalWarmupQuestion = (question?: InterviewQuestion | null) => {
+  if (!question) return false;
+
+  const metadata = isRecord(question.metadata) ? question.metadata : {};
+  return (
+    question.question_type === 'warmup_conversational' ||
+    (metadata.sectionKind === 'warmup' && metadata.warmupDynamic === true)
+  );
 };
 
 const SearchoAI = ({
@@ -809,12 +827,12 @@ const SearchoAI = ({
     toast({
       title: 'Sorulara Geçiliyor',
       description: projectContext?.researchMode === 'ai_enhanced'
-        ? 'Şimdi anchor omurgayla başlayan AI enhanced görüşmeye geçiyoruz.'
+        ? 'Şimdi ısınma ile başlayan AI enhanced görüşmeye geçiyoruz.'
         : 'Şimdi yapılandırılmış görüşme sorularına başlıyoruz.',
     });
   }, [getNextQuestion, projectContext?.researchMode, toast]);
 
-  const submitCurrentResponse = useCallback(async (transcription: string) => {
+  const submitCurrentResponse = useCallback(async (transcription: string, options: SubmitResponseOptions = {}) => {
     if (!projectContext?.sessionId || !currentQuestion) {
       throw new Error('Session or question not available');
     }
@@ -845,7 +863,7 @@ const SearchoAI = ({
         participantId: projectContext.participantId,
         transcription: normalizedTranscript,
         responseText: normalizedTranscript,
-        audioDuration: Math.round(Math.max(mediaToPersist.durationMs, draftAudioDurationMs)),
+        audioDuration: Math.round(Math.max(mediaToPersist.durationMs, options.audioDurationMs ?? draftAudioDurationMs)),
         metadata: {
           timestamp: new Date().toISOString(),
           questionText: activeQuestion.question_text,
@@ -855,6 +873,7 @@ const SearchoAI = ({
           autoSaved: true,
           usedDraftTranscript: draftTranscript.trim().length > 0,
           captureAttemptId: captureAttemptRef.current,
+          ...(options.metadata ?? {}),
         },
       });
 
@@ -870,7 +889,7 @@ const SearchoAI = ({
       await persistResponseDiagnostic({
         questionId: activeQuestion.id,
         transcript: normalizedTranscript,
-        durationMs: Math.max(mediaToPersist?.durationMs ?? 0, draftAudioDurationMs),
+        durationMs: Math.max(mediaToPersist?.durationMs ?? 0, options.audioDurationMs ?? draftAudioDurationMs),
         stage: 'submit_failed',
         failureCode: 'submit_failed',
         error,
@@ -887,7 +906,7 @@ const SearchoAI = ({
     } finally {
       setIsSubmittingResponse(false);
     }
-  }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, persistResponseDiagnostic, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, uploadResponseMedia]);
+  }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, persistResponseDiagnostic, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, toast, uploadResponseMedia]);
 
   const requestMediaRecovery = useCallback((reason: MicFailureCode, message?: string | null) => {
     onMediaRecoveryRequested?.(reason);
@@ -1033,6 +1052,31 @@ const SearchoAI = ({
         await persistDraftResponse(normalizedTranscript, totalDurationMs);
 
         if (captureAttemptRef.current !== attemptId) {
+          return;
+        }
+
+        if (isConversationalWarmupQuestion(currentQuestion)) {
+          if (!normalizedTranscript.trim()) {
+            setEditableTranscript('');
+            enterRecoveryState('Isınma yanıtı net algılanamadı. Aynı soruda yeniden deneyebilirsiniz.', {
+              resume: false,
+              allowGraceIfNeeded: false,
+            });
+            toast({
+              title: 'Yanıt algılanamadı',
+              description: 'Isınma akışı aynı soruda kaldı. Mikrofonu kontrol edip tekrar deneyin.',
+              variant: 'destructive',
+            });
+            return;
+          }
+
+          await submitCurrentResponse(normalizedTranscript, {
+            audioDurationMs: totalDurationMs,
+            metadata: {
+              autoSubmittedWarmup: true,
+              transcriptReviewSkipped: true,
+            },
+          });
           return;
         }
 
@@ -1220,6 +1264,7 @@ const SearchoAI = ({
     hasUsedRecoveryGrace,
     interviewPhase,
     invalidateCaptureAttempt,
+    isStartingCapture,
     isSubmittingResponse,
     requestMediaRecovery,
     mergeTranscriptSegments,
@@ -1229,6 +1274,7 @@ const SearchoAI = ({
     startResponseRecording,
     startTranscriptionHealthMonitor,
     stopResponseRecording,
+    submitCurrentResponse,
     toast,
   ]);
 
