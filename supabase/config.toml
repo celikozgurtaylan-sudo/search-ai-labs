@@ -1,5 +1,9 @@
 project_id = "ueucxoyvktdnmxkxxbvd"
 
+[auth.email.template.confirmation]
+subject = "Searcho hesabınızı doğrulayın"
+content_path = "./supabase/templates/confirmation.html"
+
 [functions.speech-to-text]
 verify_jwt = false
 
