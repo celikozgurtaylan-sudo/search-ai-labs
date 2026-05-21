@@ -3,9 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, MessageSquare, BarChart3, Users, Search, LogOut, ImagePlus, X, Sparkles, Plus } from "lucide-react";
+import { ArrowRight, LogOut, ImagePlus, X, Sparkles, Plus } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { AnimatedHeadline } from "@/components/ui/animated-headline";
 import { SearchoMark } from "@/components/icons/SearchoMark";
@@ -13,32 +12,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { projectService, Project } from "@/services/projectService";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-
-const templates = [{
-  id: "ad-testing",
-  title: "Reklam Testi ve Geri Bildirim",
-  description: "Reklam kampanyalarınız ve kreatif varlıklarınız hakkında geri bildirim alın",
-  icon: BarChart3,
-  color: "bg-blue-50 text-blue-600"
-}, {
-  id: "landing-page",
-  title: "Açılış Sayfası Testi",
-  description: "Daha iyi dönüşüm oranları için açılış sayfanızı optimize edin",
-  icon: Search,
-  color: "bg-green-50 text-green-600"
-}, {
-  id: "nps-feedback",
-  title: "NPS ve Müşteri Geri Bildirimi",
-  description: "Müşteri memnuniyeti ve sadakatini ölçün",
-  icon: Users,
-  color: "bg-purple-50 text-purple-600"
-}, {
-  id: "foundational",
-  title: "Temel Araştırma",
-  description: "Kullanıcı ihtiyaçları ve pazar fırsatlarını derinlemesine analiz edin",
-  icon: MessageSquare,
-  color: "bg-orange-50 text-orange-600"
-}];
 
 const placeholderHints = [
 "Searcho AI, bu açılış sayfasında dönüşümü düşüren 3 kritik friksiyonu bulur musun?",
@@ -332,13 +305,13 @@ const Index = () => {
     }
   };
 
-  const handleStartProject = async (templateId?: string, description?: string) => {
+  const handleStartProject = async () => {
     if (!user) {
       navigate('/auth');
       return;
     }
 
-    const projectDesc = description || projectDescription;
+    const projectDesc = projectDescription;
     if (!projectDesc.trim()) {
       toast.error('Please enter a project description');
       return;
@@ -376,7 +349,6 @@ const Index = () => {
 
       const analysisPayload = {
         researchMode: selectedResearchMode,
-        ...(templateId ? { template: templateId } : {}),
         ...(hasScreenContext ? { designScreens, usabilityTesting } : {})
       };
 
@@ -390,7 +362,6 @@ const Index = () => {
       localStorage.setItem('searchai-project', JSON.stringify({
         id: project.id,
         description: projectDesc,
-        template: templateId,
         analysis: project.analysis || analysisPayload,
         timestamp: Date.now()
       }));
@@ -399,8 +370,9 @@ const Index = () => {
       localStorage.setItem('searchai-analyze-request', 'true');
 
       navigate('/workspace');
-    } catch (error: any) {
-      toast.error('Failed to create project: ' + error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast.error('Failed to create project: ' + message);
     } finally {
       setLoading(false);
     }
@@ -411,17 +383,6 @@ const Index = () => {
     if (description.includes('reklam') || description.includes('advertisement') || description.includes('ad')) return 'Reklam Test Çalışması';
     if (description.includes('NPS') || description.includes('banking') || description.includes('bankacılık')) return 'Müşteri Memnuniyeti Araştırması';
     return 'Kullanıcı Deneyimi Araştırma Çalışması';
-  };
-
-  const handleTemplateSelect = (template: typeof templates[0]) => {
-    setSelectedResearchMode("structured");
-    const sampleDescriptions = {
-      "ad-testing": "Reklam kampanyası performansını ve hedef kitle tepkilerini değerlendirmek için kapsamlı bir kullanıcı araştırması tasarlayın. Duygusal tepkiler, marka algısı ve satın alma niyeti üzerine odaklanılması gereken bir çalışma.",
-      "landing-page": "Web sitesi açılış sayfasının kullanıcı deneyimi ve dönüşüm optimizasyonu için detaylı analiz gereksinimi. Kullanıcı davranışları, mesaj netliği ve etkileşim oranları üzerine araştırma planlanması.",
-      "nps-feedback": "Müşteri memnuniyeti ve sadakat düzeyini ölçmeye yönelik NPS tabanlı araştırma metodolojisi. Kullanıcı geri bildirimlerinin sistematik analizi ve iyileştirme önerilerinin geliştirilmesi gereksinimi.",
-      "foundational": "Kullanıcı ihtiyaçları ve pazar dinamiklerini derinlemesine anlamaya yönelik temel araştırma metodolojisi. Kullanıcı segmentasyonu, davranış analizi ve fırsat tespiti odaklı çalışma planlaması."
-    };
-    handleStartProject(template.id, sampleDescriptions[template.id as keyof typeof sampleDescriptions]);
   };
 
   const handleSignOut = async () => {
@@ -734,35 +695,6 @@ const Index = () => {
             <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading || isUploadingScreens} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
               {loading || isUploadingScreens ? 'Oluşturuluyor...' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
-          </div>
-        </div>
-
-        {/* Templates */}
-        <div className="mb-12 landing-fade-in landing-fade-in--5">
-          <h2 className="text-2xl font-semibold text-text-primary mb-6 text-center">
-            Veya bir şablonla başlayın
-          </h2>
-          
-          <div className="grid md:grid-cols-2 gap-4">
-            {templates.map((template, index) => <Card key={template.id} className="landing-template-card cursor-pointer transition-all duration-300 hover:shadow-md hover:border-brand-primary group" style={{ animationDelay: `${index * 140 + 360}ms` }} onClick={() => handleTemplateSelect(template)}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start space-x-3">
-                    <div className={`landing-template-icon w-10 h-10 rounded-lg flex items-center justify-center ${template.color}`}>
-                      <template.icon className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1">
-                      <CardTitle className="text-lg font-semibold text-text-primary group-hover:text-brand-primary transition-colors">
-                        {template.title}
-                      </CardTitle>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <CardDescription className="text-text-secondary">
-                    {template.description}
-                  </CardDescription>
-                </CardContent>
-              </Card>)}
           </div>
         </div>
 
