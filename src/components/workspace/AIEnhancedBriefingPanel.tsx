@@ -1,12 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import {
   AIEnhancedBrief,
   normalizeAIEnhancedBrief,
 } from "@/lib/aiEnhancedResearch";
-import { ArrowRight, Loader2, Sparkles } from "lucide-react";
+import { Send, User } from "lucide-react";
 import { toast } from "sonner";
 import {
   buildCompactConversationPayload,
@@ -27,6 +25,12 @@ interface PlannerMessage {
   status?: "thinking" | "streaming" | "done" | "error";
   showThinking?: boolean;
   showDot?: boolean;
+}
+
+interface AIEnhancedPlannerResponse {
+  reply?: string;
+  brief?: unknown;
+  conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>;
 }
 
 const THINKING_LABEL_DELAY_MS = 1000;
@@ -56,19 +60,20 @@ const AIEnhancedBriefingPanel = ({
   );
   const [isLoading, setIsLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const autoStartedRef = useRef(false);
   const assistantStageTimersRef = useRef<Record<string, number[]>>({});
   const assistantStreamStateRef = useRef<Record<string, { createdAt: number; pending: string; revealTimerId?: number }>>({});
 
-  const clearAssistantStageTimers = (messageId: string) => {
+  const clearAssistantStageTimers = useCallback((messageId: string) => {
     const timers = assistantStageTimersRef.current[messageId];
     if (!timers?.length) return;
 
     timers.forEach((timerId) => window.clearTimeout(timerId));
     delete assistantStageTimersRef.current[messageId];
-  };
+  }, []);
 
-  const scheduleAssistantStageTimers = (messageId: string) => {
+  const scheduleAssistantStageTimers = useCallback((messageId: string) => {
     clearAssistantStageTimers(messageId);
 
     const thinkingTimer = window.setTimeout(() => {
@@ -92,17 +97,17 @@ const AIEnhancedBriefingPanel = ({
     }, THINKING_DOT_DELAY_MS);
 
     assistantStageTimersRef.current[messageId] = [thinkingTimer, dotTimer];
-  };
+  }, [clearAssistantStageTimers]);
 
-  const clearAssistantStreamState = (messageId: string) => {
+  const clearAssistantStreamState = useCallback((messageId: string) => {
     const state = assistantStreamStateRef.current[messageId];
     if (state?.revealTimerId) {
       window.clearTimeout(state.revealTimerId);
     }
     delete assistantStreamStateRef.current[messageId];
-  };
+  }, []);
 
-  const revealAssistantPendingContent = (messageId: string, status: "streaming" | "done", fallbackContent?: string) => {
+  const revealAssistantPendingContent = useCallback((messageId: string, status: "streaming" | "done", fallbackContent?: string) => {
     clearAssistantStageTimers(messageId);
     const state = assistantStreamStateRef.current[messageId];
     const nextContent = fallbackContent ?? state?.pending ?? "";
@@ -124,7 +129,7 @@ const AIEnhancedBriefingPanel = ({
     if (state) {
       state.revealTimerId = undefined;
     }
-  };
+  }, [clearAssistantStageTimers]);
 
   useEffect(() => {
     setMessages(buildMessagesFromTranscript(brief));
@@ -136,17 +141,24 @@ const AIEnhancedBriefingPanel = ({
   }, [messages, isLoading]);
 
   useEffect(() => {
+    const stageTimers = assistantStageTimersRef.current;
+    const streamStates = assistantStreamStateRef.current;
+
     return () => {
-      Object.keys(assistantStageTimersRef.current).forEach((messageId) => {
-        clearAssistantStageTimers(messageId);
+      Object.values(stageTimers).forEach((timers) => {
+        timers.forEach((timerId) => window.clearTimeout(timerId));
       });
-      Object.keys(assistantStreamStateRef.current).forEach((messageId) => {
-        clearAssistantStreamState(messageId);
+      Object.values(streamStates).forEach((state) => {
+        if (state.revealTimerId) {
+          window.clearTimeout(state.revealTimerId);
+        }
       });
+      assistantStageTimersRef.current = {};
+      assistantStreamStateRef.current = {};
     };
   }, []);
 
-  const sendMessage = async (messageText: string) => {
+  const sendMessage = useCallback(async (messageText: string) => {
     const trimmedMessage = messageText.trim();
     if (!trimmedMessage) return;
 
@@ -178,7 +190,7 @@ const AIEnhancedBriefingPanel = ({
 
     try {
       const compactConversation = buildCompactConversationPayload(conversationHistory);
-      const data = await streamEdgeFunction<any>({
+      const data = await streamEdgeFunction<AIEnhancedPlannerResponse>({
         functionName: "ai-enhanced-planner",
         body: {
           message: trimmedMessage,
@@ -265,7 +277,17 @@ const AIEnhancedBriefingPanel = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [
+    brief,
+    clearAssistantStageTimers,
+    clearAssistantStreamState,
+    conversationHistory,
+    onBriefUpdate,
+    projectDescription,
+    projectTitle,
+    revealAssistantPendingContent,
+    scheduleAssistantStageTimers,
+  ]);
 
   useEffect(() => {
     if (autoStartedRef.current) return;
@@ -277,51 +299,81 @@ const AIEnhancedBriefingPanel = ({
 
     autoStartedRef.current = true;
     void sendMessage(projectDescription);
-  }, [brief?.plannerTranscript?.length, projectDescription]);
+  }, [brief?.plannerTranscript?.length, projectDescription, sendMessage]);
 
   const hasMessages = messages.length > 0;
 
-  return (
-    <div className="h-full overflow-y-auto bg-[rgba(121,76,255,0.045)] scrollbar-hide">
-      <div className="mx-auto flex min-h-full max-w-5xl flex-col px-6 py-8">
-        <div className="mx-auto w-full max-w-3xl">
-          <div className="mb-6 text-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-brand-primary/20 bg-brand-primary-light/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-brand-primary">
-              <Sparkles className="h-3.5 w-3.5" />
-              Agent Enhanced
-            </div>
-            <h2 className="mt-5 text-2xl font-semibold text-text-primary">Bağlamı birlikte netleştirelim</h2>
-            <p className="mt-3 text-sm leading-7 text-text-secondary">
-              Önce araştırmanın çerçevesini netleştiriyoruz. Sonra görüşme akışını senin adına sessizce kurup katılımcı aşamasına geçiyoruz.
-            </p>
-          </div>
+  const resizeTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, []);
 
-          <Card className="min-h-[640px] overflow-hidden bg-white/88 backdrop-blur-sm">
-            <CardContent className="flex h-full min-h-[640px] flex-col p-0">
-              <div className="flex-1 overflow-y-auto px-5 py-6 scrollbar-hide">
-                <div className="space-y-4">
-                  {!hasMessages ? (
-                    <div className="flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
-                      <Sparkles className="mb-4 h-10 w-10 text-brand-primary/65" />
-                      <h3 className="text-xl font-semibold text-text-primary">Araştırmanın bağlamını anlat</h3>
-                      <p className="mt-3 max-w-xl text-sm leading-7 text-text-secondary">
-                        Burada konu, hedef kitle ve karar alanını doğal bir sohbetle netleştiriyoruz. Teknik sinyalleri sana göstermeden arkada topluyoruz.
-                      </p>
-                    </div>
-                  ) : (
-                    messages.map((message) => (
-                      <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                        <div
-                          className={`max-w-[84%] px-4 py-3 text-sm leading-7 ${
-                            message.role === "user"
-                              ? "bg-brand-primary text-white"
-                              : "text-text-primary"
-                          }`}
-                        >
-                          {message.role === "assistant" && message.status === "thinking" && message.content.trim().length === 0 ? (
-                            <div className="space-y-2 min-h-[44px]">
+  useEffect(() => {
+    resizeTextarea();
+  }, [input, resizeTextarea]);
+
+  const handleSendMessage = async () => {
+    if (!input.trim() || isLoading) return;
+
+    const currentInput = input;
+    setInput("");
+    await sendMessage(currentInput);
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void handleSendMessage();
+    }
+  };
+
+  return (
+    <div className="h-full overflow-hidden bg-[rgba(121,76,255,0.045)]">
+      <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 py-8">
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto min-h-0 scroll-smooth scrollbar-hide">
+            <div className="min-h-full space-y-5 py-6">
+              {!hasMessages ? (
+                <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+                  <h2 className="text-2xl font-semibold text-text-primary">Araştırma çerçevesini birlikte netleştirelim</h2>
+                  <p className="mt-3 max-w-2xl text-sm leading-7 text-text-secondary">
+                    Araştırmak istediğin konuyu birkaç cümleyle yaz. Searcho önce bağlamı anlayacak, sonra doğru anda planı açacak.
+                  </p>
+                </div>
+              ) : (
+                messages.map((message) => {
+                  if (message.role === "user") {
+                    return (
+                      <div key={message.id} className="flex justify-end space-x-3">
+                        <div className="flex-1 max-w-[88%] sm:max-w-[80%]">
+                          <div className="rounded-2xl bg-brand-primary px-4 py-3 text-white">
+                            <p className="text-sm leading-relaxed whitespace-pre-line">
+                              {message.content}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-border-light bg-surface text-text-secondary">
+                          <User className="h-4 w-4" aria-hidden="true" />
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={message.id} className="flex justify-start">
+                      <div className="flex-1 max-w-[88%] sm:max-w-[80%]">
+                        <div className="px-1 py-1 text-text-primary min-h-[44px]">
+                          {message.content.trim().length > 0 ? (
+                            <p className="text-sm leading-relaxed whitespace-pre-line">
+                              {message.content}
+                            </p>
+                          ) : message.showThinking || message.showDot ? (
+                            <div className="space-y-2 py-1">
                               <p
-                                className={`chat-thinking-shimmer origin-left font-medium transform-gpu transition-all duration-700 ${
+                                className={`chat-thinking-shimmer origin-left text-sm font-medium transform-gpu transition-all duration-700 ${
                                   message.showThinking
                                     ? "translate-y-0 scale-100 opacity-100"
                                     : "translate-y-2 scale-[0.985] opacity-0"
@@ -341,54 +393,44 @@ const AIEnhancedBriefingPanel = ({
                                 .
                               </div>
                             </div>
-                          ) : message.content.trim().length > 0 ? (
-                            <p className="whitespace-pre-line">{message.content}</p>
                           ) : (
-                            <div className="min-h-[44px]" />
+                            <div className="h-[38px]" />
                           )}
                         </div>
                       </div>
-                    ))
-                  )}
+                    </div>
+                  );
+                })
+              )}
 
-                  <div ref={endRef} />
-                </div>
-              </div>
+              <div ref={endRef} />
+            </div>
+          </div>
 
-              <div className="border-t border-border-light p-4">
-                <div className="space-y-3">
-                  <Textarea
-                    value={input}
-                    onChange={(event) => setInput(event.target.value)}
-                    placeholder="Bağlamı netleştirecek ek bilgi verin..."
-                    className="min-h-[96px] resize-none"
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        const currentInput = input;
-                        setInput("");
-                        void sendMessage(currentInput);
-                      }
-                    }}
-                  />
-                  <div className="flex justify-end">
-                    <Button
-                      onClick={() => {
-                        const currentInput = input;
-                        setInput("");
-                        void sendMessage(currentInput);
-                      }}
-                      disabled={isLoading || !input.trim()}
-                      className="bg-brand-primary text-white hover:bg-brand-primary-hover"
-                    >
-                      {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
-                      Gönder
-                    </Button>
-                  </div>
-                </div>
+          <div className="border-t border-border-light bg-white/88 pt-4 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm">
+            <div className="rounded-3xl border border-border-light bg-surface/30 p-3 shadow-sm">
+              <div className="flex items-end space-x-3">
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Araştırmak istediğin konuyu yaz..."
+                  className="flex-1 resize-none overflow-y-auto scrollbar-hide rounded-2xl border border-input bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={isLoading}
+                  rows={1}
+                  style={{ minHeight: "48px", maxHeight: "160px", scrollbarWidth: "none", msOverflowStyle: "none" }}
+                />
+                <Button
+                  onClick={() => void handleSendMessage()}
+                  disabled={!input.trim() || isLoading}
+                  className="h-12 flex-shrink-0 rounded-2xl px-5"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       </div>
     </div>

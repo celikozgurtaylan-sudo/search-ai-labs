@@ -441,6 +441,7 @@ const Workspace = () => {
   const lastPersistedWorkspaceChatKeyRef = useRef<string>("");
   const restoredChatProjectIdRef = useRef<string | null>(null);
   const workspaceChatPersistTimeoutRef = useRef<number | null>(null);
+  const aiEnhancedAutoAdvanceKeyRef = useRef<string>("");
   const researchMode = useMemo(() => getResearchMode(projectData?.analysis), [projectData?.analysis]);
   const isAIEnhancedMode = researchMode === "ai_enhanced";
   const aiEnhancedDisplayGuide = useMemo(
@@ -791,6 +792,26 @@ const Workspace = () => {
     setAiEnhancedBrief(nextBrief);
     setIsResearchRelated(true);
   }, []);
+
+  useEffect(() => {
+    if (!isAIEnhancedMode || currentStep !== "guide" || !isAIEnhancedReady(aiEnhancedBrief)) {
+      return;
+    }
+
+    const autoAdvanceKey = [
+      projectData?.id ?? "draft",
+      aiEnhancedBrief?.updatedAt ?? "",
+      aiEnhancedBrief?.readyAt ?? "",
+    ].join("::");
+
+    if (aiEnhancedAutoAdvanceKeyRef.current === autoAdvanceKey) {
+      return;
+    }
+
+    aiEnhancedAutoAdvanceKeyRef.current = autoAdvanceKey;
+    setCurrentStep("recruit");
+    setShowRecruitment(true);
+  }, [aiEnhancedBrief, currentStep, isAIEnhancedMode, projectData?.id]);
 
   useEffect(() => {
     if (researchMode !== "structured") return;

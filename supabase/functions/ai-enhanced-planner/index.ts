@@ -379,7 +379,7 @@ const normalizePlannerOutput = (raw: Record<string, unknown>) => {
     normalizedAnchors.length >= 5;
 
   const readiness = Math.max(0, Math.min(100, Math.round(Number(raw.contextReadiness) || 0)));
-  const isReady = Boolean(raw.isReady) && readiness >= 100 && hasReadyCore;
+  const isReady = (Boolean(raw.isReady) || readiness >= 100) && hasReadyCore;
 
   return {
     reply: restoreTurkishCharacters(asString(raw.reply)) || "Bağlamı biraz daha netleştirelim.",
