@@ -7,10 +7,16 @@ import {
 } from "../_shared/project-report.ts";
 import {
   findThemeById,
-  generateAIEnhancedFollowUp,
   getResearchModeFromAnalysis,
   normalizeAIEnhancedBrief,
 } from "../_shared/ai-enhanced.ts";
+import {
+  buildParticipantExperienceFollowUp,
+  getParticipantExperienceLimits,
+} from "../_shared/participant-experience-interviewer.ts";
+import type {
+  ParticipantExperienceSignal,
+} from "../_shared/participant-experience-question-bank.ts";
 import {
   CONVERSATIONAL_WARMUP_TURN_COUNT,
   buildConversationalWarmupFallbacks,
@@ -180,7 +186,7 @@ const asArray = <T>(value: unknown): T[] => (Array.isArray(value) ? value as T[]
 const asString = (value: unknown) =>
   typeof value === "string" ? value.trim() : "";
 
-async function resolveDiscussionGuideForSession(projectId: string, sessionId: string, fallbackDiscussionGuide: any) {
+async function resolveDiscussionGuideForSession(projectId: string, sessionId: string, fallbackDiscussionGuide: unknown) {
   const { data: session, error: sessionError } = await supabase
     .from('study_sessions')
     .select('id, participant_id, status, started_at, metadata')
@@ -560,6 +566,35 @@ async function updateWarmupResponseAnalysis(
   return data ?? response;
 }
 
+async function updateResponseIntelligenceMetadata(
+  response: Record<string, unknown>,
+  intelligenceMetadata: Record<string, unknown>,
+) {
+  const responseId = asString(response.id);
+  if (!responseId) {
+    return response;
+  }
+
+  const { data, error } = await supabase
+    .from("interview_responses")
+    .update({
+      metadata: {
+        ...getResponseMetadata(response),
+        participantExperienceIntelligence: intelligenceMetadata,
+      },
+    })
+    .eq("id", responseId)
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    console.warn("Failed to persist participant intelligence metadata:", error);
+    return response;
+  }
+
+  return data ?? response;
+}
+
 async function advanceConversationalWarmup(
   sessionId: string,
   response: Record<string, unknown>,
@@ -868,45 +903,95 @@ async function advanceAIEnhancedInterview(
     ? aiState.coveredAnchorIds
     : [...aiState.coveredAnchorIds, currentAnchor.id];
 
+  let updatedResponse = response;
+
   if (currentMetadata.source === "anchor" && !currentQuestion.is_follow_up) {
     const responseMetadata = isRecord(response.metadata) ? response.metadata : {};
     const wasSkipped = Boolean(responseMetadata.skipped);
     const participantAnswer = asString(response.transcription) || asString(response.response_text);
-    const previousFollowUps = allQuestions
-      .filter((question) => {
+    const anchorFollowUpQuestions = allQuestions.filter((question) => {
         const metadata = isRecord(question.metadata) ? question.metadata : {};
         return metadata.source === "follow_up" && metadata.anchorId === currentAnchor.id;
-      })
+      });
+    const sessionFollowUpQuestions = allQuestions.filter((question) => {
+      const metadata = isRecord(question.metadata) ? question.metadata : {};
+      return metadata.source === "follow_up" && metadata.interviewMode === "ai_enhanced";
+    });
+    const previousFollowUps = anchorFollowUpQuestions
       .map((question) => asString(question.question_text))
       .filter(Boolean);
+    const previousSignalFollowUps = sessionFollowUpQuestions
+      .flatMap((question) => {
+        const metadata = getQuestionMetadata(question);
+        return asArray<ParticipantExperienceSignal>(metadata.detectedSignals)
+          .map((signal) => asString(signal) as ParticipantExperienceSignal)
+          .filter(Boolean);
+      });
+    const themeTitle = findThemeById(brief, currentAnchor.themeId)?.title || "AI Enhanced";
+    const limits = getParticipantExperienceLimits();
+    const intelligence = await buildParticipantExperienceFollowUp({
+      researchObjective: brief.objective,
+      audience: brief.audience,
+      decisionScope: brief.decisionScope,
+      themeTitle,
+      anchorQuestionText: currentAnchor.text,
+      participantAnswer,
+      previousFollowUps,
+      recentQuestionTexts: allQuestions.map((question) => asString(question.question_text)).filter(Boolean),
+      transcriptConfidence: typeof response.confidence_score === "number" ? response.confidence_score : null,
+      wasSkipped,
+      remainingAnchorCount: Math.max(0, brief.anchorQuestions.length - currentAnchorIndex - 1),
+      previouslyFollowedSignals: previousSignalFollowUps,
+      maxFollowUpState: {
+        anchorFollowUpCount: anchorFollowUpQuestions.length,
+        consecutiveFollowUpCount: 0,
+        sessionFollowUpCount: sessionFollowUpQuestions.length,
+        ...limits,
+      },
+    });
+    const intelligenceMetadata = {
+      ...intelligence.analysis,
+      followUpDecision: intelligence.action,
+      generatedQuestion: intelligence.questionText,
+      questionQualityResult: intelligence.questionQualityResult ?? null,
+      fallbackUsed: intelligence.fallbackUsed,
+      source: intelligence.source,
+      generationReason: intelligence.generationReason,
+      anchorQuestionId: currentAnchor.id,
+      analyzedAt: new Date().toISOString(),
+    };
+    updatedResponse = await updateResponseIntelligenceMetadata(response, intelligenceMetadata);
 
-    const moderation = wasSkipped
-      ? { decision: "next_anchor", followUpQuestion: null }
-      : await generateAIEnhancedFollowUp({
-          brief,
-          anchorQuestion: currentAnchor,
-          themeTitle: findThemeById(brief, currentAnchor.themeId)?.title || "AI Enhanced",
-          participantAnswer,
-          previousFollowUps,
-        });
-
-    if (moderation.decision === "follow_up" && moderation.followUpQuestion) {
+    if (
+      ["ask_follow_up", "ask_clarification"].includes(intelligence.action) &&
+      intelligence.questionText
+    ) {
       await insertAIEnhancedQuestion({
         projectId: session.project_id,
         sessionId,
-        questionText: moderation.followUpQuestion,
+        questionText: intelligence.questionText,
         questionOrder: nextQuestionOrder,
-        section: findThemeById(brief, currentAnchor.themeId)?.title || "AI Enhanced",
+        section: themeTitle,
         questionType: "follow_up",
         isFollowUp: true,
         parentQuestionId: currentQuestion.id,
         metadata: {
           interviewMode: "ai_enhanced",
           source: "follow_up",
+          generatedBy: "participant_experience_intelligence",
           anchorId: currentAnchor.id,
+          anchorQuestionId: currentAnchor.id,
           anchorIndex: currentAnchorIndex,
           themeId: currentAnchor.themeId,
           turnIndex: aiState.turnIndex + 1,
+          parentQuestionId: currentQuestion.id,
+          detectedSignals: intelligence.analysis.detectedSignals,
+          primarySignal: intelligence.analysis.primarySignal,
+          followUpDecision: intelligence.action,
+          followUpReason: intelligence.analysis.followUpReason,
+          questionQualityResult: intelligence.questionQualityResult ?? null,
+          maxFollowUpState: intelligence.analysis.maxFollowUpState,
+          fallbackUsed: intelligence.fallbackUsed,
         },
       });
 
@@ -915,7 +1000,7 @@ async function advanceAIEnhancedInterview(
         turnIndex: aiState.turnIndex + 1,
         coveredAnchorIds: updatedCoveredAnchorIds,
       }));
-      return;
+      return updatedResponse;
     }
   }
 
@@ -947,6 +1032,8 @@ async function advanceAIEnhancedInterview(
     turnIndex: aiState.turnIndex + 1,
     coveredAnchorIds: updatedCoveredAnchorIds,
   }));
+
+  return updatedResponse;
 }
 
 async function buildInterviewState(sessionId: string) {
@@ -1130,7 +1217,7 @@ serve(async (req) => {
   }
 });
 
-async function initializeQuestions(projectId: string, sessionId: string, discussionGuide: any) {
+async function initializeQuestions(projectId: string, sessionId: string, discussionGuide: unknown) {
   console.log('Initializing questions for session:', sessionId);
 
   const resolved = await resolveDiscussionGuideForSession(projectId, sessionId, discussionGuide);
@@ -1300,7 +1387,7 @@ async function submitResponse(sessionId: string, responseData: ResponsePayload) 
     },
   });
   response = await advanceConversationalWarmup(sessionId, response);
-  await advanceAIEnhancedInterview(sessionId, response);
+  response = await advanceAIEnhancedInterview(sessionId, response) ?? response;
   const state = await buildInterviewState(sessionId);
   await finalizeCompletedSession(sessionId, state);
 
@@ -1324,7 +1411,7 @@ async function skipQuestion(sessionId: string, questionId: string, metadata: Rec
     },
   });
   response = await advanceConversationalWarmup(sessionId, response);
-  await advanceAIEnhancedInterview(sessionId, response);
+  response = await advanceAIEnhancedInterview(sessionId, response) ?? response;
   const state = await buildInterviewState(sessionId);
   await finalizeCompletedSession(sessionId, state);
 

@@ -27,6 +27,29 @@ export interface QuestionReviewResult {
   checks: Record<string, QuestionReviewCheck>;
 }
 
+export type GeneratedQuestionQualityIssueType =
+  | "leading"
+  | "double_barreled"
+  | "too_long"
+  | "too_formal"
+  | "too_vague"
+  | "too_sensitive"
+  | "not_contextual"
+  | "repetitive";
+
+export interface GeneratedQuestionQualityResult {
+  passed: boolean;
+  riskLevel: "low" | "medium" | "high";
+  issues: Array<{
+    type: GeneratedQuestionQualityIssueType;
+    message: string;
+  }>;
+  revisedQuestion?: string;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
 const BANNED_PARAPHRASE_PATTERNS = [
   "kendi cumlelerinizle",
   "kendi cümlelerinizle",
@@ -115,6 +138,41 @@ const HEAVY_JARGON_PATTERNS = [
   "ux",
   "ui",
 ];
+
+const OVERLY_FORMAL_TURKISH_PATTERNS = [
+  "lütfen",
+  "mahiyet",
+  "husus",
+  "parametre",
+  "detaylandırınız",
+  "açıklayınız",
+  "değerlendiriniz",
+  "deneyiminizin mahiyeti",
+  "hangi parametreler",
+];
+
+const LIVE_FOLLOW_UP_GENERIC_PATTERNS = [
+  "bunu biraz daha açabilir misiniz",
+  "biraz daha anlatır mısınız",
+  "detaylandırabilir misiniz",
+  "açar mısınız",
+];
+
+const LIVE_FOLLOW_UP_SAFE_CONTEXT_PATTERNS: Record<string, string[]> = {
+  permission_trust: ["izin", "kamera", "mikrofon", "güven", "aklınızdan"],
+  privacy_concern: ["gizlilik", "veri", "kayıt", "güven", "açık"],
+  ai_voice_quality: ["ses", "ton", "tempo", "telaffuz", "doğal"],
+  turkish_language_quality: ["türkçe", "ifade", "telaffuz", "dil"],
+  warmup_experience: ["ısınma", "ilk soru", "görüşmeye gir"],
+  interview_flow: ["akış", "bölüm", "sıra", "görüşme"],
+  question_clarity: ["soru", "metin", "net", "anlaşılır"],
+  follow_up_relevance: ["sonraki soru", "takip", "cevabınızla", "ilişki"],
+  feeling_understood: ["anlaşıl", "hangi anda", "fark ettiniz"],
+  transcription_quality: ["yazı", "transkript", "kelime", "farklı yaz"],
+  control_and_safety: ["kontrol", "rahat", "durdur", "atla"],
+  completion_clarity: ["bitti", "kapanış", "tamamlan"],
+  improvement_suggestion: ["değiştir", "farklı", "iyileştir"],
+};
 
 const USABILITY_CONTEXT_ANCHOR_PATTERNS = [
   "bu ekran",
@@ -532,6 +590,126 @@ const hasGenericUsabilityPrompt = (normalized: string) =>
 
 const getWordCount = (question: string) => cleanQuestion(question).split(/\s+/).filter(Boolean).length;
 
+const hasOverlyFormalLanguage = (normalized: string) =>
+  OVERLY_FORMAL_TURKISH_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
+
+const isGenericLiveFollowUp = (normalized: string) =>
+  LIVE_FOLLOW_UP_GENERIC_PATTERNS.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
+
+const hasTurkishOrthographyIssue = (question: string) => {
+  const normalized = question.toLocaleLowerCase("tr-TR");
+  return [
+    "cok",
+    "nasil",
+    "gorusme",
+    "arastirma",
+    "kullanici",
+    "guven",
+    "turkce",
+    "degil",
+  ].some((pattern) => normalized.includes(pattern));
+};
+
+const hasAllowedShortOptionProbe = (question: string) => {
+  const normalized = normalizeForMatch(question);
+  const hasOptionSeparator = /[:;]/.test(question) || /\b(ya da|yoksa)\b/.test(normalized);
+  if (!hasOptionSeparator) {
+    return false;
+  }
+
+  const optionishParts = question
+    .replace(/\?/g, "")
+    .split(/[:;,]|\bya da\b|\byoksa\b/iu)
+    .map((part) => part.trim())
+    .filter((part) => part.split(/\s+/).filter(Boolean).length > 0);
+
+  return (
+    optionishParts.length >= 2 &&
+    optionishParts.length <= 4 &&
+    getWordCount(question) <= 24 &&
+    !/\bve\b/.test(normalized)
+  );
+};
+
+const hasLiveFollowUpDoubleBarrel = (question: string) => {
+  const normalized = normalizeForMatch(question);
+  const questionMarkCount = (question.match(/\?/g) || []).length;
+  if (questionMarkCount > 1) {
+    return true;
+  }
+
+  if (hasAllowedShortOptionProbe(question)) {
+    return false;
+  }
+
+  if (/\bveya\b/.test(normalized) || /\bhem\b.*\bhem\b/.test(normalized)) {
+    return true;
+  }
+
+  return /\bve\b/.test(normalized) && /(neden|nasil|hangi|ne)\b.*\bve\b.*\b(neden|nasil|hangi|ne)\b/.test(normalized);
+};
+
+const isRepetitiveQuestion = (question: string, recentQuestions: string[]) => {
+  const normalizedQuestion = normalizeForMatch(question);
+  const tokens = new Set(normalizedQuestion.split(/\s+/).filter((token) => token.length > 3));
+
+  return recentQuestions.some((recentQuestion) => {
+    const normalizedRecent = normalizeForMatch(recentQuestion);
+    if (normalizedRecent === normalizedQuestion) {
+      return true;
+    }
+
+    const recentTokens = normalizedRecent.split(/\s+/).filter((token) => token.length > 3);
+    if (tokens.size === 0 || recentTokens.length === 0) {
+      return false;
+    }
+
+    const overlapCount = recentTokens.filter((token) => tokens.has(token)).length;
+    return overlapCount / Math.min(tokens.size, recentTokens.length) >= 0.72;
+  });
+};
+
+const isContextualLiveFollowUp = ({
+  question,
+  previousAnswer,
+  expectedSignals,
+}: {
+  question: string;
+  previousAnswer?: string;
+  expectedSignals?: string[];
+}) => {
+  const normalizedQuestion = normalizeForMatch(question);
+  const normalizedAnswer = normalizeForMatch(previousAnswer || "");
+  const signals = (expectedSignals || []).filter(Boolean);
+
+  if (signals.includes("unclear_or_vague")) {
+    return true;
+  }
+
+  if (signals.some((signal) =>
+    (LIVE_FOLLOW_UP_SAFE_CONTEXT_PATTERNS[signal] || []).some((pattern) =>
+      normalizedQuestion.includes(normalizeForMatch(pattern))
+    )
+  )) {
+    return true;
+  }
+
+  const answerTokens = new Set(
+    normalizedAnswer
+      .split(/\s+/)
+      .filter((token) => token.length > 4 && !["biraz", "bence", "gibi", "oldu"].includes(token)),
+  );
+  if (answerTokens.size === 0) {
+    return true;
+  }
+
+  const questionTokens = normalizedQuestion.split(/\s+/).filter((token) => token.length > 4);
+  return questionTokens.some((token) => answerTokens.has(token)) ||
+    ["hangi anda", "neydi", "ne oldu", "ne farklı", "ne çekti", "ne geçti"].some((pattern) =>
+      normalizedQuestion.includes(normalizeForMatch(pattern))
+    );
+};
+
 const detectMethodologyMatches = (normalized: string) => {
   const forcedParaphraseMatches = findMatchedPatterns(normalized, BANNED_PARAPHRASE_PATTERNS);
   const interpretationPromptingMatches = findMatchedPatterns(normalized, INTERPRETATION_PROMPTING_PATTERNS);
@@ -817,6 +995,132 @@ export const assessQuestionQuality = ({
 export const shouldRejectGeneratedQuestion = (review: QuestionReviewResult) =>
   review.issues.some((issue) => issue.severity === "problematic") || review.violatedMustRules.length > 0;
 
+export const assessLiveFollowUpQuality = ({
+  question,
+  previousAnswer = "",
+  recentQuestions = [],
+  expectedSignals = [],
+  fallbackQuestion,
+}: {
+  question: string;
+  previousAnswer?: string;
+  recentQuestions?: string[];
+  expectedSignals?: string[];
+  fallbackQuestion?: string;
+}): GeneratedQuestionQualityResult => {
+  const cleanedQuestion = cleanQuestion(question);
+  const normalized = normalizeForMatch(cleanedQuestion);
+  const normalizedAnswer = normalizeForMatch(previousAnswer);
+  const wordCount = getWordCount(cleanedQuestion);
+  const issues: GeneratedQuestionQualityResult["issues"] = [];
+  const answerMentionsTrust = /guven|güven|gizlilik|veri|kayit|kayıt|izin|kamera|mikrofon/.test(normalizedAnswer);
+
+  if (!cleanedQuestion.endsWith("?")) {
+    issues.push({
+      type: "too_vague",
+      message: "Soru net bir soru cümlesi olarak bitmiyor.",
+    });
+  }
+
+  if (wordCount > 24) {
+    issues.push({
+      type: "too_long",
+      message: "Follow-up kısa ve tek nefeste okunabilir olmalı.",
+    });
+  }
+
+  if (wordCount < 4) {
+    issues.push({
+      type: "too_vague",
+      message: "Follow-up anlamı netleşmeyecek kadar kısa.",
+    });
+  }
+
+  if (hasLiveFollowUpDoubleBarrel(cleanedQuestion)) {
+    issues.push({
+      type: "double_barreled",
+      message: "Follow-up aynı anda birden fazla soruyu birleştiriyor.",
+    });
+  }
+
+  if (hasOverlyFormalLanguage(normalized) || hasTurkishOrthographyIssue(cleanedQuestion)) {
+    issues.push({
+      type: "too_formal",
+      message: "Soru doğal Türkçe konuşma tonundan uzaklaşıyor.",
+    });
+  }
+
+  const leadingRisk = hasAssumptiveLanguage(normalized) ||
+    (!answerMentionsTrust && hasLeadingLanguage(normalized));
+  if (leadingRisk) {
+    issues.push({
+      type: "leading",
+      message: "Soru katılımcıya duygu, sorun veya yargı empoze ediyor olabilir.",
+    });
+  }
+
+  if (
+    ["mahrem", "gizlilik", "kayıt", "veri", "kamera", "mikrofon"].some((pattern) =>
+      normalized.includes(normalizeForMatch(pattern))
+    ) &&
+    !answerMentionsTrust &&
+    !expectedSignals.some((signal) =>
+      ["permission_trust", "privacy_concern", "control_and_safety"].includes(signal)
+    )
+  ) {
+    issues.push({
+      type: "too_sensitive",
+      message: "Hassas konu katılımcının cevabından doğmadan açılıyor.",
+    });
+  }
+
+  if (
+    isGenericLiveFollowUp(normalized) &&
+    previousAnswer.split(/\s+/).filter(Boolean).length >= 8 &&
+    !expectedSignals.includes("unclear_or_vague")
+  ) {
+    issues.push({
+      type: "too_vague",
+      message: "Cevap yeterince bağlamlıyken follow-up fazla genel kalıyor.",
+    });
+  }
+
+  if (!isContextualLiveFollowUp({ question: cleanedQuestion, previousAnswer, expectedSignals })) {
+    issues.push({
+      type: "not_contextual",
+      message: "Soru önceki cevaptaki sinyale yeterince bağlı görünmüyor.",
+    });
+  }
+
+  if (isRepetitiveQuestion(cleanedQuestion, recentQuestions)) {
+    issues.push({
+      type: "repetitive",
+      message: "Soru yakın zamanda sorulan bir soruya fazla benziyor.",
+    });
+  }
+
+  const hasHighRiskIssue = issues.some((issue) =>
+    ["leading", "double_barreled", "too_sensitive", "repetitive"].includes(issue.type)
+  );
+  const riskLevel: GeneratedQuestionQualityResult["riskLevel"] = hasHighRiskIssue
+    ? "high"
+    : issues.length > 0
+      ? "medium"
+      : "low";
+
+  const fallback = fallbackQuestion ? cleanQuestion(fallbackQuestion) : "";
+  const revisedQuestion = issues.length > 0 && fallback && normalizeForMatch(fallback) !== normalized
+    ? fallback
+    : undefined;
+
+  return {
+    passed: issues.length === 0,
+    riskLevel,
+    issues,
+    revisedQuestion,
+  };
+};
+
 export const sanitizeGeneratedQuestions = (
   questions: string[],
   context: { sectionTitle?: string; sectionIndex?: number; mode?: ResearchQuestionMode } = {},
@@ -885,22 +1189,26 @@ export const repairGeneratedQuestions = (
   return valid;
 };
 
-export const ensureWarmupSection = (plan: any) => {
-  if (!plan || !Array.isArray(plan.sections) || plan.sections.length === 0) {
+export const ensureWarmupSection = <T>(plan: T): T | (Record<string, unknown> & { sections: unknown[] }) => {
+  if (!isRecord(plan) || !Array.isArray(plan.sections) || plan.sections.length === 0) {
     return plan;
   }
 
   const sections = [...plan.sections];
   const warmupIndex = sections.findIndex((section) => isWarmupSection(section));
   const extractedWarmup = warmupIndex >= 0 ? sections.splice(warmupIndex, 1)[0] : null;
+  const extractedWarmupQuestions = isRecord(extractedWarmup) && Array.isArray(extractedWarmup.questions)
+    ? extractedWarmup.questions
+    : [];
   const warmupQuestions = dedupeQuestions([
     ...buildWarmupQuestions(),
-    ...((Array.isArray(extractedWarmup?.questions) ? extractedWarmup.questions : []).map((question: any) => cleanQuestion(question))),
+    ...extractedWarmupQuestions.map((question) => cleanQuestion(String(question ?? ""))),
   ]).slice(0, 3);
+  const extractedWarmupRecord = isRecord(extractedWarmup) ? extractedWarmup : {};
 
   const warmupSection = {
-    ...(extractedWarmup || {}),
-    id: extractedWarmup?.id || WARMUP_SECTION_ID,
+    ...extractedWarmupRecord,
+    id: typeof extractedWarmupRecord.id === "string" ? extractedWarmupRecord.id : WARMUP_SECTION_ID,
     title: WARMUP_SECTION_TITLE,
     questions: warmupQuestions,
   };

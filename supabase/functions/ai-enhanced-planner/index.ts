@@ -4,6 +4,12 @@ import {
   restoreTurkishCharacters,
   TURKISH_ORTHOGRAPHY_PROMPT,
 } from "../_shared/turkish-text.ts";
+import {
+  buildFallbackQuestions,
+  normalizeForMatch,
+  repairGeneratedQuestions,
+  sanitizeGeneratedQuestions,
+} from "../_shared/question-quality.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -343,6 +349,29 @@ ${anchorQuestions}
 Bu brief'i güncelle ve eksik kısımları tamamla.`;
 };
 
+const repairAnchorQuestionText = ({
+  text,
+  themeTitle,
+  index,
+}: {
+  text: string;
+  themeTitle: string;
+  index: number;
+}) => {
+  const context = {
+    sectionTitle: themeTitle || "AI Enhanced",
+    sectionIndex: index + 1,
+    mode: "ai_enhanced" as const,
+  };
+  const repaired = repairGeneratedQuestions([text], context);
+  const candidate = repaired[0] ||
+    repairGeneratedQuestions(buildFallbackQuestions(themeTitle || "AI Enhanced", index + 1, "ai_enhanced"), context)[0] ||
+    "";
+  const { valid } = sanitizeGeneratedQuestions([candidate], context);
+
+  return valid[0] || "";
+};
+
 const normalizePlannerOutput = (raw: Record<string, unknown>) => {
   const rawBrief = isRecord(raw.brief) ? raw.brief : {};
   const normalizedThemes = asArray<Record<string, unknown>>(rawBrief.themes)
@@ -363,6 +392,30 @@ const normalizePlannerOutput = (raw: Record<string, unknown>) => {
       text: restoreTurkishCharacters(asString(question.text)),
     }))
     .filter((question) => question.text.length > 0);
+  const seenAnchorTexts = new Set<string>();
+  const qualityAnchors = normalizedAnchors
+    .map((anchor, index) => {
+      const themeTitle = normalizedThemes.find((theme) => theme.id === anchor.themeId)?.title || "AI Enhanced";
+      const text = repairAnchorQuestionText({
+        text: anchor.text,
+        themeTitle,
+        index,
+      });
+
+      return {
+        ...anchor,
+        text,
+      };
+    })
+    .filter((question) => {
+      const normalizedText = normalizeForMatch(question.text);
+      if (!normalizedText || seenAnchorTexts.has(normalizedText)) {
+        return false;
+      }
+
+      seenAnchorTexts.add(normalizedText);
+      return true;
+    });
 
   const objective = restoreTurkishCharacters(asString(rawBrief.objective));
   const audience = restoreTurkishCharacters(asString(rawBrief.audience));
@@ -376,7 +429,7 @@ const normalizePlannerOutput = (raw: Record<string, unknown>) => {
     decisionScope.length > 0 &&
     mustCover.length > 0 &&
     normalizedThemes.length >= 3 &&
-    normalizedAnchors.length >= 5;
+    qualityAnchors.length >= 5;
 
   const readiness = Math.max(0, Math.min(100, Math.round(Number(raw.contextReadiness) || 0)));
   const isReady = (Boolean(raw.isReady) || readiness >= 100) && hasReadyCore;
@@ -393,7 +446,7 @@ const normalizePlannerOutput = (raw: Record<string, unknown>) => {
       constraints,
       mustCover,
       themes: isReady ? normalizedThemes.slice(0, 5) : normalizedThemes.slice(0, 5),
-      anchorQuestions: isReady ? normalizedAnchors.slice(0, 7) : normalizedAnchors.slice(0, 7),
+      anchorQuestions: qualityAnchors.slice(0, 7),
     },
   };
 };
