@@ -3,8 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { restoreTurkishCharacters } from "../_shared/turkish-text.ts";
 
 const elevenlabsApiKey = Deno.env.get('ELEVENLABS_API_KEY');
-const PRIMARY_TURKISH_VOICE = Deno.env.get('ELEVENLABS_TURKISH_VOICE_ID') || 'Hvrobr8BhLPfiaSv2cHi'; // Gamze Özdemir - Turkish Female Narrator
-const FALLBACK_VOICE = Deno.env.get('ELEVENLABS_FALLBACK_VOICE_ID') || '9BWtsMINqrJLrRacOk9x';
+const SEARCHO_TTS_VOICE_ID = '8WPhqbK1tiExOyeiOUT0';
 const ELEVENLABS_MODEL = Deno.env.get('ELEVENLABS_TTS_MODEL') || 'eleven_multilingual_v2';
 const ELEVENLABS_TIMEOUT_MS = 12000;
 
@@ -185,32 +184,10 @@ serve(async (req) => {
     }
 
     console.log('Generating Turkish TTS for text:', normalizedText.substring(0, 50) + '...');
-    console.log('Using ElevenLabs Turkish voice:', PRIMARY_TURKISH_VOICE);
+    console.log('Using ElevenLabs voice:', SEARCHO_TTS_VOICE_ID);
 
-    let voiceId = PRIMARY_TURKISH_VOICE;
-    let audioContent: string;
-
-    try {
-      audioContent = await generateWithElevenLabs(normalizedText, voiceId);
-    } catch (error) {
-      const canRetryWithFallback =
-        voiceId !== FALLBACK_VOICE &&
-        error instanceof TTSError &&
-        error.providerStatus !== undefined &&
-        [400, 403, 404].includes(error.providerStatus) &&
-        error.code !== 'quota_exceeded';
-
-      if (!canRetryWithFallback) {
-        throw error;
-      }
-
-      console.warn('Primary Turkish ElevenLabs voice unavailable, falling back to Aria:', {
-        voiceId,
-        providerStatus: error.providerStatus,
-      });
-      voiceId = FALLBACK_VOICE;
-      audioContent = await generateWithElevenLabs(normalizedText, voiceId);
-    }
+    const voiceId = SEARCHO_TTS_VOICE_ID;
+    const audioContent = await generateWithElevenLabs(normalizedText, voiceId);
 
     return new Response(
       JSON.stringify({

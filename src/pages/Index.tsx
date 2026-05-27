@@ -457,14 +457,14 @@ const Index = () => {
       </header>
 
       {/* Main Content */}
-      <main className="relative z-10 max-w-4xl mx-auto px-6 py-16 landing-fade-in landing-fade-in--2">
+      <main className="relative z-10 max-w-6xl mx-auto px-6 py-16 landing-fade-in landing-fade-in--2">
         <div className="text-center mb-12 landing-fade-in landing-fade-in--3">
           <AnimatedHeadline />
           <p className="text-xl text-text-secondary mb-8 max-w-2xl mx-auto">Araştırmanızı haftalarca beklemeyin. AI destekli görüşme ve analizlerle saatler içinde derin içgörülere ulaşın.</p>
         </div>
 
         {/* Project Input */}
-        <div className={`landing-input-card bg-card border border-border rounded-xl p-8 mb-8 shadow-sm landing-fade-in landing-fade-in--4 ${isAgentEnhancedSelected ? "landing-input-card--agent-active" : ""} ${isUsabilityWarmActive ? "landing-input-card--usability-active" : ""} ${isUsabilityWarmVisible ? "landing-input-card--usability-hover" : ""} ${isAgentEnhancedPressing ? "landing-input-card--agent-smash" : ""}`}>
+        <div className={`landing-input-card mx-auto max-w-4xl bg-card border border-border rounded-xl p-8 mb-8 shadow-sm landing-fade-in landing-fade-in--4 ${isAgentEnhancedSelected ? "landing-input-card--agent-active" : ""} ${isUsabilityWarmActive ? "landing-input-card--usability-active" : ""} ${isUsabilityWarmVisible ? "landing-input-card--usability-hover" : ""} ${isAgentEnhancedPressing ? "landing-input-card--agent-smash" : ""}`}>
           <div
             className={`landing-agent-border-overlay landing-agent-border-overlay--card ${isAgentEnhancedSelected || isUsabilityWarmVisible ? "landing-agent-border-overlay--active" : ""} ${isUsabilityWarmVisible ? "landing-agent-border-overlay--warm" : ""}`}
             aria-hidden="true"
