@@ -66,9 +66,9 @@ const getPlanAckMessage = (hasExistingGuide: boolean) =>
     ? "Araştırma planını güncelledim. Soruları ilgili bölümlerde görebilirsiniz."
     : "Araştırma planını hazırladım. Soruları sağ tarafta görebilirsiniz.";
 
-const THINKING_LABEL_DELAY_MS = 1000;
-const THINKING_DOT_DELAY_MS = 2200;
-const MIN_THINKING_VISIBLE_MS = 3200;
+const THINKING_LABEL_DELAY_MS = 400;
+const THINKING_DOT_DELAY_MS = 1400;
+const MIN_THINKING_VISIBLE_MS = 900;
 
 const isInlineImageUrl = (value?: string) => typeof value === "string" && value.startsWith("data:image/");
 
