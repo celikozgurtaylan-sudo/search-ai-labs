@@ -180,6 +180,9 @@ const Auth = () => {
                   <div className="space-y-2">
                     <Label htmlFor="signup-password">Password</Label>
                     <Input id="signup-password" type="password" placeholder="Create a password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+                    <p className="text-xs leading-relaxed text-text-secondary">
+                      Kurumsal hesaplarınızda kullandığınız şifrelerden farklı bir şifre seçmeniz önemle rica olunur.
+                    </p>
                   </div>
                   
                   <Button type="submit" className="w-full" disabled={loading}>
