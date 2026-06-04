@@ -42,10 +42,8 @@ const createEmailTemplate = (
 ) => {
   // Get frontend URL with fallback
   const frontendUrl = (Deno.env.get('FRONTEND_URL') || 'https://beta.searcho.online').trim();
-  console.log('Frontend URL:', frontendUrl);
   
   const invitationLink = `${frontendUrl}/join/research/${invitationToken}`;
-  console.log('Generated invitation link:', invitationLink);
   
   const expirationDate = new Date(expiresAt).toLocaleDateString('tr-TR');
   
@@ -367,8 +365,6 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    console.log('Sending invitation email to:', participantEmail);
-    console.log('Invitation token:', invitationToken);
     console.log('Using sender address:', invitationFromAddress);
 
     const normalizedProjectTitle = cleanText(projectTitle) || 'Kullanıcı Deneyimi Araştırması';
@@ -391,7 +387,7 @@ const handler = async (req: Request): Promise<Response> => {
       html: emailHtml,
     });
 
-    console.log("Email sent successfully:", emailResponse);
+    console.log("Invitation email sent successfully:", emailResponse.data?.id);
 
     return new Response(JSON.stringify({ 
       success: true, 
@@ -404,12 +400,13 @@ const handler = async (req: Request): Promise<Response> => {
         ...corsHeaders,
       },
     });
-  } catch (error: any) {
-    console.error("Error in send-invitation-email function:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error("Error in send-invitation-email function:", errorMessage);
     
     return new Response(
       JSON.stringify({ 
-        error: error.message,
+        error: errorMessage,
         success: false,
         message: 'E-posta gönderilirken hata oluştu'
       }),

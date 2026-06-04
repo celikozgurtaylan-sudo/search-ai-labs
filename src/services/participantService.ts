@@ -162,6 +162,27 @@ export const participantService = {
     return result.participant_data as StudyParticipant;
   },
 
+  async refreshParticipantInvitation(participantId: string, options: { allowCompleted?: boolean } = {}): Promise<StudyParticipant> {
+    const { data, error } = await supabase
+      .rpc('refresh_participant_invitation', {
+        participant_id_input: participantId,
+        allow_completed: options.allowCompleted ?? false
+      })
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error refreshing participant invitation:', error);
+      throw new Error(`Failed to refresh participant invitation: ${error.message}`);
+    }
+
+    const result = data as { success?: boolean; message?: string; participant_data?: unknown } | null;
+    if (!result || !result.success) {
+      throw buildServiceError(result?.message || 'Failed to refresh participant invitation');
+    }
+
+    return result.participant_data as StudyParticipant;
+  },
+
   async createSession(session: Omit<StudySession, 'id' | 'created_at' | 'updated_at'>): Promise<StudySession> {
     const { data, error } = await supabase
       .from('study_sessions')

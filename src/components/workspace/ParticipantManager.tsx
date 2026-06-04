@@ -1,4 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -45,6 +55,7 @@ const ParticipantManager = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [resendingEmails, setResendingEmails] = useState<Set<string>>(new Set());
+  const [completedResendParticipant, setCompletedResendParticipant] = useState<StudyParticipant | null>(null);
 
   const sessionsByParticipantId = useMemo(() => {
     const entries = new Map<string, StudySession[]>();
@@ -94,6 +105,11 @@ const ParticipantManager = ({
     const latestSession = participantSessions
       .slice()
       .sort((left, right) => new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime())[0];
+    const invitedStatus = {
+      label: "Davet Edildi",
+      badgeClassName: "text-amber-600 border-amber-600",
+      icon: <Clock className="w-3 h-3 mr-1" />,
+    };
 
     if (participant.status === "declined") {
       return {
@@ -103,7 +119,11 @@ const ParticipantManager = ({
       };
     }
 
-    if (participant.status === "completed" || latestSession?.status === "completed" || latestSession?.ended_at) {
+    if (participant.status === "invited") {
+      return invitedStatus;
+    }
+
+    if (participant.status === "completed" || participant.completed_at || latestSession?.status === "completed") {
       return {
         label: "Tamamlandı",
         badgeClassName: "text-green-600 border-green-600",
@@ -127,11 +147,7 @@ const ParticipantManager = ({
       };
     }
 
-    return {
-      label: "Davet Edildi",
-      badgeClassName: "text-amber-600 border-amber-600",
-      icon: <Clock className="w-3 h-3 mr-1" />,
-    };
+    return invitedStatus;
   };
 
   const handleCopyInvitationLink = (token: string, useCurrentOrigin = false) => {
@@ -211,31 +227,56 @@ const ParticipantManager = ({
     }
   };
 
-  const handleResendEmail = async (participant: StudyParticipant) => {
+  const replaceParticipant = (updatedParticipant: StudyParticipant) => {
+    const nextParticipants = participants.map((participant) =>
+      participant.id === updatedParticipant.id ? updatedParticipant : participant
+    );
+    setParticipants(nextParticipants);
+    onParticipantsUpdate(nextParticipants);
+  };
+
+  const handleResendEmail = async (participant: StudyParticipant, options: { allowCompleted?: boolean } = {}) => {
     if (!participant.id) return;
+
+    const allowCompleted = options.allowCompleted ?? false;
+
+    if (participant.status === "completed" && !allowCompleted) {
+      setCompletedResendParticipant(participant);
+      return;
+    }
+
+    if (participant.status !== "invited" && participant.status !== "completed") {
+      toast.warning("Bu durumdaki katılımcı için davet yeniden gönderilemez");
+      return;
+    }
 
     setResendingEmails((prev) => new Set([...prev, participant.id!]));
 
     try {
+      const refreshedParticipant = await participantService.refreshParticipantInvitation(participant.id, {
+        allowCompleted,
+      });
+      replaceParticipant(refreshedParticipant);
+
       const { error: emailError } = await supabase.functions.invoke("send-invitation-email", {
         body: {
-          participantEmail: participant.email,
-          participantName: participant.name,
-          invitationToken: participant.invitation_token,
+          participantEmail: refreshedParticipant.email,
+          participantName: refreshedParticipant.name,
+          invitationToken: refreshedParticipant.invitation_token,
           projectTitle,
-          expiresAt: participant.token_expires_at,
+          expiresAt: refreshedParticipant.token_expires_at,
         },
       });
 
       if (emailError) {
         console.error("Email resend failed:", emailError);
-        toast.error("E-posta yeniden gönderilemedi");
+        toast.error("Davet linki yenilendi ancak e-posta gönderilemedi. Yeni linki kopyalayabilirsiniz.");
       } else {
-        toast.success("Davet e-postası yeniden gönderildi");
+        toast.success("Davet linki yenilendi ve e-posta yeniden gönderildi");
       }
     } catch (error) {
-      console.error("Email resend failed:", error);
-      toast.error("E-posta yeniden gönderilemedi");
+      console.error("Invitation resend failed:", error);
+      toast.error("Davet linki yenilenirken hata oluştu");
     } finally {
       setResendingEmails((prev) => {
         const next = new Set(prev);
@@ -263,6 +304,7 @@ const ParticipantManager = ({
   const isAIEnhancedMode = researchMode === "ai_enhanced";
 
   return (
+    <>
     <div className="space-y-6">
       <Card className={variant === "inline" ? "p-6" : "border-0 shadow-none"}>
         <div className="flex flex-col gap-3 border-b border-border-light pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -409,6 +451,8 @@ const ParticipantManager = ({
               const status = getParticipantStatus(participant);
               const versionNumber = Number(participant.metadata?.questionSetVersionNumber ?? 1);
               const isCurrentVersion = currentQuestionSetVersionNumber ? versionNumber === currentQuestionSetVersionNumber : true;
+              const isResending = Boolean(participant.id && resendingEmails.has(participant.id));
+              const canResendInvitation = participant.status === "invited" || participant.status === "completed";
 
               return (
                 <Card key={participant.id} className="border-border-light p-4">
@@ -464,10 +508,22 @@ const ParticipantManager = ({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => void handleResendEmail(participant)}
-                        disabled={resendingEmails.has(participant.id!)}
+                        onClick={() => {
+                          if (participant.status === "completed") {
+                            setCompletedResendParticipant(participant);
+                            return;
+                          }
+
+                          void handleResendEmail(participant);
+                        }}
+                        disabled={!participant.id || !canResendInvitation || isResending}
+                        title={
+                          canResendInvitation
+                            ? "Yeni davet linki oluştur ve e-posta gönder"
+                            : "Bu durumdaki katılımcı için yeniden gönderim kapalı"
+                        }
                       >
-                        {resendingEmails.has(participant.id!) ? (
+                        {isResending ? (
                           <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
                         ) : (
                           <Send className="w-3 h-3 mr-1" />
@@ -487,6 +543,39 @@ const ParticipantManager = ({
         </div>
       </Card>
     </div>
+    <AlertDialog
+      open={Boolean(completedResendParticipant)}
+      onOpenChange={(open) => {
+        if (!open) setCompletedResendParticipant(null);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Tamamlanmış katılımcıyı yeniden davet et?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Bu işlem katılımcının durumunu tekrar davet edildi olarak ayarlar, yeni bir davet linki üretir
+            ve varsa açık oturumlarını kapatır. Önceki görüşme kayıtları silinmez.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Vazgeç</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-brand-primary text-white hover:bg-brand-primary-hover"
+            onClick={() => {
+              const participantToResend = completedResendParticipant;
+              setCompletedResendParticipant(null);
+
+              if (participantToResend) {
+                void handleResendEmail(participantToResend, { allowCompleted: true });
+              }
+            }}
+          >
+            Yeniden gönder ve sıfırla
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 };
 

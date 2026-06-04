@@ -476,6 +476,14 @@ export type Database = {
         Args: { token_input: string }
         Returns: boolean
       }
+      refresh_participant_invitation: {
+        Args: { allow_completed: boolean; participant_id_input: string }
+        Returns: {
+          message: string
+          participant_data: Json
+          success: boolean
+        }[]
+      }
       resolve_participant_invitation_access: {
         Args: { token_input: string }
         Returns: {
