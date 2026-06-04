@@ -245,7 +245,7 @@ const ParticipantManager = ({
       return;
     }
 
-    if (participant.status !== "invited" && participant.status !== "completed") {
+    if (participant.status !== "invited" && participant.status !== "joined" && participant.status !== "completed") {
       toast.warning("Bu durumdaki katılımcı için davet yeniden gönderilemez");
       return;
     }
@@ -452,7 +452,7 @@ const ParticipantManager = ({
               const versionNumber = Number(participant.metadata?.questionSetVersionNumber ?? 1);
               const isCurrentVersion = currentQuestionSetVersionNumber ? versionNumber === currentQuestionSetVersionNumber : true;
               const isResending = Boolean(participant.id && resendingEmails.has(participant.id));
-              const canResendInvitation = participant.status === "invited" || participant.status === "completed";
+              const canResendInvitation = participant.status === "invited" || participant.status === "joined" || participant.status === "completed";
 
               return (
                 <Card key={participant.id} className="border-border-light p-4">
