@@ -260,6 +260,17 @@ export const interviewService = {
     });
   },
 
+  async endSessionEarly(sessionId: string) {
+    if (isDesignMode(sessionId)) {
+      return { success: true, status: 'cancelled' };
+    }
+
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'end_session_early',
+      sessionId
+    });
+  },
+
   async getInterviewProgress(sessionId: string): Promise<{ questions: InterviewQuestion[], progress: InterviewProgress }> {
     if (isDesignMode(sessionId)) {
       return { questions: mockQuestions, progress: getMockInterviewState().progress };

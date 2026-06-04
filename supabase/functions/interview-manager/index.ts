@@ -98,6 +98,10 @@ async function validateSessionToken(sessionId: string, sessionToken: string): Pr
     return false;
   }
 
+  if (data.status === 'cancelled') {
+    return false;
+  }
+
   const analysis = isRecord(data.projects) && isRecord(data.projects.analysis)
     ? data.projects.analysis
     : {};
@@ -1154,6 +1158,55 @@ async function finalizeCompletedSession(sessionId: string, state: Awaited<Return
   await backgroundTask;
 }
 
+async function endSessionEarly(sessionId: string) {
+  const endedAt = new Date().toISOString();
+
+  const { data: session, error: sessionError } = await supabase
+    .from('study_sessions')
+    .select('id, status, metadata')
+    .eq('id', sessionId)
+    .maybeSingle();
+
+  if (sessionError) {
+    throw new Error(`Failed to load session for early end: ${sessionError.message}`);
+  }
+
+  if (!session) {
+    throw new Error('Session not found');
+  }
+
+  if (session.status === 'completed' || session.status === 'cancelled') {
+    return new Response(
+      JSON.stringify({ success: true, status: session.status }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  const metadata = isRecord(session.metadata) ? session.metadata : {};
+
+  const { error: updateError } = await supabase
+    .from('study_sessions')
+    .update({
+      status: 'cancelled',
+      ended_at: endedAt,
+      metadata: {
+        ...metadata,
+        endedEarlyAt: endedAt,
+        endedEarlyReason: 'participant_ended_early',
+      },
+    })
+    .eq('id', sessionId);
+
+  if (updateError) {
+    throw new Error(`Failed to end session early: ${updateError.message}`);
+  }
+
+  return new Response(
+    JSON.stringify({ success: true, status: 'cancelled' }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -1202,6 +1255,8 @@ serve(async (req) => {
         return await skipQuestion(sessionId, responseData.questionId, responseData.metadata ?? {});
       case 'attach_response_media':
         return await attachResponseMedia(sessionId, responseData.responseId, responseData);
+      case 'end_session_early':
+        return await endSessionEarly(sessionId);
       default:
         throw new Error('Invalid action');
     }

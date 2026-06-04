@@ -111,7 +111,7 @@ interface SearchoAIProps {
       source?: string;
     }>;
   };
-  onSessionEnd?: (reason?: 'manual' | 'completed') => void;
+  onSessionEnd?: (reason?: 'manual' | 'completed') => void | Promise<void>;
   onPreambleStateChange?: (isActive: boolean) => void;
   onQuestionChange?: (question: InterviewQuestion | null, progress: InterviewProgress) => void;
   onMediaReleaseRequested?: () => void;
@@ -221,6 +221,7 @@ const SearchoAI = ({
   const [responseTimerActive, setResponseTimerActive] = useState(false);
   const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
   const [isRecordingVideo, setIsRecordingVideo] = useState(false);
+  const [isEndingSession, setIsEndingSession] = useState(false);
   const [isPreamblePhase, setIsPreamblePhase] = useState(true);
   const [showTurkishPreamble, setShowTurkishPreamble] = useState(true);
   const [showEndSessionConfirmation, setShowEndSessionConfirmation] = useState(false);
@@ -1830,7 +1831,7 @@ const SearchoAI = ({
                         Kamera ve mikrofon kapatıldı. İsterseniz şimdi oturumu kapatabilirsiniz.
                       </p>
                     </div>
-                    <Button onClick={() => onSessionEnd?.('completed')} size="lg" className="bg-emerald-600 text-white hover:bg-emerald-700">
+                    <Button onClick={() => void onSessionEnd?.('completed')} size="lg" className="bg-emerald-600 text-white hover:bg-emerald-700">
                       Oturumu Tamamla
                     </Button>
                   </div>
@@ -1861,6 +1862,7 @@ const SearchoAI = ({
                   variant="destructive"
                   size="sm"
                   className="gap-1.5 px-3"
+                  disabled={isEndingSession}
                 >
                   <PhoneOff className="h-4 w-4" />
                   Oturumu Bitir
@@ -1874,19 +1876,34 @@ const SearchoAI = ({
               <AlertDialogHeader>
                 <AlertDialogTitle>Oturumu erken bitirmek istiyor musunuz?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Görüşme henüz tamamlanmadı. Şimdi bitirirseniz kalan sorular yanıtlanmamış olacak.
+                  Görüşme henüz tamamlanmadı. Şimdi bitirirseniz kalan sorular yanıtlanmamış olacak ve bu oturuma aynı linkle geri dönemeyeceksiniz.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Vazgeç</AlertDialogCancel>
+                <AlertDialogCancel disabled={isEndingSession}>Vazgeç</AlertDialogCancel>
                 <AlertDialogAction
-                  onClick={() => {
-                    setShowEndSessionConfirmation(false);
-                    onSessionEnd?.('manual');
+                  onClick={async (event) => {
+                    event.preventDefault();
+                    setIsEndingSession(true);
+
+                    try {
+                      await onSessionEnd?.('manual');
+                      setShowEndSessionConfirmation(false);
+                    } catch (error) {
+                      console.error('Failed to end session:', error);
+                      toast({
+                        title: 'Oturum bitirilemedi',
+                        description: 'Lütfen tekrar deneyin.',
+                        variant: 'destructive',
+                      });
+                    } finally {
+                      setIsEndingSession(false);
+                    }
                   }}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={isEndingSession}
                 >
-                  Oturumu Bitir
+                  {isEndingSession ? 'Bitiriliyor...' : 'Oturumu Bitir'}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

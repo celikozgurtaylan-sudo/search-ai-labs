@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import SearchoAI from "@/components/SearchoAI";
 import { FloatingVideo } from "@/components/FloatingVideo";
 import { participantService } from "@/services/participantService";
-import { InterviewProgress, InterviewQuestion, setInterviewSessionToken } from "@/services/interviewService";
+import { interviewService, InterviewProgress, InterviewQuestion, setInterviewSessionToken } from "@/services/interviewService";
 import { CheckCircle, AlertCircle, Clock, Loader2, ExternalLink, Image as ImageIcon, Camera, Mic } from "lucide-react";
 import {
   DeviceCheckState,
@@ -932,7 +932,11 @@ const StudySession = () => {
     void applyDeviceCheckFailure(reason, message);
   }, [applyDeviceCheckFailure]);
 
-  const handleCompleteSession = (reason: 'manual' | 'completed' = 'manual') => {
+  const handleCompleteSession = async (reason: 'manual' | 'completed' = 'manual') => {
+    if (reason === 'manual' && sessionId && !isDesignMode) {
+      await interviewService.endSessionEarly(sessionId);
+    }
+
     localStorage.removeItem('participant-session');
     releaseMediaDevices();
     setSessionCompletionReason(reason);

@@ -16,6 +16,7 @@ const ParticipantLanding = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pausedMessage, setPausedMessage] = useState<string | null>(null);
+  const [alreadyStartedMessage, setAlreadyStartedMessage] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [consentGiven, setConsentGiven] = useState(false);
   const [participantName, setParticipantName] = useState("");
@@ -31,6 +32,7 @@ const ParticipantLanding = () => {
       setLoading(true);
       setError(null);
       setPausedMessage(null);
+      setAlreadyStartedMessage(null);
 
       const access = await participantService.getParticipantInvitationAccess(token!);
 
@@ -61,6 +63,11 @@ const ParticipantLanding = () => {
         return;
       }
 
+      if (data.status === 'joined') {
+        setAlreadyStartedMessage("Bu davet linkiyle araştırma zaten başlatıldı. Aynı davet linkiyle yeniden başlayamazsınız. Devam etmek için araştırma ekibinden yeni bir davet linki isteyin.");
+        return;
+      }
+
       setParticipant(data);
       setParticipantName(data.name || "");
     } catch (err) {
@@ -78,6 +85,7 @@ const ParticipantLanding = () => {
       setJoining(true);
       setError(null);
       setPausedMessage(null);
+      setAlreadyStartedMessage(null);
 
       const access = await participantService.getParticipantInvitationAccess(participant.invitation_token);
 
@@ -94,11 +102,7 @@ const ParticipantLanding = () => {
         setError(access.message || "Bu davet linki şu anda kullanılamıyor.");
         return;
       }
-      
-      // Update participant status to joined
-      await participantService.updateParticipantStatusByToken(participant.invitation_token, 'joined');
-      
-      // Create a session record in the database using RPC (bypasses RLS)
+
       const session = await participantService.createSessionForParticipant(
         participant.project_id,
         participant.id!,
@@ -116,6 +120,11 @@ const ParticipantLanding = () => {
       
     } catch (error) {
       console.error('Failed to join study:', error);
+      const errorCode = error instanceof Error ? (error as Error & { code?: string }).code : undefined;
+      if (errorCode === 'already_started') {
+        setAlreadyStartedMessage("Bu davet linkiyle araştırma zaten başlatıldı. Aynı davet linkiyle yeniden başlayamazsınız. Devam etmek için araştırma ekibinden yeni bir davet linki isteyin.");
+        return;
+      }
       if (error instanceof Error && /durduruldu|duraklatıldı|paused/i.test(error.message)) {
         setPausedMessage("Araştırma geçici olarak duraklatıldı. Lütfen daha sonra tekrar deneyin.");
         return;
@@ -178,6 +187,24 @@ const ParticipantLanding = () => {
             <h2 className="text-2xl font-semibold text-text-primary mb-3">Araştırma Geçici Olarak Duraklatıldı</h2>
             <p className="text-text-secondary leading-relaxed">
               {pausedMessage}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (alreadyStartedMessage) {
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center px-4">
+        <Card className="w-full max-w-xl border-amber-200 bg-amber-50/80 shadow-sm">
+          <CardContent className="pt-8 pb-8 text-center">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+              <AlertCircle className="w-7 h-7" />
+            </div>
+            <h2 className="text-2xl font-semibold text-text-primary mb-3">Davet Zaten Başlatıldı</h2>
+            <p className="text-text-secondary leading-relaxed">
+              {alreadyStartedMessage}
             </p>
           </CardContent>
         </Card>
