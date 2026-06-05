@@ -11,12 +11,12 @@ import {
   normalizeAIEnhancedBrief,
 } from "../_shared/ai-enhanced.ts";
 import {
-  buildParticipantExperienceFollowUp,
-  getParticipantExperienceLimits,
-} from "../_shared/participant-experience-interviewer.ts";
-import type {
-  ParticipantExperienceSignal,
-} from "../_shared/participant-experience-question-bank.ts";
+  ADAPTIVE_PROBE_PROMPT_VERSION,
+  decideAdaptiveProbe,
+  type AdaptiveProbeDecisionResult,
+  type AdaptiveProbeLanguage,
+  type AdaptiveProbeTurn,
+} from "../_shared/adaptive-probe-engine.ts";
 import {
   CONVERSATIONAL_WARMUP_TURN_COUNT,
   buildConversationalWarmupFallbacks,
@@ -287,32 +287,85 @@ async function resolveDiscussionGuideForSession(projectId: string, sessionId: st
   };
 }
 
-const getAIEnhancedSessionState = (sessionMetadata: Record<string, unknown>) => {
+const AI_ENHANCED_MAX_FOLLOW_UPS_PER_ANCHOR = 1;
+const AI_ENHANCED_MAX_TOTAL_FOLLOW_UPS_PER_SESSION = 5;
+
+type AIEnhancedFollowUpState = Record<string, {
+  count: number;
+  lastProbeType: string | null;
+}>;
+
+type AIEnhancedSessionState = {
+  currentAnchorIndex: number;
+  turnIndex: number;
+  coveredAnchorIds: string[];
+  anchorsCompleted: string[];
+  followUpState: AIEnhancedFollowUpState;
+  maxFollowUpsPerAnchor: number;
+  maxTotalFollowUpsPerSession: number;
+  promptVersion: typeof ADAPTIVE_PROBE_PROMPT_VERSION;
+  briefSnapshotId: string | null;
+};
+
+const normalizeAIEnhancedFollowUpState = (value: unknown): AIEnhancedFollowUpState => {
+  if (!isRecord(value)) return {};
+
+  return Object.entries(value).reduce<AIEnhancedFollowUpState>((accumulator, [anchorId, entry]) => {
+    if (!isRecord(entry)) return accumulator;
+    accumulator[anchorId] = {
+      count: Math.max(0, Math.floor(typeof entry.count === "number" ? entry.count : 0)),
+      lastProbeType: asString(entry.lastProbeType) || null,
+    };
+    return accumulator;
+  }, {});
+};
+
+const getAIEnhancedSessionState = (sessionMetadata: Record<string, unknown>): AIEnhancedSessionState => {
   const state = isRecord(sessionMetadata.aiEnhancedState) ? sessionMetadata.aiEnhancedState : {};
 
   return {
     currentAnchorIndex: typeof state.currentAnchorIndex === "number" ? state.currentAnchorIndex : 0,
     turnIndex: typeof state.turnIndex === "number" ? state.turnIndex : 0,
     coveredAnchorIds: asArray<string>(state.coveredAnchorIds).filter((value) => typeof value === "string"),
+    anchorsCompleted: asArray<string>(state.anchorsCompleted).filter((value) => typeof value === "string"),
+    followUpState: normalizeAIEnhancedFollowUpState(state.followUpState),
+    maxFollowUpsPerAnchor: typeof state.maxFollowUpsPerAnchor === "number"
+      ? Math.max(0, Math.floor(state.maxFollowUpsPerAnchor))
+      : AI_ENHANCED_MAX_FOLLOW_UPS_PER_ANCHOR,
+    maxTotalFollowUpsPerSession: typeof state.maxTotalFollowUpsPerSession === "number"
+      ? Math.max(0, Math.floor(state.maxTotalFollowUpsPerSession))
+      : AI_ENHANCED_MAX_TOTAL_FOLLOW_UPS_PER_SESSION,
+    promptVersion: ADAPTIVE_PROBE_PROMPT_VERSION,
+    briefSnapshotId: asString(state.briefSnapshotId) || null,
   };
 };
 
 const withAIEnhancedSessionState = (
   sessionMetadata: Record<string, unknown>,
-  nextState: {
-    currentAnchorIndex: number;
-    turnIndex: number;
-    coveredAnchorIds: string[];
-  },
-) => ({
-  ...sessionMetadata,
-  interviewMode: "ai_enhanced",
-  aiEnhancedState: {
-    currentAnchorIndex: nextState.currentAnchorIndex,
-    turnIndex: nextState.turnIndex,
-    coveredAnchorIds: Array.from(new Set(nextState.coveredAnchorIds)),
-  },
-});
+  nextState: Partial<AIEnhancedSessionState>,
+) => {
+  const previousState = getAIEnhancedSessionState(sessionMetadata);
+  const mergedState = {
+    ...previousState,
+    ...nextState,
+  };
+
+  return {
+    ...sessionMetadata,
+    interviewMode: "ai_enhanced",
+    aiEnhancedState: {
+      currentAnchorIndex: mergedState.currentAnchorIndex,
+      turnIndex: mergedState.turnIndex,
+      coveredAnchorIds: Array.from(new Set(mergedState.coveredAnchorIds)),
+      anchorsCompleted: Array.from(new Set(mergedState.anchorsCompleted)),
+      followUpState: mergedState.followUpState,
+      maxFollowUpsPerAnchor: mergedState.maxFollowUpsPerAnchor,
+      maxTotalFollowUpsPerSession: mergedState.maxTotalFollowUpsPerSession,
+      promptVersion: ADAPTIVE_PROBE_PROMPT_VERSION,
+      briefSnapshotId: mergedState.briefSnapshotId,
+    },
+  };
+};
 
 const buildAIEnhancedWarmupContext = (
   brief: ReturnType<typeof normalizeAIEnhancedBrief>,
@@ -570,9 +623,70 @@ async function updateWarmupResponseAnalysis(
   return data ?? response;
 }
 
-async function updateResponseIntelligenceMetadata(
+const getProbeValidatorStatus = (decision: AdaptiveProbeDecisionResult) => {
+  if (decision.decision === "ask_follow_up" && decision.validator.passes) {
+    return "accepted";
+  }
+
+  if (decision.rejectedQuestion) {
+    return "rejected";
+  }
+
+  if (decision.error) {
+    return decision.error;
+  }
+
+  return "not_applicable";
+};
+
+async function insertProbeDecision(input: {
+  sessionId: string;
+  participantId: string | null;
+  anchorQuestionId: string | null;
+  responseId: string | null;
+  decision: AdaptiveProbeDecisionResult;
+}) {
+  if (!input.participantId || !input.responseId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("probe_decisions")
+    .insert({
+      session_id: input.sessionId,
+      participant_id: input.participantId,
+      anchor_question_id: input.anchorQuestionId,
+      response_id: input.responseId,
+      decision: input.decision.decision,
+      gap_type: input.decision.gap_type,
+      probe_type: input.decision.probe_type,
+      decision_reason: input.decision.decision_reason,
+      relevance_score: input.decision.relevance_score,
+      research_value_score: input.decision.research_value_score,
+      answer_sufficiency_score: input.decision.answer_sufficiency_score,
+      risk_score: input.decision.risk_score,
+      confidence_score: input.decision.confidence_score,
+      generated_question: input.decision.generatedQuestion,
+      validator_status: getProbeValidatorStatus(input.decision),
+      validator_notes: input.decision.validator.validator_notes,
+      prompt_version: input.decision.prompt_version,
+      model: input.decision.model,
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.warn("Failed to persist adaptive probe decision:", error.code ?? "unknown_error");
+    return null;
+  }
+
+  return asString(data?.id) || null;
+}
+
+async function updateResponseAdaptiveProbeMetadata(
   response: Record<string, unknown>,
-  intelligenceMetadata: Record<string, unknown>,
+  decision: AdaptiveProbeDecisionResult,
+  probeDecisionId: string | null,
 ) {
   const responseId = asString(response.id);
   if (!responseId) {
@@ -584,7 +698,21 @@ async function updateResponseIntelligenceMetadata(
     .update({
       metadata: {
         ...getResponseMetadata(response),
-        participantExperienceIntelligence: intelligenceMetadata,
+        adaptiveProbe: {
+          decision: decision.decision,
+          gapType: decision.gap_type,
+          probeType: decision.probe_type,
+          decisionReason: decision.decision_reason,
+          validatorStatus: getProbeValidatorStatus(decision),
+          validatorNotes: decision.validator.validator_notes,
+          policyReason: decision.policy.reason,
+          blockedReasons: decision.policy.blockedReasons,
+          promptVersion: decision.prompt_version,
+          model: decision.model,
+          probeDecisionId,
+          analyzedAt: new Date().toISOString(),
+          error: decision.error,
+        },
       },
     })
     .eq("id", responseId)
@@ -592,7 +720,7 @@ async function updateResponseIntelligenceMetadata(
     .maybeSingle();
 
   if (error) {
-    console.warn("Failed to persist participant intelligence metadata:", error);
+    console.warn("Failed to persist adaptive probe response metadata:", error.code ?? "unknown_error");
     return response;
   }
 
@@ -771,6 +899,11 @@ async function initializeAIEnhancedQuestions(
     currentAnchorIndex: 0,
     turnIndex: 1,
     coveredAnchorIds: [],
+    anchorsCompleted: [],
+    followUpState: {},
+    maxFollowUpsPerAnchor: AI_ENHANCED_MAX_FOLLOW_UPS_PER_ANCHOR,
+    maxTotalFollowUpsPerSession: AI_ENHANCED_MAX_TOTAL_FOLLOW_UPS_PER_SESSION,
+    briefSnapshotId: brief.readyAt || brief.updatedAt || null,
   });
 
   const startedAt = typeof session.started_at === "string" ? session.started_at : new Date().toISOString();
@@ -822,6 +955,7 @@ async function initializeAIEnhancedQuestions(
         anchorIndex: 0,
         themeId: firstAnchor.themeId,
         turnIndex: 1,
+        prompt_version: ADAPTIVE_PROBE_PROMPT_VERSION,
       },
     },
   ];
@@ -857,7 +991,7 @@ async function advanceAIEnhancedInterview(
 
   const { data: session, error: sessionError } = await supabase
     .from("study_sessions")
-    .select("id, project_id, metadata")
+    .select("id, project_id, participant_id, metadata")
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -924,56 +1058,77 @@ async function advanceAIEnhancedInterview(
     const previousFollowUps = anchorFollowUpQuestions
       .map((question) => asString(question.question_text))
       .filter(Boolean);
-    const previousSignalFollowUps = sessionFollowUpQuestions
-      .flatMap((question) => {
-        const metadata = getQuestionMetadata(question);
-        return asArray<ParticipantExperienceSignal>(metadata.detectedSignals)
-          .map((signal) => asString(signal) as ParticipantExperienceSignal)
-          .filter(Boolean);
-      });
     const themeTitle = findThemeById(brief, currentAnchor.themeId)?.title || "AI Enhanced";
-    const limits = getParticipantExperienceLimits();
-    const intelligence = await buildParticipantExperienceFollowUp({
-      researchObjective: brief.objective,
-      audience: brief.audience,
-      decisionScope: brief.decisionScope,
+    const questionIds = allQuestions.map((question) => asString(question.id)).filter(Boolean);
+    const responsesByQuestion = await getLatestResponsesByQuestion(sessionId, questionIds);
+    responsesByQuestion.set(questionId, response);
+    const priorTurns = allQuestions
+      .filter((question) => Number(question.question_order) <= Number(currentQuestion.question_order))
+      .map((question) => {
+        const metadata = getQuestionMetadata(question);
+        const source = ["warmup", "anchor", "follow_up"].includes(asString(metadata.source))
+          ? asString(metadata.source) as AdaptiveProbeTurn["source"]
+          : isConversationalWarmupQuestion(question)
+            ? "warmup"
+            : "unknown";
+        const turnResponse = responsesByQuestion.get(asString(question.id));
+
+        return {
+          questionId: asString(question.id),
+          questionText: asString(question.question_text),
+          answerText: asString(turnResponse?.transcription) || asString(turnResponse?.response_text),
+          source,
+          anchorId: asString(metadata.anchorId) || null,
+          anchorIndex: typeof metadata.anchorIndex === "number" ? metadata.anchorIndex : null,
+        };
+      })
+      .filter((turn) => turn.questionId && turn.questionText) as AdaptiveProbeTurn[];
+    const participantLanguageRaw = (
+      asString(sessionMetadata.participantLanguage) ||
+      asString(sessionMetadata.language) ||
+      asString(sessionMetadata.locale)
+    ).toLowerCase();
+    const participantLanguage: AdaptiveProbeLanguage = participantLanguageRaw.startsWith("en")
+      ? "en"
+      : participantLanguageRaw.startsWith("tr")
+        ? "tr"
+        : "unknown";
+    const decision = await decideAdaptiveProbe({
+      brief,
+      currentAnchor,
+      currentAnchorQuestionId: asString(currentQuestion.id),
+      currentAnchorIndex,
+      totalAnchors: brief.anchorQuestions.length,
       themeTitle,
-      anchorQuestionText: currentAnchor.text,
       participantAnswer,
+      priorTurns,
       previousFollowUps,
       recentQuestionTexts: allQuestions.map((question) => asString(question.question_text)).filter(Boolean),
+      currentAnchorFollowUpCount: anchorFollowUpQuestions.length,
+      totalFollowUpCount: sessionFollowUpQuestions.length,
+      sessionMetadata,
+      participantLanguage,
       transcriptConfidence: typeof response.confidence_score === "number" ? response.confidence_score : null,
       wasSkipped,
-      remainingAnchorCount: Math.max(0, brief.anchorQuestions.length - currentAnchorIndex - 1),
-      previouslyFollowedSignals: previousSignalFollowUps,
-      maxFollowUpState: {
-        anchorFollowUpCount: anchorFollowUpQuestions.length,
-        consecutiveFollowUpCount: 0,
-        sessionFollowUpCount: sessionFollowUpQuestions.length,
-        ...limits,
+      limits: {
+        maxFollowUpsPerAnchor: aiState.maxFollowUpsPerAnchor,
+        maxTotalFollowUpsPerSession: aiState.maxTotalFollowUpsPerSession,
       },
     });
-    const intelligenceMetadata = {
-      ...intelligence.analysis,
-      followUpDecision: intelligence.action,
-      generatedQuestion: intelligence.questionText,
-      questionQualityResult: intelligence.questionQualityResult ?? null,
-      fallbackUsed: intelligence.fallbackUsed,
-      source: intelligence.source,
-      generationReason: intelligence.generationReason,
-      anchorQuestionId: currentAnchor.id,
-      analyzedAt: new Date().toISOString(),
-    };
-    updatedResponse = await updateResponseIntelligenceMetadata(response, intelligenceMetadata);
+    const probeDecisionId = await insertProbeDecision({
+      sessionId,
+      participantId: asString(session.participant_id) || asString(response.participant_id) || null,
+      anchorQuestionId: asString(currentQuestion.id) || null,
+      responseId: asString(response.id) || null,
+      decision,
+    });
+    updatedResponse = await updateResponseAdaptiveProbeMetadata(response, decision, probeDecisionId);
 
-    if (
-      ["ask_follow_up", "ask_clarification"].includes(intelligence.action) &&
-      intelligence.questionText
-    ) {
+    if (decision.decision === "ask_follow_up" && decision.follow_up_question) {
       await insertAIEnhancedQuestion({
         projectId: session.project_id,
         sessionId,
-        questionText: intelligence.questionText,
+        questionText: decision.follow_up_question,
         questionOrder: nextQuestionOrder,
         section: themeTitle,
         questionType: "follow_up",
@@ -982,27 +1137,40 @@ async function advanceAIEnhancedInterview(
         metadata: {
           interviewMode: "ai_enhanced",
           source: "follow_up",
-          generatedBy: "participant_experience_intelligence",
+          generatedBy: "adaptive_probe_engine",
           anchorId: currentAnchor.id,
           anchorQuestionId: currentAnchor.id,
           anchorIndex: currentAnchorIndex,
           themeId: currentAnchor.themeId,
           turnIndex: aiState.turnIndex + 1,
           parentQuestionId: currentQuestion.id,
-          detectedSignals: intelligence.analysis.detectedSignals,
-          primarySignal: intelligence.analysis.primarySignal,
-          followUpDecision: intelligence.action,
-          followUpReason: intelligence.analysis.followUpReason,
-          questionQualityResult: intelligence.questionQualityResult ?? null,
-          maxFollowUpState: intelligence.analysis.maxFollowUpState,
-          fallbackUsed: intelligence.fallbackUsed,
+          generation_reason: decision.decision_reason,
+          gap_type: decision.gap_type,
+          probe_type: decision.probe_type,
+          llm_model: decision.model,
+          prompt_version: decision.prompt_version,
+          validation_status: "accepted",
+          validator_notes: decision.validator.validator_notes,
+          probeDecisionId,
         },
       });
+
+      const nextFollowUpState = {
+        ...aiState.followUpState,
+        [currentAnchor.id]: {
+          count: (aiState.followUpState[currentAnchor.id]?.count ?? 0) + 1,
+          lastProbeType: decision.probe_type,
+        },
+      };
 
       await updateSessionMetadata(sessionId, withAIEnhancedSessionState(sessionMetadata, {
         currentAnchorIndex,
         turnIndex: aiState.turnIndex + 1,
         coveredAnchorIds: updatedCoveredAnchorIds,
+        followUpState: nextFollowUpState,
+        maxFollowUpsPerAnchor: aiState.maxFollowUpsPerAnchor,
+        maxTotalFollowUpsPerSession: aiState.maxTotalFollowUpsPerSession,
+        briefSnapshotId: brief.readyAt || brief.updatedAt || aiState.briefSnapshotId,
       }));
       return updatedResponse;
     }
@@ -1027,14 +1195,23 @@ async function advanceAIEnhancedInterview(
         anchorIndex: nextAnchorIndex,
         themeId: nextAnchor.themeId,
         turnIndex: aiState.turnIndex + 1,
+        prompt_version: ADAPTIVE_PROBE_PROMPT_VERSION,
       },
     });
   }
+
+  const updatedAnchorsCompleted = aiState.anchorsCompleted.includes(currentAnchor.id)
+    ? aiState.anchorsCompleted
+    : [...aiState.anchorsCompleted, currentAnchor.id];
 
   await updateSessionMetadata(sessionId, withAIEnhancedSessionState(sessionMetadata, {
     currentAnchorIndex: nextAnchor ? nextAnchorIndex : currentAnchorIndex,
     turnIndex: aiState.turnIndex + 1,
     coveredAnchorIds: updatedCoveredAnchorIds,
+    anchorsCompleted: updatedAnchorsCompleted,
+    maxFollowUpsPerAnchor: aiState.maxFollowUpsPerAnchor,
+    maxTotalFollowUpsPerSession: aiState.maxTotalFollowUpsPerSession,
+    briefSnapshotId: brief.readyAt || brief.updatedAt || aiState.briefSnapshotId,
   }));
 
   return updatedResponse;
