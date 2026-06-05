@@ -890,6 +890,7 @@ const Workspace = () => {
 
   const handleNextStep = async () => {
     if (currentStep === "guide") {
+      setCurrentStep("recruit");
       setShowRecruitment(true);
       return;
     }

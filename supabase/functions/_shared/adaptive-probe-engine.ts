@@ -9,6 +9,8 @@ import {
 
 export const ADAPTIVE_PROBE_PROMPT_VERSION = "adaptive_probe_engine_v1";
 export const ADAPTIVE_PROBE_MODEL = Deno.env.get("ORCHESTRATOR_MODEL") || "gpt-4.1";
+const OPENAI_ANALYZER_TIMEOUT_MS = 8_000;
+const OPENAI_GENERATOR_TIMEOUT_MS = 8_000;
 
 export const GAP_TYPES = [
   "missing_reasoning",
@@ -754,31 +756,40 @@ const callOpenAIJson = async (
   openaiApiKey: string,
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
   responseFormat: Record<string, unknown>,
+  timeoutMs: number,
 ) => {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${openaiApiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: ADAPTIVE_PROBE_MODEL,
-      messages,
-      response_format: responseFormat,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!response.ok) {
-    throw new Error(`OpenAI error: ${response.status}`);
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openaiApiKey}`,
+        "Content-Type": "application/json",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: ADAPTIVE_PROBE_MODEL,
+        messages,
+        response_format: responseFormat,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI error: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const content = payload?.choices?.[0]?.message?.content;
+    if (typeof content !== "string") {
+      throw new Error("OpenAI returned an invalid response");
+    }
+
+    return JSON.parse(content);
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const payload = await response.json();
-  const content = payload?.choices?.[0]?.message?.content;
-  if (typeof content !== "string") {
-    throw new Error("OpenAI returned an invalid response");
-  }
-
-  return JSON.parse(content);
 };
 
 const compactTurns = (turns: AdaptiveProbeTurn[]) =>
@@ -911,6 +922,7 @@ export async function decideAdaptiveProbe(
       openaiApiKey,
       buildAnalyzerMessages(context, language),
       ANALYZER_RESPONSE_FORMAT,
+      OPENAI_ANALYZER_TIMEOUT_MS,
     );
     analysis = normalizeAnalysis(analyzerPayload, context);
   } catch (error) {
@@ -950,6 +962,7 @@ export async function decideAdaptiveProbe(
       openaiApiKey,
       buildGeneratorMessages(context, analysis, language),
       GENERATOR_RESPONSE_FORMAT,
+      OPENAI_GENERATOR_TIMEOUT_MS,
     );
     generatedQuestion = ensureQuestion(asString(generatorPayload.follow_up_question), language);
     generationReason = asString(generatorPayload.decision_reason) || generationReason;
