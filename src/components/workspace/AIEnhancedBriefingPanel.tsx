@@ -244,8 +244,8 @@ const AIEnhancedBriefingPanel = ({
       revealAssistantPendingContent(assistantMessageId, "done", assistantReply);
       clearAssistantStreamState(assistantMessageId);
 
-      const nextTranscript = Array.isArray(data?.conversationHistory)
-        ? data.conversationHistory
+      const nextTranscript: AIEnhancedPlannerTranscriptItem[] = Array.isArray(data?.conversationHistory)
+        ? (data.conversationHistory as AIEnhancedPlannerTranscriptItem[])
         : [...conversationHistory, { role: "user", content: trimmedMessage }, { role: "assistant", content: assistantReply }];
 
       const hydratedBrief: AIEnhancedBrief = {
