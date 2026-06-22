@@ -686,10 +686,10 @@ const Index = () => {
                   setIsDesignModuleOpen(false);
                 }}
                 className={`h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm ${selectedResearchMode === "ai_enhanced" ? "border-brand-primary/40 bg-brand-primary-light/30 text-brand-primary" : ""}`}
-                aria-label={selectedResearchMode === "ai_enhanced" ? "Agent Enhanced modunu kapat" : "Agent Enhanced araştırma modunu seç"}
+                aria-label={selectedResearchMode === "ai_enhanced" ? "Dinamik Soru-Cevap modunu kapat" : "Dinamik Soru-Cevap araştırma modunu seç"}
               >
                 <Sparkles className="mr-2 h-4 w-4" />
-                <span className="text-xs font-medium sm:text-sm">Agent Enhanced</span>
+                <span className="text-xs font-medium sm:text-sm">Dinamik Soru-Cevap</span>
               </Button>
             </div>
             <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading || isUploadingScreens} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
