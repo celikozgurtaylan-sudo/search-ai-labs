@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKe
 import { Button } from "@/components/ui/button";
 import {
   AIEnhancedBrief,
+  AIEnhancedPlannerTranscriptItem,
   normalizeAIEnhancedBrief,
 } from "@/lib/aiEnhancedResearch";
 import { Send, User } from "lucide-react";
