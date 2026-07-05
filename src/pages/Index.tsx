@@ -1,17 +1,16 @@
-import { useState, useEffect, useRef, type ClipboardEvent } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, LogOut, ImagePlus, X, Sparkles, Plus, Link as LinkIcon } from "lucide-react";
+import { ArrowRight, LogOut, X, Sparkles, Plus, Link as LinkIcon } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { AnimatedHeadline } from "@/components/ui/animated-headline";
 import { SearchoMark } from "@/components/icons/SearchoMark";
 import { useAuth } from "@/contexts/AuthContext";
 import { projectService, Project } from "@/services/projectService";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 
 const placeholderHints = [
 "Searcho AI, bu açılış sayfasında dönüşümü düşüren 3 kritik friksiyonu bulur musun?",
@@ -22,21 +21,13 @@ const placeholderHints = [
 "İlk 10 kullanıcı görüşmesinden tema analizi yapıp en yüksek etkili iyileştirmeleri sıralar mısın?"];
 
 
-interface DesignScreenDraft {
-  id: string;
-  name: string;
-  previewUrl: string;
-  file: File;
-}
-
 interface UploadedDesignScreen {
   id: string;
   name: string;
   url: string;
-  source: "upload" | "figma-link";
-  interactionMode?: "static" | "prototype";
+  source: "figma-link";
+  interactionMode?: "prototype";
   embedUrl?: string;
-  mimeType?: string;
 }
 
 interface UsabilityIntake {
@@ -53,10 +44,6 @@ interface FigmaPrototypeDraft {
   url: string;
 }
 
-const DESIGN_SCREENS_BUCKET = "design-screens";
-const USE_STORAGE_FOR_DESIGN_SCREENS = false;
-const SCREEN_NAME_PREFIX = "Ekran";
-
 const Index = () => {
   const [projectDescription, setProjectDescription] = useState("");
   const [userProjects, setUserProjects] = useState<Project[]>([]);
@@ -67,10 +54,8 @@ const Index = () => {
   const [activePlaceholderIndex, setActivePlaceholderIndex] = useState(0);
   const [typedPlaceholderLength, setTypedPlaceholderLength] = useState(0);
   const [isDeletingPlaceholder, setIsDeletingPlaceholder] = useState(false);
-  const [screenDrafts, setScreenDrafts] = useState<DesignScreenDraft[]>([]);
   const [prototypeDrafts, setPrototypeDrafts] = useState<FigmaPrototypeDraft[]>([]);
   const [prototypeUrlDraft, setPrototypeUrlDraft] = useState("");
-  const [isUploadingScreens, setIsUploadingScreens] = useState(false);
   const [isDesignModuleOpen, setIsDesignModuleOpen] = useState(false);
   const [usabilityIntake, setUsabilityIntake] = useState<UsabilityIntake>({
     objective: "",
@@ -83,7 +68,7 @@ const Index = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
 
-  const hasScreenContext = screenDrafts.length > 0 || prototypeDrafts.length > 0;
+  const hasScreenContext = prototypeDrafts.length > 0;
   const hasRequiredUsabilityAnswers = usabilityIntake.objective.trim().length > 0 && usabilityIntake.primaryTask.trim().length > 0;
   const isAgentEnhancedSelected = selectedResearchMode === "ai_enhanced";
   const isUsabilityModeActive = isDesignModuleOpen || hasScreenContext;
@@ -165,78 +150,6 @@ const Index = () => {
     };
   }, [activePlaceholder, isDeletingPlaceholder, projectDescription, typedPlaceholderLength]);
 
-  const getNextScreenNumber = (drafts: DesignScreenDraft[]) => {
-    const screenNumbers = drafts.
-    map((draft) => {
-      const match = draft.name.match(new RegExp(`^${SCREEN_NAME_PREFIX}\\s+(\\d+)$`));
-      return match ? Number(match[1]) : 0;
-    }).
-    filter((value) => Number.isFinite(value));
-
-    return screenNumbers.length > 0 ? Math.max(...screenNumbers) + 1 : 1;
-  };
-
-  const addScreenDrafts = (files: File[]) => {
-    const validImageFiles = files.filter((file) => file.type.startsWith("image/"));
-    if (validImageFiles.length === 0) return;
-
-    setScreenDrafts((prev) => {
-      const nextScreenNumber = getNextScreenNumber(prev);
-      const newDrafts = validImageFiles.map((file, index) => ({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        name: `${SCREEN_NAME_PREFIX} ${nextScreenNumber + index}`,
-        previewUrl: URL.createObjectURL(file),
-        file
-      }));
-
-      return [...prev, ...newDrafts];
-    });
-  };
-
-  const handleScreenPaste = (event: ClipboardEvent<HTMLDivElement>) => {
-    const items = Array.from(event.clipboardData.items || []);
-    if (items.length === 0) return;
-
-    const imageFiles = items.
-    filter((item) => item.type.startsWith("image/")).
-    map((item, index) => {
-      const file = item.getAsFile();
-      if (!file) return null;
-      const extension = file.type.split("/")[1] || "png";
-      return new File([file], `figma-screen-${Date.now()}-${index}.${extension}`, { type: file.type });
-    }).
-    filter((file): file is File => file !== null);
-
-    if (imageFiles.length === 0) return;
-
-    event.preventDefault();
-    addScreenDrafts(imageFiles);
-    toast.success(imageFiles.length === 1 ? "1 ekran eklendi." : `${imageFiles.length} ekran eklendi.`);
-  };
-
-  const removeScreenDraft = (draftId: string) => {
-    setScreenDrafts((prev) => {
-      const target = prev.find((item) => item.id === draftId);
-      if (target) {
-        URL.revokeObjectURL(target.previewUrl);
-      }
-      return prev.filter((item) => item.id !== draftId);
-    });
-  };
-
-  const renameScreenDraft = (draftId: string, nextName: string) => {
-    setScreenDrafts((prev) =>
-    prev.map((draft) =>
-    draft.id === draftId ?
-    {
-      ...draft,
-      name: nextName
-    } :
-    draft
-    )
-    );
-  };
-
   const addPrototypeDraft = () => {
     const normalizedUrl = prototypeUrlDraft.trim();
     if (!isFigmaPrototypeUrl(normalizedUrl)) {
@@ -266,22 +179,8 @@ const Index = () => {
     );
   };
 
-  const fileToDataUrl = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-      reject(new Error("Failed to encode image"));
-    };
-    reader.onerror = () => reject(new Error("Failed to read image file"));
-    reader.readAsDataURL(file);
-  });
-
-  const uploadDesignScreens = async (): Promise<UploadedDesignScreen[]> => {
-    const prototypeScreens = prototypeDrafts.map((draft) => ({
+  const uploadDesignScreens = async (): Promise<UploadedDesignScreen[]> =>
+    prototypeDrafts.map((draft) => ({
       id: draft.id,
       name: draft.name.trim() || "Figma Prototip",
       url: draft.url,
@@ -289,79 +188,6 @@ const Index = () => {
       interactionMode: "prototype" as const,
       embedUrl: buildFigmaEmbedUrl(draft.url),
     }));
-
-    if (!user || screenDrafts.length === 0) return prototypeScreens;
-
-    setIsUploadingScreens(true);
-    try {
-      if (!USE_STORAGE_FOR_DESIGN_SCREENS) {
-        const inlineScreens = await Promise.all(
-          screenDrafts.map(async (draft) => ({
-            id: draft.id,
-            name: draft.name,
-            url: await fileToDataUrl(draft.file),
-            source: "upload" as const,
-            interactionMode: "static" as const,
-            mimeType: draft.file.type
-          }))
-        );
-        return [...inlineScreens, ...prototypeScreens];
-      }
-
-      let usedInlineFallback = false;
-
-      const uploads = await Promise.all(
-        screenDrafts.map(async (draft) => {
-          const safeFileName = draft.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-          const filePath = `${user.id}/${Date.now()}-${safeFileName}`;
-          try {
-            const { error: uploadError } = await supabase.storage.
-            from(DESIGN_SCREENS_BUCKET).
-            upload(filePath, draft.file, {
-              contentType: draft.file.type,
-              upsert: false
-            });
-
-            if (uploadError) {
-              throw new Error(uploadError.message);
-            }
-
-            const {
-              data: { publicUrl }
-            } = supabase.storage.from(DESIGN_SCREENS_BUCKET).getPublicUrl(filePath);
-
-            return {
-              id: draft.id,
-              name: draft.name,
-              url: publicUrl,
-              source: "upload" as const,
-              interactionMode: "static" as const,
-              mimeType: draft.file.type
-            };
-          } catch (error) {
-            usedInlineFallback = true;
-            const inlineUrl = await fileToDataUrl(draft.file);
-            return {
-              id: draft.id,
-              name: draft.name,
-              url: inlineUrl,
-              source: "upload" as const,
-              interactionMode: "static" as const,
-              mimeType: draft.file.type
-            };
-          }
-        })
-      );
-
-      if (usedInlineFallback) {
-        toast.warning("Ekranlar geçici olarak lokal veri olarak eklendi. Storage izinleri tamamlandığında otomatik yükleme aktif olur.");
-      }
-
-      return [...uploads, ...prototypeScreens];
-    } finally {
-      setIsUploadingScreens(false);
-    }
-  };
 
   const loadUserProjects = async () => {
     try {
@@ -576,10 +402,8 @@ const Index = () => {
             <div className="rounded-lg border border-border-light bg-surface/50 p-4 space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <ImagePlus className="w-4 h-4 text-brand-primary" />
-                  <p className="text-sm font-medium text-text-primary">Figma ekranlarını yapıştırın
-
-                </p>
+                  <LinkIcon className="w-4 h-4 text-brand-primary" />
+                  <p className="text-sm font-medium text-text-primary">Figma prototip linkini ekleyin</p>
                 </div>
                 {hasScreenContext && <Badge className="bg-brand-primary-light text-brand-primary border-0">
                     <Sparkles className="w-3 h-3 mr-1" />
@@ -588,7 +412,7 @@ const Index = () => {
               </div>
 
               <p className="text-xs text-text-secondary">
-                Figma prototype linkini ekleyin veya test etmek istediğiniz statik ekranları kopyalayıp yapıştırın.
+                Test etmek istediğiniz Figma prototype linkini girin. Katılımcının prototiple etkileşimi ekran kaydıyla doğrulanır.
               </p>
 
               <div className="space-y-2">
@@ -604,7 +428,7 @@ const Index = () => {
                       }
                     }}
                     placeholder="https://www.figma.com/proto/..."
-                    className="h-10 bg-white"
+                    className="h-10 bg-white placeholder:text-slate-300 placeholder:font-normal"
                   />
                   <Button type="button" variant="outline" onClick={addPrototypeDraft} className="h-10 gap-2">
                     <LinkIcon className="h-4 w-4" />
@@ -649,69 +473,6 @@ const Index = () => {
                   </div>
                 </div>
               }
-
-              <div className="space-y-2">
-                <Label className="text-xs text-text-secondary">Ekran Yapıştırma Alanı</Label>
-                <div className="space-y-2">
-                  <div
-                  role="textbox"
-                  tabIndex={0}
-                  onPaste={handleScreenPaste}
-                  onClick={(e) => e.currentTarget.focus()}
-                  className="min-h-[88px] rounded-md border border-dashed border-border-light bg-white/80 p-3 text-sm text-text-secondary outline-none transition-colors focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20">
-                  
-                    Buraya tıklayıp Cmd/Ctrl + V yapın.
-                    <div className="mt-1 text-xs text-text-muted">
-                      İpucu: Figma'da ilgili frame'i seçip Copy as PNG yaptıktan sonra yapıştırın.
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {screenDrafts.length > 0 &&
-            <div className="space-y-2">
-                  <p className="text-xs text-text-secondary">Yüklenecek ekranlar</p>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {screenDrafts.map((draft) =>
-                <div key={draft.id} className="group relative rounded-xl border border-border-light bg-white p-3">
-                        <div className="absolute right-2 top-2">
-                          <button
-                      type="button"
-                      onClick={() => removeScreenDraft(draft.id)}
-                      className="flex h-6 w-6 items-center justify-center rounded-full bg-black/75 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                      aria-label="Remove screen">
-                      
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-
-                        <div className="flex items-start gap-3">
-                          <img src={draft.previewUrl} alt={draft.name} className="h-20 w-14 rounded-lg border border-border-light object-cover" />
-
-                          <div className="min-w-0 flex-1 space-y-2">
-                            <div className="space-y-1">
-                              <Label htmlFor={`screen-name-${draft.id}`} className="text-xs text-text-secondary">
-                                Ekran başlığı
-                              </Label>
-                              <Input
-                          id={`screen-name-${draft.id}`}
-                          value={draft.name}
-                          onChange={(e) => renameScreenDraft(draft.id, e.target.value)}
-                          placeholder="Ekran başlığı"
-                          className="h-9" />
-                        
-                            </div>
-
-                            <p className="text-[11px] leading-5 text-text-muted">
-                              Bu başlık kullanıcının göreceği bir başlık olacaktır.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                )}
-                  </div>
-                </div>
-            }
 
               {hasScreenContext &&
             <div className="space-y-3 rounded-md border border-brand-primary/20 bg-white p-3">
@@ -765,7 +526,7 @@ const Index = () => {
                   
                     </div>
                   </div>
-                </div>
+            </div>
             }
             </div>
           </div>
@@ -818,8 +579,8 @@ const Index = () => {
                 <span className="text-xs font-medium sm:text-sm">Dinamik Soru-Cevap</span>
               </Button>
             </div>
-            <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading || isUploadingScreens} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
-              {loading || isUploadingScreens ? 'Oluşturuluyor...' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />
+            <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
+              {loading ? 'Oluşturuluyor...' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </div>
         </div>

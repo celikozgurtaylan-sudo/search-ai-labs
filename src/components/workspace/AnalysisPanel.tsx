@@ -1350,19 +1350,6 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
               </CardContent>
             </Card>
             ) : null}
-
-            {import.meta.env.DEV ? (
-              <Card className="border-border-light">
-                <CardHeader>
-                  <CardTitle>Raw Report (Dev Only)</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <pre className="overflow-auto rounded bg-muted p-4 text-xs">
-                    {JSON.stringify(report, null, 2)}
-                  </pre>
-                </CardContent>
-              </Card>
-            ) : null}
           </TabsContent>
 
           <TabsContent value="chat" className="mt-6">
