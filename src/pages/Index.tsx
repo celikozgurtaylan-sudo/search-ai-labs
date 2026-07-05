@@ -600,7 +600,7 @@ const Index = () => {
                   setSelectedResearchMode("structured");
                   setIsDesignModuleOpen((prev) => !prev);
                 }}
-                className={`landing-usability-button h-9 rounded-full border-border-light bg-white/95 px-1.5 pr-3 hover:bg-white shadow-sm ${isUsabilityWarmVisible ? "landing-usability-button--hovering" : ""} ${isUsabilityWarmActive ? "landing-usability-button--active" : ""}`}
+                className={`landing-mode-chip landing-usability-button h-9 rounded-full border-border-light bg-white/95 px-1.5 pr-3 hover:bg-white shadow-sm ${isUsabilityWarmVisible ? "landing-usability-button--hovering" : ""} ${isUsabilityWarmActive ? "landing-usability-button--active" : ""}`}
                 aria-label={isDesignModuleOpen ? "Kullanılabilirlik testi panelini kapat" : "Kullanılabilirlik testi panelini aç"}
               >
                 <span className={`mr-2 flex h-6 w-6 items-center justify-center rounded-full border border-border-light bg-surface text-text-primary ${isUsabilityWarmVisible ? "landing-usability-button__icon landing-usability-button__icon--hovering" : ""} ${isUsabilityWarmActive ? "landing-usability-button__icon landing-usability-button__icon--active" : ""}`}>
@@ -629,7 +629,7 @@ const Index = () => {
                   setSelectedResearchMode("ai_enhanced");
                   setIsDesignModuleOpen(false);
                 }}
-                className={`h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm ${selectedResearchMode === "ai_enhanced" ? "border-brand-primary/40 bg-brand-primary-light/30 text-brand-primary" : ""}`}
+                className={`landing-mode-chip h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm ${selectedResearchMode === "ai_enhanced" ? "border-brand-primary/40 bg-brand-primary-light/30 text-brand-primary" : ""}`}
                 aria-label={selectedResearchMode === "ai_enhanced" ? "Dinamik Soru-Cevap modunu kapat" : "Dinamik Soru-Cevap araştırma modunu seç"}
               >
                 <Sparkles className="mr-2 h-4 w-4" />
@@ -644,14 +644,14 @@ const Index = () => {
                   setSelectedResearchMode("structured");
                   setIsDesignModuleOpen(false);
                 }}
-                className={`h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm ${isSyntheticUsersSelected ? "border-brand-primary/40 bg-brand-primary-light/30 text-brand-primary" : ""}`}
+                className={`landing-mode-chip h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm ${isSyntheticUsersSelected ? "border-brand-primary/40 bg-brand-primary-light/30 text-brand-primary" : ""}`}
                 aria-label={isSyntheticUsersSelected ? "Sentetik kullanıcılar modunu kapat" : "Sentetik kullanıcılar modunu seç"}
               >
                 <Bot className="mr-2 h-4 w-4" />
                 <span className="text-xs font-medium sm:text-sm">Sentetik Kullanıcılar</span>
               </Button>
             </div>
-            <Button onClick={handlePrimaryCta} disabled={!projectDescription.trim() || loading} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
+            <Button onClick={handlePrimaryCta} disabled={!projectDescription.trim() || loading} className="min-w-[218px] justify-center bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
               {loading ? 'Oluşturuluyor...' : isSyntheticUsersSelected ? 'Sentetik Kullanıcı Seç' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </div>
