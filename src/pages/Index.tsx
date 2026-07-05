@@ -586,8 +586,8 @@ const Index = () => {
             </div>
           </div>
           
-          <div className="flex items-center justify-between gap-3 mt-6">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="landing-action-row mt-6">
+            <div className="landing-mode-chip-row flex items-center gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -629,7 +629,8 @@ const Index = () => {
                   setSelectedResearchMode("ai_enhanced");
                   setIsDesignModuleOpen(false);
                 }}
-                className={`landing-mode-chip h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm ${selectedResearchMode === "ai_enhanced" ? "border-brand-primary/40 bg-brand-primary-light/30 text-brand-primary" : ""}`}
+                data-active={selectedResearchMode === "ai_enhanced" ? "true" : "false"}
+                className="landing-mode-chip h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm"
                 aria-label={selectedResearchMode === "ai_enhanced" ? "Dinamik Soru-Cevap modunu kapat" : "Dinamik Soru-Cevap araştırma modunu seç"}
               >
                 <Sparkles className="mr-2 h-4 w-4" />
@@ -644,14 +645,15 @@ const Index = () => {
                   setSelectedResearchMode("structured");
                   setIsDesignModuleOpen(false);
                 }}
-                className={`landing-mode-chip h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm ${isSyntheticUsersSelected ? "border-brand-primary/40 bg-brand-primary-light/30 text-brand-primary" : ""}`}
+                data-active={isSyntheticUsersSelected ? "true" : "false"}
+                className="landing-mode-chip h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm"
                 aria-label={isSyntheticUsersSelected ? "Sentetik kullanıcılar modunu kapat" : "Sentetik kullanıcılar modunu seç"}
               >
                 <Bot className="mr-2 h-4 w-4" />
                 <span className="text-xs font-medium sm:text-sm">Sentetik Kullanıcılar</span>
               </Button>
             </div>
-            <Button onClick={handlePrimaryCta} disabled={!projectDescription.trim() || loading} className="min-w-[218px] justify-center bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
+            <Button onClick={handlePrimaryCta} disabled={!projectDescription.trim() || loading} className="w-[240px] justify-center bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
               {loading ? 'Oluşturuluyor...' : isSyntheticUsersSelected ? 'Sentetik Kullanıcı Seç' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </div>
