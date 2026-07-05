@@ -48,4 +48,27 @@ export const projectReportService = {
 
     return extractProjectReport({ report: data?.report ?? null });
   },
+
+  async purgeStoredVideos(projectId: string): Promise<{
+    purgedResponseCount: number;
+    removedObjectCount: number;
+    videoPurgedAt?: string;
+  }> {
+    const { data, error } = await supabase.functions.invoke("interview-analysis", {
+      body: {
+        action: "purge_videos",
+        projectId,
+      },
+    });
+
+    if (error) {
+      throw new Error(`Video purge failed: ${error.message}`);
+    }
+
+    return {
+      purgedResponseCount: Number(data?.purgedResponseCount ?? 0),
+      removedObjectCount: Number(data?.removedObjectCount ?? 0),
+      videoPurgedAt: typeof data?.videoPurgedAt === "string" ? data.videoPurgedAt : undefined,
+    };
+  },
 };

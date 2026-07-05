@@ -43,9 +43,23 @@ export interface ProjectReportQuote {
   anchorId?: string | null;
   anchorLabel?: string | null;
   turnIndex?: number | null;
+  audioUrl?: string | null;
+  audioMimeType?: string | null;
+  audioPrivacyTransform?: {
+    algorithm?: string;
+    semitoneShift?: number;
+    rawAudioStored?: boolean;
+    videoStored?: boolean;
+  } | null;
+  audioDurationMs?: number | null;
+  transcriptSegments?: Array<{
+    id?: string;
+    text: string;
+    startMs: number;
+    endMs: number;
+  }>;
   videoUrl?: string | null;
   videoDurationMs?: number | null;
-  audioDurationMs?: number | null;
 }
 
 export interface ProjectReportFinding {
@@ -100,6 +114,7 @@ export interface ProjectReportParticipantBreakdown {
   skippedResponseCount: number;
   averageResponseDurationMs: number | null;
   sessionDurationMs: number | null;
+  hasAudioEvidence?: boolean;
   hasVideoEvidence: boolean;
   summary: string;
   quoteIds: string[];

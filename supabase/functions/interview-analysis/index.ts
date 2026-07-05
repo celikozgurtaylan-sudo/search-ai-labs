@@ -61,13 +61,87 @@ async function validateSessionAccess(projectId: string, sessionId: string | null
   return session;
 }
 
+async function purgeProjectVideos(projectId: string) {
+  const { data: sessions, error: sessionsError } = await supabase
+    .from("study_sessions")
+    .select("id")
+    .eq("project_id", projectId);
+
+  if (sessionsError) {
+    throw new Error(`Failed to load sessions for video purge: ${sessionsError.message}`);
+  }
+
+  const sessionIds = (sessions ?? []).map((session) => session.id);
+  if (sessionIds.length === 0) {
+    return { purgedResponseCount: 0, removedObjectCount: 0 };
+  }
+
+  const { data: responses, error: responsesError } = await supabase
+    .from("interview_responses")
+    .select("id, video_url, metadata")
+    .in("session_id", sessionIds)
+    .not("video_url", "is", null);
+
+  if (responsesError) {
+    throw new Error(`Failed to load video responses: ${responsesError.message}`);
+  }
+
+  const rows = responses ?? [];
+  const videoPaths = rows
+    .map((response) => typeof response.video_url === "string" ? response.video_url.trim() : "")
+    .filter(Boolean);
+
+  if (videoPaths.length > 0) {
+    const { error: removeError } = await supabase.storage
+      .from("interview-videos")
+      .remove(Array.from(new Set(videoPaths)));
+
+    if (removeError) {
+      throw new Error(`Failed to remove stored interview videos: ${removeError.message}`);
+    }
+  }
+
+  const videoPurgedAt = new Date().toISOString();
+  await Promise.all(rows.map(async (response) => {
+    const metadata = response.metadata && typeof response.metadata === "object" && !Array.isArray(response.metadata)
+      ? response.metadata as Record<string, unknown>
+      : {};
+    const { error: updateError } = await supabase
+      .from("interview_responses")
+      .update({
+        video_url: null,
+        video_duration_ms: null,
+        metadata: {
+          ...metadata,
+          videoPurgedAt,
+          videoPurgeReason: "kvkk_video_disabled",
+        },
+      })
+      .eq("id", response.id);
+
+    if (updateError) {
+      throw new Error(`Failed to mark purged video response ${response.id}: ${updateError.message}`);
+    }
+  }));
+
+  await generateAndPersistProjectReport(supabase, projectId, {
+    trigger: "video-purge",
+  });
+
+  return {
+    purgedResponseCount: rows.length,
+    removedObjectCount: Array.from(new Set(videoPaths)).length,
+    videoPurgedAt,
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { projectId, sessionId = null, force = true } = await req.json();
+    const { projectId, sessionId = null, force = true, action = "generate_report" } = await req.json();
 
     if (!projectId) {
       return new Response(
@@ -85,6 +159,21 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "Unauthorized analysis request" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (action === "purge_videos") {
+      if (!researcher) {
+        return new Response(
+          JSON.stringify({ error: "Only project owners can purge stored videos" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const result = await purgeProjectVideos(projectId);
+      return new Response(
+        JSON.stringify({ success: true, ...result }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 

@@ -84,6 +84,9 @@ export type Database = {
       interview_responses: {
         Row: {
           audio_duration_ms: number | null
+          audio_mime_type: string | null
+          audio_privacy_transform: Json | null
+          audio_url: string | null
           confidence_score: number | null
           created_at: string
           id: string
@@ -95,12 +98,16 @@ export type Database = {
           sentiment_score: number | null
           session_id: string
           transcription: string | null
+          transcript_segments: Json | null
           updated_at: string
           video_duration_ms: number | null
           video_url: string | null
         }
         Insert: {
           audio_duration_ms?: number | null
+          audio_mime_type?: string | null
+          audio_privacy_transform?: Json | null
+          audio_url?: string | null
           confidence_score?: number | null
           created_at?: string
           id?: string
@@ -112,12 +119,16 @@ export type Database = {
           sentiment_score?: number | null
           session_id: string
           transcription?: string | null
+          transcript_segments?: Json | null
           updated_at?: string
           video_duration_ms?: number | null
           video_url?: string | null
         }
         Update: {
           audio_duration_ms?: number | null
+          audio_mime_type?: string | null
+          audio_privacy_transform?: Json | null
+          audio_url?: string | null
           confidence_score?: number | null
           created_at?: string
           id?: string
@@ -129,6 +140,7 @@ export type Database = {
           sentiment_score?: number | null
           session_id?: string
           transcription?: string | null
+          transcript_segments?: Json | null
           updated_at?: string
           video_duration_ms?: number | null
           video_url?: string | null

@@ -31,6 +31,10 @@ export interface InterviewResponse {
   updated_at: string
   video_url?: string | null
   video_duration_ms?: number | null
+  audio_url?: string | null
+  audio_mime_type?: string | null
+  audio_privacy_transform?: Record<string, unknown> | null
+  transcript_segments?: unknown
 }
 
 export interface InterviewProgress {
@@ -172,8 +176,6 @@ export const interviewService = {
     participantId?: string
     transcription?: string
     responseText?: string
-    videoUrl?: string
-    videoDuration?: number
     audioDuration?: number
     confidenceScore?: number
     isComplete?: boolean
@@ -226,12 +228,12 @@ export const interviewService = {
   },
 
   async attachResponseMedia(sessionId: string, responseId: string, responseData: {
-    videoUrl?: string
-    videoDuration?: number
     audioDuration?: number
     metadata?: any
-    videoBase64?: string
-    videoMimeType?: string
+    audioBase64?: string
+    audioMimeType?: string
+    audioPrivacyTransform?: Record<string, unknown>
+    transcriptSegments?: unknown
     questionId?: string
   }) {
     if (isDesignMode(sessionId)) {

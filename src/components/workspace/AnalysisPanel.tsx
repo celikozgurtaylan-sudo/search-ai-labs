@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 import { generateResearchPresentation } from "@/services/presentationService";
 import { projectReportService } from "@/services/projectReportService";
 import type {
@@ -30,7 +31,7 @@ import {
   Sparkles,
   Target,
   Users,
-  Video,
+  Volume2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -130,6 +131,93 @@ const MetricBar = ({
   );
 };
 
+const AudioEvidencePlayer = ({ quote }: { quote: ProjectReportQuote }) => {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(null);
+  const segments = quote.transcriptSegments?.length
+    ? quote.transcriptSegments
+    : quote.text
+      ? [{ id: "segment-1", text: quote.text, startMs: 0, endMs: quote.audioDurationMs ?? 0 }]
+      : [];
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!quote.audioUrl) {
+      setSignedUrl(null);
+      return;
+    }
+
+    void supabase.storage
+      .from("interview-audio")
+      .createSignedUrl(quote.audioUrl, 300)
+      .then(({ data, error }) => {
+        if (!isMounted) return;
+        if (error) {
+          console.error("Failed to create signed audio evidence URL:", error);
+          setSignedUrl(null);
+          return;
+        }
+        setSignedUrl(data?.signedUrl ?? null);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [quote.audioUrl]);
+
+  if (!quote.audioUrl) return null;
+
+  const transformLabel = quote.audioPrivacyTransform?.semitoneShift
+    ? `+${quote.audioPrivacyTransform.semitoneShift} semiton`
+    : "pitch-shifted";
+
+  return (
+    <div className="space-y-2 rounded-md border border-border-light bg-white p-3">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
+        <span className="inline-flex items-center gap-1 font-medium text-brand-primary">
+          <Volume2 className="h-3 w-3" />
+          Pitch-shifted ses kanıtı
+        </span>
+        <span>•</span>
+        <span>{transformLabel}</span>
+      </div>
+      {signedUrl ? (
+        <audio
+          controls
+          className="w-full"
+          src={signedUrl}
+          onTimeUpdate={(event) => {
+            const currentMs = event.currentTarget.currentTime * 1000;
+            const nextIndex = segments.findIndex((segment) =>
+              currentMs >= segment.startMs && currentMs <= segment.endMs
+            );
+            setActiveSegmentIndex(nextIndex >= 0 ? nextIndex : null);
+          }}
+          onEnded={() => setActiveSegmentIndex(null)}
+        />
+      ) : (
+        <p className="text-xs text-text-secondary">Ses kanıtı için geçici bağlantı hazırlanıyor.</p>
+      )}
+      {segments.length > 0 ? (
+        <div className="space-y-1">
+          {segments.map((segment, index) => (
+            <p
+              key={segment.id ?? `${quote.quoteId}-segment-${index}`}
+              className={cn(
+                "rounded px-2 py-1 text-xs leading-5 text-text-secondary",
+                activeSegmentIndex === index && "bg-brand-primary/10 text-text-primary"
+              )}
+            >
+              {segment.text}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 const EvidenceQuotes = ({
   title,
   quotes,
@@ -155,16 +243,17 @@ const EvidenceQuotes = ({
                 <span>{quote.section}</span>
                 <span>•</span>
                 <span>{quote.questionText}</span>
-                {quote.videoUrl ? (
+                {quote.audioUrl ? (
                   <>
                     <span>•</span>
                     <span className="inline-flex items-center gap-1 text-brand-primary">
-                      <Video className="h-3 w-3" />
-                      Video kanıtı kaydedildi
+                      <Volume2 className="h-3 w-3" />
+                      Pitch-shifted ses kanıtı kaydedildi
                     </span>
                   </>
                 ) : null}
               </div>
+              <AudioEvidencePlayer quote={quote} />
             </div>
           </div>
         </div>
@@ -1144,7 +1233,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                           <div className="flex flex-wrap gap-2">
                             <Badge variant="secondary">{participant.answeredResponseCount} yanıt</Badge>
                             <Badge variant="outline">{participant.skippedResponseCount} skip</Badge>
-                            {participant.hasVideoEvidence ? <Badge variant="outline">Video var</Badge> : null}
+                            {participant.hasAudioEvidence ? <Badge variant="outline">Ses kanıtı var</Badge> : null}
                           </div>
                         </div>
 
@@ -1228,4 +1317,3 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 };
 
 export default AnalysisPanel;
-

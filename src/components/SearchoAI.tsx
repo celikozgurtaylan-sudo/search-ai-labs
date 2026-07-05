@@ -22,6 +22,7 @@ import {
   getMicrophoneFailureMessage,
   mapMediaAccessErrorToFailureCode,
 } from '@/utils/microphoneHealth';
+import { AUDIO_PRIVACY_TRANSFORM, pitchShiftAudioForEvidence } from '@/utils/audioPrivacyTransform';
 import TurkishPreambleDisplay from './TurkishPreambleDisplay';
 import { AvatarSpeaker, type AvatarPlaybackIssueReason } from './AvatarSpeaker';
 import MinimalVoiceWaves from './ui/minimal-voice-waves';
@@ -124,9 +125,8 @@ const getRecordingMimeType = () => {
   if (typeof MediaRecorder === 'undefined') return undefined;
 
   const candidates = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm',
+    'audio/webm;codecs=opus',
+    'audio/webm',
   ];
 
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
@@ -141,6 +141,32 @@ const shouldRequireTranscriptReview = (transcript: string) => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const buildTranscriptSegments = (text: string, durationMs: number) => {
+  const normalizedText = text.trim();
+  if (!normalizedText) return [];
+
+  const sentences = normalizedText.match(/[^.!?\n]+[.!?]?/g)?.map((segment) => segment.trim()).filter(Boolean) ?? [normalizedText];
+  const totalCharacters = sentences.reduce((sum, sentence) => sum + Math.max(sentence.length, 1), 0);
+  let cursorMs = 0;
+
+  return sentences.map((sentence, index) => {
+    const isLast = index === sentences.length - 1;
+    const segmentDurationMs = isLast
+      ? Math.max(0, durationMs - cursorMs)
+      : Math.round(durationMs * (Math.max(sentence.length, 1) / Math.max(totalCharacters, 1)));
+    const startMs = cursorMs;
+    const endMs = isLast ? durationMs : Math.min(durationMs, startMs + segmentDurationMs);
+    cursorMs = endMs;
+
+    return {
+      id: `segment-${index + 1}`,
+      text: sentence,
+      startMs,
+      endMs,
+    };
+  });
+};
 
 const normalizeWarmupLabel = (value: unknown) =>
   String(value ?? '')
@@ -426,22 +452,21 @@ const SearchoAI = ({
   }, [cameraStream]);
 
   const startResponseRecording = useCallback(async (questionId: string, microphoneStream: MediaStream) => {
-    const cameraTrack = cameraStream?.getVideoTracks().find((track) => isLiveTrack(track));
     const microphoneTrack = microphoneStream.getAudioTracks().find((track) => isLiveTrack(track));
 
-    if (!cameraTrack || !microphoneTrack) {
+    if (!microphoneTrack) {
       cleanupResponseRecording();
       return;
     }
 
-    const tracks = [cameraTrack.clone(), microphoneTrack.clone()];
+    const tracks = [microphoneTrack.clone()];
     const recordingStream = new MediaStream(tracks);
     const mimeType = getRecordingMimeType();
 
     try {
       const recorder = mimeType
-        ? new MediaRecorder(recordingStream, { mimeType, videoBitsPerSecond: 2_500_000 })
-        : new MediaRecorder(recordingStream, { videoBitsPerSecond: 2_500_000 });
+        ? new MediaRecorder(recordingStream, { mimeType })
+        : new MediaRecorder(recordingStream);
 
       responseChunksRef.current = [];
       responseRecordingTracksRef.current = tracks;
@@ -454,13 +479,13 @@ const SearchoAI = ({
       recorder.start(600);
       responseRecorderRef.current = recorder;
       setIsRecordingVideo(true);
-      console.log('Started async response recording for question:', questionId);
+      console.log('Started async audio evidence recording for question:', questionId);
     } catch (error) {
       console.error('Failed to start response recording:', error);
       tracks.forEach((track) => track.stop());
       cleanupResponseRecording();
     }
-  }, [cameraStream, cleanupResponseRecording]);
+  }, [cleanupResponseRecording]);
 
   const persistResponseDiagnostic = useCallback(async ({
     questionId,
@@ -540,22 +565,26 @@ const SearchoAI = ({
     setHasDetectedSpeechForCurrentAttempt(false);
   }, [clearTranscriptionHealthMonitor, invalidateCaptureAttempt, stopResponseRecording]);
 
-  const uploadResponseMedia = useCallback(async (responseId: string, questionId: string, media: PendingResponseMedia) => {
+  const uploadResponseMedia = useCallback(async (responseId: string, questionId: string, media: PendingResponseMedia, transcript: string) => {
     if (!projectContext?.sessionId || !media.blob) {
       return;
     }
 
     try {
-      const base64Video = await blobToBase64(media.blob);
+      const shiftedAudio = await pitchShiftAudioForEvidence(media.blob);
+      const base64Audio = await blobToBase64(shiftedAudio.blob);
+      const audioDuration = Math.round(shiftedAudio.durationMs || media.durationMs);
       await interviewService.attachResponseMedia(projectContext.sessionId, responseId, {
-        videoDuration: Math.round(media.durationMs),
-        audioDuration: Math.round(media.durationMs),
+        audioDuration,
         metadata: {
           mediaUploadCompletedAt: new Date().toISOString(),
           captureAttemptId: captureAttemptRef.current,
+          audioPrivacyTransform: shiftedAudio.transform,
         },
-        videoBase64: base64Video,
-        videoMimeType: media.blob.type || 'video/webm',
+        audioBase64: base64Audio,
+        audioMimeType: shiftedAudio.mimeType,
+        audioPrivacyTransform: shiftedAudio.transform,
+        transcriptSegments: buildTranscriptSegments(transcript, audioDuration),
         questionId,
       });
     } catch (error) {
@@ -568,6 +597,7 @@ const SearchoAI = ({
         error,
         extraMetadata: {
           responseId,
+          audioPrivacyTransform: AUDIO_PRIVACY_TRANSFORM,
         },
       });
     }
@@ -923,7 +953,7 @@ const SearchoAI = ({
       applyInterviewState(data.nextQuestion, data.progress);
 
       if (mediaToPersist.blob && data.response?.id) {
-        void uploadResponseMedia(data.response.id, activeQuestion.id, mediaToPersist);
+        void uploadResponseMedia(data.response.id, activeQuestion.id, mediaToPersist, normalizedTranscript);
       }
     } catch (error) {
       console.error('Failed to submit response:', error);
@@ -1849,7 +1879,7 @@ const SearchoAI = ({
                       ? 'bg-red-50 text-red-700'
                       : 'bg-muted text-muted-foreground'
                   }`}>
-                    {isRecordingVideo ? 'Video Açık' : 'Görüşme Aktif'}
+                    {isRecordingVideo ? 'Ses Kanıtı Açık' : 'Görüşme Aktif'}
                   </span>
                 </div>
 
@@ -1913,7 +1943,7 @@ const SearchoAI = ({
             <div className="bg-slate-900 p-4 text-xs font-mono text-white">
               <div>Phase: {interviewPhase}</div>
               <div>Submitting: {isSubmittingResponse ? '✅' : '❌'}</div>
-              <div>Recording video: {isRecordingVideo ? '✅' : '❌'}</div>
+              <div>Recording audio evidence: {isRecordingVideo ? 'yes' : 'no'}</div>
             </div>
           ) : null}
         </>

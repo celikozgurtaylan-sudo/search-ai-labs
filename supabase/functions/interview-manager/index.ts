@@ -47,13 +47,18 @@ type ResponsePayload = {
   videoBase64?: string;
   videoMimeType?: string;
   videoDuration?: number;
+  audioBase64?: string;
+  audioMimeType?: string;
+  audioPrivacyTransform?: Record<string, unknown>;
   audioDuration?: number;
   confidenceScore?: number;
   isComplete?: boolean;
   metadata?: Record<string, unknown>;
+  transcriptSegments?: unknown[];
 };
 
-const VIDEO_BUCKET = 'interview-videos';
+const AUDIO_BUCKET = 'interview-audio';
+const VIDEO_UPLOAD_DISABLED_CODE = 'video_upload_disabled';
 
 const decodeBase64 = (value: string) => {
   const normalized = value.trim();
@@ -67,16 +72,17 @@ const decodeBase64 = (value: string) => {
   return bytes;
 };
 
-const getVideoFileExtension = (mimeType?: string) => {
+const getAudioFileExtension = (mimeType?: string) => {
   switch (mimeType?.toLowerCase()) {
-    case 'video/mp4':
-      return 'mp4';
-    case 'video/webm':
-    case 'video/webm;codecs=vp8,opus':
-    case 'video/webm;codecs=vp9,opus':
+    case 'audio/wav':
+    case 'audio/wave':
+    case 'audio/x-wav':
+      return 'wav';
+    case 'audio/webm':
+    case 'audio/webm;codecs=opus':
       return 'webm';
     default:
-      return 'webm';
+      return 'wav';
   }
 };
 
@@ -142,8 +148,12 @@ async function saveOrUpdateResponse(sessionId: string, responseData: ResponsePay
     participant_id: responseData.participantId ?? existingResponse?.participant_id ?? null,
     transcription: responseData.transcription ?? existingResponse?.transcription ?? null,
     response_text: responseData.responseText ?? existingResponse?.response_text ?? null,
-    video_url: responseData.videoUrl ?? existingResponse?.video_url ?? null,
-    video_duration_ms: responseData.videoDuration ?? existingResponse?.video_duration_ms ?? null,
+    video_url: null,
+    video_duration_ms: null,
+    audio_url: existingResponse?.audio_url ?? null,
+    audio_mime_type: existingResponse?.audio_mime_type ?? null,
+    audio_privacy_transform: existingResponse?.audio_privacy_transform ?? null,
+    transcript_segments: existingResponse?.transcript_segments ?? null,
     audio_duration_ms: responseData.audioDuration ?? existingResponse?.audio_duration_ms ?? null,
     confidence_score: responseData.confidenceScore ?? existingResponse?.confidence_score ?? null,
     is_complete: responseData.isComplete ?? existingResponse?.is_complete ?? false,
@@ -1658,6 +1668,13 @@ async function attachResponseMedia(sessionId: string, responseId: string, respon
     throw new Error('Missing responseId');
   }
 
+  if (responseData.videoBase64 || responseData.videoUrl || responseData.videoDuration) {
+    return new Response(
+      JSON.stringify({ error: VIDEO_UPLOAD_DISABLED_CODE, code: VIDEO_UPLOAD_DISABLED_CODE }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
   const existingResponse = await supabase
     .from('interview_responses')
     .select('metadata, question_id')
@@ -1669,37 +1686,54 @@ async function attachResponseMedia(sessionId: string, responseId: string, respon
     throw new Error(`Failed to load response metadata: ${existingResponse.error.message}`);
   }
 
-  let storedVideoPath: string | null = responseData.videoUrl ?? null;
+  const { data: session, error: sessionError } = await supabase
+    .from('study_sessions')
+    .select('project_id')
+    .eq('id', sessionId)
+    .maybeSingle();
 
-  if (responseData.videoBase64) {
-    const extension = getVideoFileExtension(responseData.videoMimeType);
+  if (sessionError || !session?.project_id) {
+    throw new Error(`Failed to resolve response project: ${sessionError?.message ?? 'missing project_id'}`);
+  }
+
+  let storedAudioPath: string | null = null;
+  const audioMimeType = responseData.audioMimeType || 'audio/wav';
+
+  if (responseData.audioBase64) {
+    const extension = getAudioFileExtension(audioMimeType);
     const questionId = responseData.questionId || existingResponse.data?.question_id || 'response';
-    const filePath = `${sessionId}/${questionId}_${responseId}_${Date.now()}.${extension}`;
-    const videoBytes = decodeBase64(responseData.videoBase64);
+    const filePath = `${session.project_id}/${sessionId}/${questionId}_${responseId}_${Date.now()}.${extension}`;
+    const audioBytes = decodeBase64(responseData.audioBase64);
     const { error: uploadError } = await supabase.storage
-      .from(VIDEO_BUCKET)
-      .upload(filePath, videoBytes, {
-        contentType: responseData.videoMimeType || 'video/webm',
+      .from(AUDIO_BUCKET)
+      .upload(filePath, audioBytes, {
+        contentType: audioMimeType,
         upsert: false,
       });
 
     if (uploadError) {
-      throw new Error(`Failed to upload response media: ${uploadError.message}`);
+      throw new Error(`Failed to upload response audio evidence: ${uploadError.message}`);
     }
 
-    storedVideoPath = filePath;
+    storedAudioPath = filePath;
   }
 
   const { data, error } = await supabase
     .from('interview_responses')
     .update({
-      video_url: storedVideoPath,
-      video_duration_ms: responseData.videoDuration ?? null,
+      audio_url: storedAudioPath,
+      audio_mime_type: storedAudioPath ? audioMimeType : null,
+      audio_privacy_transform: responseData.audioPrivacyTransform ?? null,
+      transcript_segments: responseData.transcriptSegments ?? null,
       audio_duration_ms: responseData.audioDuration ?? null,
+      video_url: null,
+      video_duration_ms: null,
       metadata: {
         ...(existingResponse.data?.metadata ?? {}),
         mediaAttachedAt: new Date().toISOString(),
-        videoStoredPrivately: Boolean(storedVideoPath),
+        audioStoredPrivately: Boolean(storedAudioPath),
+        videoStoredPrivately: false,
+        audioPrivacyTransform: responseData.audioPrivacyTransform ?? null,
         ...(responseData.metadata ?? {}),
       },
     })

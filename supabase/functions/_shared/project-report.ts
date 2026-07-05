@@ -408,9 +408,13 @@ async function generateAIEnhancedProjectReport(params: {
       anchorId,
       anchorLabel,
       turnIndex: asNumber(questionMetadata.turnIndex),
-      videoUrl: asString(response.video_url) || null,
-      videoDurationMs: asNumber(response.video_duration_ms),
+      audioUrl: asString(response.audio_url) || null,
+      audioMimeType: asString(response.audio_mime_type) || null,
+      audioPrivacyTransform: isRecord(response.audio_privacy_transform) ? response.audio_privacy_transform : null,
       audioDurationMs: asNumber(response.audio_duration_ms),
+      transcriptSegments: Array.isArray(response.transcript_segments) ? response.transcript_segments : [],
+      videoUrl: null,
+      videoDurationMs: null,
     };
   });
 
@@ -933,9 +937,13 @@ export async function generateAndPersistProjectReport(
       questionText: asString(question?.question_text),
       section: asString(question?.section, "Genel"),
       text: trimmedText,
-      videoUrl: asString(response.video_url) || null,
-      videoDurationMs: asNumber(response.video_duration_ms),
+      audioUrl: asString(response.audio_url) || null,
+      audioMimeType: asString(response.audio_mime_type) || null,
+      audioPrivacyTransform: isRecord(response.audio_privacy_transform) ? response.audio_privacy_transform : null,
       audioDurationMs: asNumber(response.audio_duration_ms),
+      transcriptSegments: Array.isArray(response.transcript_segments) ? response.transcript_segments : [],
+      videoUrl: null,
+      videoDurationMs: null,
     };
   });
 
@@ -1013,7 +1021,8 @@ export async function generateAndPersistProjectReport(
           .filter((value): value is number => value !== null && value > 0),
       ),
       sessionDurationMs: durationBetween(session.started_at, session.ended_at),
-      hasVideoEvidence: sessionResponses.some((response) => asString(response.video_url).length > 0),
+      hasAudioEvidence: sessionResponses.some((response) => asString(response.audio_url).length > 0),
+      hasVideoEvidence: false,
       summary: "",
       quoteIds: sessionQuoteIds,
     };

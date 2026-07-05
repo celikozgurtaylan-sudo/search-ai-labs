@@ -8,8 +8,12 @@ export interface InterviewResponseRecord {
   response_text: string | null;
   transcription: string | null;
   audio_duration_ms: number | null;
+  audio_url: string | null;
+  audio_mime_type: string | null;
+  audio_privacy_transform: unknown;
   video_url: string | null;
   video_duration_ms: number | null;
+  transcript_segments: unknown;
   confidence_score: number | null;
   sentiment_score: number | null;
   is_complete: boolean | null;
@@ -48,8 +52,10 @@ export const interviewResponseService = {
     response_text?: string;
     transcription?: string;
     audio_duration_ms?: number;
-    video_url?: string;
-    video_duration_ms?: number;
+    audio_url?: string;
+    audio_mime_type?: string;
+    audio_privacy_transform?: unknown;
+    transcript_segments?: unknown;
     confidence_score?: number;
     sentiment_score?: number;
     is_complete?: boolean;
@@ -69,8 +75,10 @@ export const interviewResponseService = {
     response_text?: string;
     transcription?: string;
     audio_duration_ms?: number;
-    video_url?: string;
-    video_duration_ms?: number;
+    audio_url?: string;
+    audio_mime_type?: string;
+    audio_privacy_transform?: unknown;
+    transcript_segments?: unknown;
     confidence_score?: number;
     sentiment_score?: number;
     is_complete?: boolean;
