@@ -49,6 +49,7 @@ const Index = () => {
   const [userProjects, setUserProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedResearchMode, setSelectedResearchMode] = useState<"structured" | "ai_enhanced">("structured");
+  const [isSyntheticUsersSelected, setIsSyntheticUsersSelected] = useState(false);
   const [isAgentEnhancedPressing, setIsAgentEnhancedPressing] = useState(false);
   const [isUsabilityHovering, setIsUsabilityHovering] = useState(false);
   const [activePlaceholderIndex, setActivePlaceholderIndex] = useState(0);
@@ -72,7 +73,7 @@ const Index = () => {
   const hasRequiredUsabilityAnswers = usabilityIntake.objective.trim().length > 0 && usabilityIntake.primaryTask.trim().length > 0;
   const isAgentEnhancedSelected = selectedResearchMode === "ai_enhanced";
   const isUsabilityModeActive = isDesignModuleOpen || hasScreenContext;
-  const isUsabilityWarmActive = isUsabilityModeActive && !isAgentEnhancedSelected;
+  const isUsabilityWarmActive = isUsabilityModeActive && !isAgentEnhancedSelected && !isSyntheticUsersSelected;
   const isUsabilityWarmVisible = (isUsabilityHovering || isUsabilityWarmActive) && !isAgentEnhancedSelected;
   const activePlaceholder = placeholderHints[activePlaceholderIndex];
   const visiblePlaceholder = activePlaceholder.slice(0, typedPlaceholderLength);
@@ -316,6 +317,15 @@ const Index = () => {
     }
   };
 
+  const handlePrimaryCta = () => {
+    if (isSyntheticUsersSelected) {
+      void handleStartSyntheticUsers();
+      return;
+    }
+
+    void handleStartProject();
+  };
+
   const getProjectTitle = (description: string) => {
     if (description.includes('Fibabanka.com.tr')) return 'Fibabanka Açılış Sayfası Araştırması';
     if (description.includes('reklam') || description.includes('advertisement') || description.includes('ad')) return 'Reklam Test Çalışması';
@@ -427,7 +437,7 @@ const Index = () => {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && projectDescription.trim()) {
                 e.preventDefault();
-                handleStartProject();
+                handlePrimaryCta();
               }
             }}
             placeholder=""
@@ -586,6 +596,7 @@ const Index = () => {
                 onFocus={() => setIsUsabilityHovering(true)}
                 onBlur={() => setIsUsabilityHovering(false)}
                 onClick={() => {
+                  setIsSyntheticUsersSelected(false);
                   setSelectedResearchMode("structured");
                   setIsDesignModuleOpen((prev) => !prev);
                 }}
@@ -614,6 +625,7 @@ const Index = () => {
                     return;
                   }
 
+                  setIsSyntheticUsersSelected(false);
                   setSelectedResearchMode("ai_enhanced");
                   setIsDesignModuleOpen(false);
                 }}
@@ -623,22 +635,25 @@ const Index = () => {
                 <Sparkles className="mr-2 h-4 w-4" />
                 <span className="text-xs font-medium sm:text-sm">Dinamik Soru-Cevap</span>
               </Button>
-            </div>
-            <div className="flex flex-col items-stretch gap-2 sm:items-end">
-              <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
-                {loading ? 'Oluşturuluyor...' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
+
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void handleStartSyntheticUsers()}
-                disabled={!projectDescription.trim() || loading}
-                className="h-9 border-brand-primary/25 bg-white/95 text-brand-primary hover:bg-brand-primary-light/30"
+                onClick={() => {
+                  setIsSyntheticUsersSelected((prev) => !prev);
+                  setSelectedResearchMode("structured");
+                  setIsDesignModuleOpen(false);
+                }}
+                className={`h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm ${isSyntheticUsersSelected ? "border-brand-primary/40 bg-brand-primary-light/30 text-brand-primary" : ""}`}
+                aria-label={isSyntheticUsersSelected ? "Sentetik kullanıcılar modunu kapat" : "Sentetik kullanıcılar modunu seç"}
               >
                 <Bot className="mr-2 h-4 w-4" />
-                Sentetik Kullanıcılar
+                <span className="text-xs font-medium sm:text-sm">Sentetik Kullanıcılar</span>
               </Button>
             </div>
+            <Button onClick={handlePrimaryCta} disabled={!projectDescription.trim() || loading} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
+              {loading ? 'Oluşturuluyor...' : isSyntheticUsersSelected ? 'Sentetik Kullanıcı Seç' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
           </div>
         </div>
 
