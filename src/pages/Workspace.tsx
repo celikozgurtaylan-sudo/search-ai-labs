@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ChevronLeft, ChevronRight, Pause, Play, Square, Users } from "lucide-react";
+import { ArrowLeft, Bot, ChevronLeft, ChevronRight, Pause, Play, Square, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -22,6 +22,7 @@ import StudyPanel from "@/components/workspace/StudyPanel";
 import InvitationPanel from "@/components/workspace/InvitationPanel";
 import AnalysisPanel from "@/components/workspace/AnalysisPanel";
 import AIEnhancedBriefingPanel from "@/components/workspace/AIEnhancedBriefingPanel";
+import SyntheticUsersPanel from "@/components/workspace/SyntheticUsersPanel";
 import { Stepper } from "@/components/ui/stepper";
 import { SearchoMark } from "@/components/icons/SearchoMark";
 import { useAuth } from "@/contexts/AuthContext";
@@ -424,6 +425,7 @@ const Workspace = () => {
   const [projectData, setProjectData] = useState<ProjectData | null>(null);
   const [currentStep, setCurrentStep] = useState<WorkspaceStep>("guide");
   const [showRecruitment, setShowRecruitment] = useState(false);
+  const [showSyntheticUsers, setShowSyntheticUsers] = useState(false);
   const [discussionGuide, setDiscussionGuide] = useState<any>(null);
   const [aiEnhancedBrief, setAiEnhancedBrief] = useState<AIEnhancedBrief | null>(null);
   const [questionSetState, setQuestionSetState] = useState<QuestionSetState | null>(null);
@@ -444,6 +446,7 @@ const Workspace = () => {
   const aiEnhancedAutoAdvanceKeyRef = useRef<string>("");
   const researchMode = useMemo(() => getResearchMode(projectData?.analysis), [projectData?.analysis]);
   const isAIEnhancedMode = researchMode === "ai_enhanced";
+  const syntheticUsersEnabled = Boolean(projectData?.analysis?.syntheticUsers?.enabled);
   const aiEnhancedDisplayGuide = useMemo(
     () => buildAIEnhancedDisplayGuide(aiEnhancedBrief),
     [aiEnhancedBrief],
@@ -515,6 +518,7 @@ const Workspace = () => {
       setChatMessages(restoredChatState.messages);
       setChatConversationHistory(restoredChatState.conversationHistory);
       restoredChatProjectIdRef.current = sessionData.projectData?.id ?? null;
+      setShowSyntheticUsers(Boolean(sessionData.projectData?.analysis?.syntheticUsers?.enabled));
       setCurrentStep((sessionData.autoStartPhase === "starting" ? "run" : sessionData.autoStartPhase || "run") as WorkspaceStep);
       setIsResearchRelated(true);
       localStorage.removeItem("researcher-session");
@@ -532,10 +536,15 @@ const Workspace = () => {
       setChatMessages(restoredChatState.messages);
       setChatConversationHistory(restoredChatState.conversationHistory);
       restoredChatProjectIdRef.current = parsedProject?.id ?? null;
+      setShowSyntheticUsers(
+        localStorage.getItem("searchai-workspace-synthetic-users") === "true" ||
+        Boolean(parsedProject?.analysis?.syntheticUsers?.enabled),
+      );
       if (targetStep === "analyze" || persistedWorkflowStage === "analyze") {
         setCurrentStep("analyze");
       }
       localStorage.removeItem("searchai-workspace-target-step");
+      localStorage.removeItem("searchai-workspace-synthetic-users");
     } else {
       navigate("/");
     }
@@ -1069,13 +1078,31 @@ const Workspace = () => {
               </div>
 
               <div className="flex items-center space-x-3">
+                {syntheticUsersEnabled ? (
+                  <Button
+                    variant={showSyntheticUsers ? "secondary" : "outline"}
+                    onClick={() => setShowSyntheticUsers((prev) => !prev)}
+                  >
+                    <Bot className="mr-2 h-4 w-4" />
+                    Sentetik Kullanıcılar
+                  </Button>
+                ) : null}
                 {getStepButton()}
               </div>
             </div>
           </div>
         </header>
 
-        {isAIEnhancedMode ? (
+        {showSyntheticUsers ? (
+          <div className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden">
+            <SyntheticUsersPanel
+              projectId={projectData.id || ""}
+              projectTitle={projectData.title}
+              projectDescription={projectData.description}
+              onBackToResearch={() => setShowSyntheticUsers(false)}
+            />
+          </div>
+        ) : isAIEnhancedMode ? (
           <div className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden">
             {currentStep === "analyze" ? (
               <AnalysisPanel

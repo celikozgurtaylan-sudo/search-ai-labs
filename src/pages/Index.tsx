@@ -4,7 +4,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, LogOut, X, Sparkles, Plus, Link as LinkIcon } from "lucide-react";
+import { ArrowRight, Bot, LogOut, X, Sparkles, Plus, Link as LinkIcon } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { AnimatedHeadline } from "@/components/ui/animated-headline";
 import { SearchoMark } from "@/components/icons/SearchoMark";
@@ -266,6 +266,51 @@ const Index = () => {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Unknown error";
       toast.error('Failed to create project: ' + message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartSyntheticUsers = async () => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+
+    const projectDesc = projectDescription.trim();
+    if (!projectDesc) {
+      toast.error("Sentetik kullanıcı önerileri için önce araştırma konusunu yazın.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const project = await projectService.createProject({
+        title: `${getProjectTitle(projectDesc)} - Sentetik Kullanıcılar`,
+        description: projectDesc,
+        analysis: {
+          researchMode: "structured",
+          syntheticUsers: {
+            enabled: true,
+            source: "manual_seed_v1",
+            createdAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      localStorage.setItem('searchai-project', JSON.stringify({
+        id: project.id,
+        title: project.title,
+        description: projectDesc,
+        analysis: project.analysis,
+        timestamp: Date.now(),
+      }));
+
+      localStorage.setItem("searchai-workspace-synthetic-users", "true");
+      navigate('/workspace');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast.error('Sentetik kullanıcı projesi oluşturulamadı: ' + message);
     } finally {
       setLoading(false);
     }
@@ -579,9 +624,21 @@ const Index = () => {
                 <span className="text-xs font-medium sm:text-sm">Dinamik Soru-Cevap</span>
               </Button>
             </div>
-            <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
-              {loading ? 'Oluşturuluyor...' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
+            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+              <Button onClick={() => handleStartProject()} disabled={!projectDescription.trim() || loading} className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
+                {loading ? 'Oluşturuluyor...' : 'Araştırma Planı Oluştur'} <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleStartSyntheticUsers()}
+                disabled={!projectDescription.trim() || loading}
+                className="h-9 border-brand-primary/25 bg-white/95 text-brand-primary hover:bg-brand-primary-light/30"
+              >
+                <Bot className="mr-2 h-4 w-4" />
+                Sentetik Kullanıcılar
+              </Button>
+            </div>
           </div>
         </div>
 
