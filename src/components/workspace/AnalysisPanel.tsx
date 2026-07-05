@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,9 @@ import {
   Lightbulb,
   Loader2,
   MessageSquare,
+  MonitorUp,
+  Pause,
+  Play,
   Quote,
   RefreshCw,
   Sparkles,
@@ -131,30 +134,32 @@ const MetricBar = ({
   );
 };
 
-const AudioEvidencePlayer = ({ quote }: { quote: ProjectReportQuote }) => {
+const ScreenRecordingPlayer = ({
+  recordingUrl,
+  mimeType,
+  durationMs,
+}: {
+  recordingUrl?: string | null;
+  mimeType?: string | null;
+  durationMs?: number | null;
+}) => {
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
-  const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(null);
-  const segments = quote.transcriptSegments?.length
-    ? quote.transcriptSegments
-    : quote.text
-      ? [{ id: "segment-1", text: quote.text, startMs: 0, endMs: quote.audioDurationMs ?? 0 }]
-      : [];
 
   useEffect(() => {
     let isMounted = true;
 
-    if (!quote.audioUrl) {
+    if (!recordingUrl) {
       setSignedUrl(null);
       return;
     }
 
     void supabase.storage
-      .from("interview-audio")
-      .createSignedUrl(quote.audioUrl, 300)
+      .from("interview-screen-recordings")
+      .createSignedUrl(recordingUrl, 300)
       .then(({ data, error }) => {
         if (!isMounted) return;
         if (error) {
-          console.error("Failed to create signed audio evidence URL:", error);
+          console.error("Failed to create signed screen recording URL:", error);
           setSignedUrl(null);
           return;
         }
@@ -164,56 +169,27 @@ const AudioEvidencePlayer = ({ quote }: { quote: ProjectReportQuote }) => {
     return () => {
       isMounted = false;
     };
-  }, [quote.audioUrl]);
+  }, [recordingUrl]);
 
-  if (!quote.audioUrl) return null;
-
-  const transformLabel = quote.audioPrivacyTransform?.semitoneShift
-    ? `+${quote.audioPrivacyTransform.semitoneShift} semiton`
-    : "pitch-shifted";
+  if (!recordingUrl) return null;
 
   return (
-    <div className="space-y-2 rounded-md border border-border-light bg-white p-3">
+    <div className="space-y-3 rounded-md border border-border-light bg-white p-3">
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
         <span className="inline-flex items-center gap-1 font-medium text-brand-primary">
-          <Volume2 className="h-3 w-3" />
-          Pitch-shifted ses kanıtı
+          <MonitorUp className="h-3 w-3" />
+          Ekran kaydı
         </span>
         <span>•</span>
-        <span>{transformLabel}</span>
+        <span>{formatDuration(durationMs ?? null)}</span>
       </div>
       {signedUrl ? (
-        <audio
-          controls
-          className="w-full"
-          src={signedUrl}
-          onTimeUpdate={(event) => {
-            const currentMs = event.currentTarget.currentTime * 1000;
-            const nextIndex = segments.findIndex((segment) =>
-              currentMs >= segment.startMs && currentMs <= segment.endMs
-            );
-            setActiveSegmentIndex(nextIndex >= 0 ? nextIndex : null);
-          }}
-          onEnded={() => setActiveSegmentIndex(null)}
-        />
+        <video controls className="aspect-video w-full rounded border border-border-light bg-black" preload="metadata">
+          <source src={signedUrl} type={mimeType || "video/webm"} />
+        </video>
       ) : (
-        <p className="text-xs text-text-secondary">Ses kanıtı için geçici bağlantı hazırlanıyor.</p>
+        <p className="text-xs text-text-secondary">Ekran kaydı için geçici bağlantı hazırlanıyor.</p>
       )}
-      {segments.length > 0 ? (
-        <div className="space-y-1">
-          {segments.map((segment, index) => (
-            <p
-              key={segment.id ?? `${quote.quoteId}-segment-${index}`}
-              className={cn(
-                "rounded px-2 py-1 text-xs leading-5 text-text-secondary",
-                activeSegmentIndex === index && "bg-brand-primary/10 text-text-primary"
-              )}
-            >
-              {segment.text}
-            </p>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 };
@@ -225,16 +201,87 @@ const EvidenceQuotes = ({
   title?: string;
   quotes: ProjectReportQuote[];
 }) => {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [activeQuoteId, setActiveQuoteId] = useState<string | null>(null);
+  const [loadingQuoteId, setLoadingQuoteId] = useState<string | null>(null);
+  const [playingQuoteId, setPlayingQuoteId] = useState<string | null>(null);
+  const [signedAudioUrls, setSignedAudioUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const clearPlaying = () => setPlayingQuoteId(null);
+    audio.addEventListener("ended", clearPlaying);
+    audio.addEventListener("pause", clearPlaying);
+
+    return () => {
+      audio.removeEventListener("ended", clearPlaying);
+      audio.removeEventListener("pause", clearPlaying);
+    };
+  }, []);
+
+  const handleQuoteAudioToggle = async (quote: ProjectReportQuote) => {
+    if (!quote.audioUrl || !audioRef.current) return;
+
+    if (playingQuoteId === quote.quoteId) {
+      audioRef.current.pause();
+      setPlayingQuoteId(null);
+      return;
+    }
+
+    setLoadingQuoteId(quote.quoteId);
+
+    try {
+      let signedUrl = signedAudioUrls[quote.quoteId];
+      if (!signedUrl) {
+        const { data, error } = await supabase.storage
+          .from("interview-audio")
+          .createSignedUrl(quote.audioUrl, 300);
+
+        if (error || !data?.signedUrl) {
+          throw new Error(error?.message || "Signed audio URL could not be created");
+        }
+
+        signedUrl = data.signedUrl;
+        setSignedAudioUrls((previous) => ({
+          ...previous,
+          [quote.quoteId]: signedUrl,
+        }));
+      }
+
+      if (audioRef.current.src !== signedUrl) {
+        audioRef.current.src = signedUrl;
+      }
+
+      setActiveQuoteId(quote.quoteId);
+      await audioRef.current.play();
+      setPlayingQuoteId(quote.quoteId);
+    } catch (error) {
+      console.error("Failed to play pitch-shifted quote audio:", error);
+      toast.error("Ses kanıtı oynatılamadı. Lütfen tekrar deneyin.");
+    } finally {
+      setLoadingQuoteId(null);
+    }
+  };
+
   if (quotes.length === 0) return null;
 
   return (
     <div className="space-y-3">
       {title ? <p className="text-xs font-semibold uppercase tracking-[0.2em] text-text-muted">{title}</p> : null}
+      <audio ref={audioRef} className="hidden" preload="none" />
       {quotes.map((quote) => (
-        <div key={quote.quoteId} className="rounded-2xl border border-border-light bg-muted/30 p-4">
-          <div className="flex items-start gap-2">
+        <div
+          key={quote.quoteId}
+          className={cn(
+            "rounded-2xl border border-border-light bg-muted/30 p-4 transition-colors",
+            activeQuoteId === quote.quoteId && "border-brand-primary/40 bg-brand-primary/5"
+          )}
+        >
+          <div className="flex items-start gap-3">
             <Quote className="mt-0.5 h-4 w-4 shrink-0 text-brand-primary" />
-            <div className="min-w-0 space-y-2">
+            <div className="min-w-0 flex-1 space-y-2">
               <p className="text-sm leading-6 text-text-primary">“{quote.text}”</p>
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
                 <Badge variant="secondary" className="text-[11px]">
@@ -248,13 +295,35 @@ const EvidenceQuotes = ({
                     <span>•</span>
                     <span className="inline-flex items-center gap-1 text-brand-primary">
                       <Volume2 className="h-3 w-3" />
-                      Pitch-shifted ses kanıtı kaydedildi
+                      Pitch-shifted ses kanıtı
+                      {quote.audioPrivacyTransform?.semitoneShift
+                        ? ` (+${quote.audioPrivacyTransform.semitoneShift} semiton)`
+                        : null}
                     </span>
                   </>
                 ) : null}
               </div>
-              <AudioEvidencePlayer quote={quote} />
             </div>
+            {quote.audioUrl ? (
+              <Button
+                type="button"
+                variant={playingQuoteId === quote.quoteId ? "default" : "outline"}
+                size="sm"
+                onClick={() => void handleQuoteAudioToggle(quote)}
+                disabled={loadingQuoteId === quote.quoteId}
+                className="shrink-0 gap-1.5"
+                aria-label={playingQuoteId === quote.quoteId ? "Ses kanıtını duraklat" : "Ses kanıtını oynat"}
+              >
+                {loadingQuoteId === quote.quoteId ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : playingQuoteId === quote.quoteId ? (
+                  <Pause className="h-3.5 w-3.5" />
+                ) : (
+                  <Play className="h-3.5 w-3.5" />
+                )}
+                {playingQuoteId === quote.quoteId ? "Pause" : "Play"}
+              </Button>
+            ) : null}
           </div>
         </div>
       ))}
@@ -511,6 +580,7 @@ const ParticipantJourneyCard = ({
         <div className="flex flex-wrap gap-2">
           <Badge variant="secondary">{journey.anchorCoverageCount} anchor</Badge>
           <Badge variant="outline">{journey.followUpCount} follow-up</Badge>
+          {journey.screenRecordingUrl ? <Badge variant="outline">Ekran kaydı var</Badge> : null}
         </div>
       </div>
 
@@ -535,6 +605,12 @@ const ParticipantJourneyCard = ({
       {journey.summary ? (
         <p className="text-sm leading-6 text-text-secondary">{journey.summary}</p>
       ) : null}
+
+      <ScreenRecordingPlayer
+        recordingUrl={journey.screenRecordingUrl}
+        mimeType={journey.screenRecordingMimeType}
+        durationMs={journey.screenRecordingDurationMs}
+      />
 
       <EvidenceQuotes quotes={quotes} />
     </CardContent>
@@ -1234,6 +1310,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                             <Badge variant="secondary">{participant.answeredResponseCount} yanıt</Badge>
                             <Badge variant="outline">{participant.skippedResponseCount} skip</Badge>
                             {participant.hasAudioEvidence ? <Badge variant="outline">Ses kanıtı var</Badge> : null}
+                            {participant.screenRecordingUrl ? <Badge variant="outline">Ekran kaydı var</Badge> : null}
                           </div>
                         </div>
 
@@ -1258,6 +1335,12 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                         {participant.summary ? (
                           <p className="text-sm leading-6 text-text-secondary">{participant.summary}</p>
                         ) : null}
+
+                        <ScreenRecordingPlayer
+                          recordingUrl={participant.screenRecordingUrl}
+                          mimeType={participant.screenRecordingMimeType}
+                          durationMs={participant.screenRecordingDurationMs}
+                        />
 
                         <EvidenceQuotes quotes={takeQuotes(quoteMap, participant.quoteIds)} />
                       </CardContent>

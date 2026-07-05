@@ -116,6 +116,10 @@ export interface ProjectReportParticipantBreakdown {
   sessionDurationMs: number | null;
   hasAudioEvidence?: boolean;
   hasVideoEvidence: boolean;
+  screenRecordingUrl?: string | null;
+  screenRecordingMimeType?: string | null;
+  screenRecordingDurationMs?: number | null;
+  screenRecordingMetadata?: Record<string, unknown> | null;
   summary: string;
   quoteIds: string[];
 }
@@ -150,6 +154,10 @@ export interface ProjectReportParticipantJourney {
   anchorCoverageCount: number;
   followUpCount: number;
   sessionDurationMs: number | null;
+  screenRecordingUrl?: string | null;
+  screenRecordingMimeType?: string | null;
+  screenRecordingDurationMs?: number | null;
+  screenRecordingMetadata?: Record<string, unknown> | null;
   summary: string;
   quoteIds: string[];
 }

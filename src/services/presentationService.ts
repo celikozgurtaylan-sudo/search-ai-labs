@@ -615,7 +615,7 @@ const addParticipantSlide = (pptx: pptxgen, report: ProjectInterviewReport) => {
         160,
       ),
       quote: firstQuoteText(report, participant.quoteIds),
-      footer: `${participant.sessionRef} • ${formatDuration(participant.sessionDurationMs)} • ${participant.hasAudioEvidence ? "Ses kanıtı var" : "Ses kanıtı yok"}`,
+      footer: `${participant.sessionRef} • ${formatDuration(participant.sessionDurationMs)} • ${participant.hasAudioEvidence ? "Ses kanıtı var" : "Ses kanıtı yok"} • ${participant.screenRecordingUrl ? "Ekran kaydı var" : "Ekran kaydı yok"}`,
     });
   });
 };

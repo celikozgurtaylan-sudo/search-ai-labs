@@ -808,6 +808,11 @@ const SearchoAI = ({
   }, [isActive, sessionStartTime]);
 
   useEffect(() => {
+    if (isActive) return;
+    shutdownActiveResponseCapture();
+  }, [isActive, shutdownActiveResponseCapture]);
+
+  useEffect(() => {
     if (!currentQuestion?.id) return;
     setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
     setResponseTimerExpired(false);

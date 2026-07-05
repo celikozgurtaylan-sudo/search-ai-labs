@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import SearchoAI from "@/components/SearchoAI";
 import { FloatingVideo } from "@/components/FloatingVideo";
+import { supabase } from "@/integrations/supabase/client";
 import { participantService } from "@/services/participantService";
 import { interviewService, InterviewProgress, InterviewQuestion, setInterviewSessionToken } from "@/services/interviewService";
-import { CheckCircle, AlertCircle, Clock, Loader2, ExternalLink, Image as ImageIcon, Camera, Mic } from "lucide-react";
+import { CheckCircle, AlertCircle, Clock, Loader2, ExternalLink, Image as ImageIcon, Camera, Mic, MonitorUp } from "lucide-react";
 import {
   DeviceCheckState,
   MicFailureCode,
@@ -94,6 +95,8 @@ type DesignScreen = {
   name?: string;
   url: string;
   source?: string;
+  interactionMode?: string;
+  embedUrl?: string;
 };
 
 type StudyProjectData = {
@@ -104,6 +107,7 @@ type StudyProjectData = {
     discussionGuide?: unknown;
     researchMode?: string;
     aiEnhancedBrief?: unknown;
+    usabilityTesting?: unknown;
   };
 };
 
@@ -116,6 +120,16 @@ type ParticipantSummary = {
 type SessionMetadata = Record<string, unknown> & {
   deviceCheck?: Record<string, unknown>;
 };
+
+type ScreenRecordingState =
+  | 'not_required'
+  | 'pending'
+  | 'requesting'
+  | 'recording'
+  | 'interrupted'
+  | 'uploading'
+  | 'uploaded'
+  | 'failed';
 
 const StudySession = () => {
   const { sessionToken } = useParams();
@@ -148,6 +162,8 @@ const StudySession = () => {
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const [hasMicrophonePermission, setHasMicrophonePermission] = useState(false);
   const [cameraGateCompleted, setCameraGateCompleted] = useState(false);
+  const [screenRecordingState, setScreenRecordingState] = useState<ScreenRecordingState>('not_required');
+  const [screenRecordingMessage, setScreenRecordingMessage] = useState<string | null>(null);
   const [cameraPreviewReady, setCameraPreviewReady] = useState(false);
   const [cameraStreamVerified, setCameraStreamVerified] = useState(false);
   const [microphoneVerified, setMicrophoneVerified] = useState(false);
@@ -159,6 +175,11 @@ const StudySession = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraGateVideoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const screenRecorderRef = useRef<MediaRecorder | null>(null);
+  const screenRecordingChunksRef = useRef<Blob[]>([]);
+  const screenRecordingStartedAtRef = useRef(0);
+  const screenRecordingFinalizingRef = useRef(false);
   const sessionIdRef = useRef<string | null>(sessionId);
   const sessionMetadataRef = useRef<SessionMetadata | null>(null);
   const deviceCheckRetryCountRef = useRef(0);
@@ -167,6 +188,65 @@ const StudySession = () => {
   const stopCameraStream = (stream: MediaStream | null) => {
     stream?.getTracks().forEach(track => track.stop());
   };
+
+  const getScreenRecordingMimeType = () => {
+    if (typeof MediaRecorder === 'undefined') return 'video/webm';
+    const candidates = [
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm',
+    ];
+    return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? 'video/webm';
+  };
+
+  const stopScreenStream = useCallback(() => {
+    screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+    screenStreamRef.current = null;
+  }, []);
+
+  const stopScreenRecording = useCallback(async (discard = false) => {
+    const recorder = screenRecorderRef.current;
+    const startedAt = screenRecordingStartedAtRef.current;
+
+    if (!recorder || recorder.state === 'inactive') {
+      const blob = !discard && screenRecordingChunksRef.current.length > 0
+        ? new Blob(screenRecordingChunksRef.current, { type: getScreenRecordingMimeType() })
+        : null;
+      screenRecorderRef.current = null;
+      screenRecordingStartedAtRef.current = 0;
+      return {
+        blob,
+        durationMs: startedAt ? Math.max(0, performance.now() - startedAt) : 0,
+      };
+    }
+
+    return await new Promise<{ blob: Blob | null; durationMs: number }>((resolve) => {
+      let settled = false;
+      const finalize = (blob: Blob | null) => {
+        if (settled) return;
+        settled = true;
+        const durationMs = startedAt ? Math.max(0, performance.now() - startedAt) : 0;
+        screenRecorderRef.current = null;
+        screenRecordingStartedAtRef.current = 0;
+        resolve({ blob, durationMs });
+      };
+
+      recorder.onstop = () => {
+        const blob = !discard && screenRecordingChunksRef.current.length > 0
+          ? new Blob(screenRecordingChunksRef.current, { type: recorder.mimeType || 'video/webm' })
+          : null;
+        finalize(blob);
+      };
+      recorder.onerror = () => finalize(null);
+
+      try {
+        recorder.stop();
+      } catch (error) {
+        console.error('Failed to stop screen recorder:', error);
+        finalize(null);
+      }
+    });
+  }, []);
 
   const persistDeviceCheckSnapshot = useCallback(async (
     nextState: DeviceCheckState,
@@ -932,7 +1012,146 @@ const StudySession = () => {
     void applyDeviceCheckFailure(reason, message);
   }, [applyDeviceCheckFailure]);
 
+  const startScreenRecording = useCallback(async () => {
+    if (isDesignMode) {
+      setScreenRecordingState('recording');
+      setScreenRecordingMessage('Tasarım modunda ekran kaydı simüle ediliyor.');
+      return true;
+    }
+
+    if (!navigator.mediaDevices?.getDisplayMedia || typeof MediaRecorder === 'undefined') {
+      setScreenRecordingState('failed');
+      setScreenRecordingMessage('Tarayıcınız ekran kaydını desteklemiyor. Lütfen Chrome veya Edge ile tekrar deneyin.');
+      toast.error('Ekran kaydı desteklenmiyor.');
+      return false;
+    }
+
+    setScreenRecordingState('requesting');
+    setScreenRecordingMessage('Tarayıcı penceresinden Figma prototipinin olduğu sekme veya pencereyi seçin.');
+
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error('No screen video track returned');
+      }
+
+      screenStreamRef.current = stream;
+      screenRecordingChunksRef.current = [];
+      const mimeType = getScreenRecordingMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          screenRecordingChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onerror = () => {
+        setScreenRecordingState('failed');
+        setScreenRecordingMessage('Ekran kaydı sırasında hata oluştu. Ekran paylaşımını tekrar başlatın.');
+      };
+      videoTrack.onended = () => {
+        if (screenRecordingFinalizingRef.current) return;
+        setScreenRecordingState('interrupted');
+        setScreenRecordingMessage('Ekran paylaşımı durdu. Kullanılabilirlik testine devam etmek için tekrar başlatın.');
+        void stopScreenRecording(false);
+      };
+
+      screenRecorderRef.current = recorder;
+      screenRecordingStartedAtRef.current = performance.now();
+      recorder.start(1000);
+      setScreenRecordingState('recording');
+      setScreenRecordingMessage('Ekran kaydı aktif. Prototip ile etkileşime devam edebilirsiniz.');
+      toast.success('Ekran kaydı başladı.');
+      return true;
+    } catch (error) {
+      console.error('Failed to start screen recording:', error);
+      stopScreenStream();
+      setScreenRecordingState('pending');
+      setScreenRecordingMessage('Ekran paylaşımı başlatılmadan kullanılabilirlik testine devam edemezsiniz.');
+      toast.error('Ekran paylaşımı gerekli.');
+      return false;
+    }
+  }, [isDesignMode, stopScreenRecording, stopScreenStream]);
+
+  const uploadScreenRecording = useCallback(async () => {
+    if (isDesignMode || !sessionIdRef.current) {
+      return;
+    }
+
+    screenRecordingFinalizingRef.current = true;
+    try {
+      const { blob, durationMs } = await stopScreenRecording(false);
+      stopScreenStream();
+
+      if (!blob || blob.size === 0) {
+        setScreenRecordingState('failed');
+        setScreenRecordingMessage('Ekran kaydı yüklenemedi çünkü kayıt verisi boş görünüyor.');
+        return;
+      }
+
+      setScreenRecordingState('uploading');
+      setScreenRecordingMessage('Ekran kaydı güvenli alana yükleniyor.');
+
+      const uploadTarget = await interviewService.prepareScreenRecordingUpload(sessionIdRef.current, {
+        mimeType: blob.type || 'video/webm',
+      });
+
+      const { error: uploadError } = await supabase.storage
+        .from(uploadTarget.bucket)
+        .uploadToSignedUrl(uploadTarget.path, uploadTarget.token, blob, {
+          contentType: blob.type || uploadTarget.mimeType || 'video/webm',
+        });
+
+      if (uploadError) {
+        throw new Error(`Screen recording upload failed: ${uploadError.message}`);
+      }
+
+      await interviewService.finalizeScreenRecording(sessionIdRef.current, {
+        path: uploadTarget.path,
+        mimeType: blob.type || uploadTarget.mimeType || 'video/webm',
+        durationMs,
+        sizeBytes: blob.size,
+        metadata: {
+          capturedSurface: 'participant_selected_display',
+          audioCaptured: false,
+          privacyNotice: 'screen_recording_may_include_sensitive_prototype_content',
+        },
+      });
+
+      setScreenRecordingState('uploaded');
+      setScreenRecordingMessage('Ekran kaydı güvenli şekilde yüklendi.');
+    } catch (error) {
+      console.error('Failed to upload screen recording:', error);
+      setScreenRecordingState('failed');
+      setScreenRecordingMessage('Ekran kaydı yüklenemedi. Lütfen oturumu tamamlamadan önce tekrar deneyin.');
+      throw error;
+    } finally {
+      screenRecordingFinalizingRef.current = false;
+    }
+  }, [isDesignMode, stopScreenRecording, stopScreenStream]);
+
   const handleCompleteSession = async (reason: 'manual' | 'completed' = 'manual') => {
+    if (reason === 'completed' && screenRecordingState === 'recording') {
+      try {
+        await uploadScreenRecording();
+      } catch {
+        toast.error('Ekran kaydı yüklenemedi. Oturumu tamamlamadan önce lütfen tekrar deneyin.');
+        return;
+      }
+    } else if (reason === 'manual' && screenRecordingState === 'recording') {
+      screenRecordingFinalizingRef.current = true;
+      await stopScreenRecording(true);
+      stopScreenStream();
+      screenRecordingFinalizingRef.current = false;
+    }
+
     if (reason === 'manual' && sessionId && !isDesignMode) {
       await interviewService.endSessionEarly(sessionId);
     }
@@ -944,6 +1163,9 @@ const StudySession = () => {
   };
 
   const designScreens: DesignScreen[] = projectData?.analysis?.designScreens || [];
+  const isUsabilityTestingActive = Boolean(projectData?.analysis?.usabilityTesting) || designScreens.length > 0;
+  const isScreenRecordingRequired = isUsabilityTestingActive && !isDesignMode;
+  const isScreenRecordingReady = !isScreenRecordingRequired || screenRecordingState === 'recording' || screenRecordingState === 'uploaded';
   const showDesignPanels = !isOnboardingActive && designScreens.length > 0;
   const questionsPerScreen = designScreens.length > 0 && currentInterviewProgress.total > 0
     ? Math.max(1, Math.ceil(currentInterviewProgress.total / designScreens.length))
@@ -964,6 +1186,11 @@ const StudySession = () => {
   }, [currentInterviewQuestion, currentInterviewProgress.total, designScreens.length, questionsPerScreen]);
 
   const activeScreen = designScreens[activeScreenIndex] || null;
+  const activeScreenEmbedUrl = activeScreen?.embedUrl || (
+    activeScreen?.source === "figma-link"
+      ? `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(activeScreen.url)}`
+      : null
+  );
   const isDeviceCheckBusy = deviceCheckState === 'requesting_permission' || deviceCheckState === 'verifying_camera' || deviceCheckState === 'verifying_microphone';
   const canContinueToInterview = cameraEnabled && cameraStreamVerified && microphoneVerified && deviceCheckState === 'ready';
   const microphoneLevelRatio = microphoneLevelThreshold > 0
@@ -1007,6 +1234,23 @@ const StudySession = () => {
 
     return 'Araştırmaya girebilmek için önce kamera ve mikrofonunuzu açıp doğrulayalım.';
   })();
+
+  useEffect(() => {
+    if (isScreenRecordingRequired && cameraGateCompleted && screenRecordingState === 'not_required') {
+      setScreenRecordingState('pending');
+      setScreenRecordingMessage('Kullanılabilirlik testine devam etmek için Figma prototipi açıkken ekran paylaşımını başlatın.');
+    }
+
+    if (!isScreenRecordingRequired && screenRecordingState !== 'not_required') {
+      setScreenRecordingState('not_required');
+      setScreenRecordingMessage(null);
+    }
+  }, [cameraGateCompleted, isScreenRecordingRequired, screenRecordingState]);
+
+  useEffect(() => () => {
+    void stopScreenRecording(true);
+    stopScreenStream();
+  }, [stopScreenRecording, stopScreenStream]);
 
   if (loading) {
     return (
@@ -1161,15 +1405,25 @@ const StudySession = () => {
 
                   <div className="flex min-h-[420px] flex-1 items-center justify-center bg-[radial-gradient(circle_at_top,rgba(124,77,255,0.10),transparent_38%),linear-gradient(180deg,#f8f7ff_0%,#f2f4f8_100%)] p-5 md:min-h-[520px] md:p-8 xl:min-h-0">
                     {activeScreen.source === "figma-link" ? (
-                      <a
-                        href={activeScreen.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-full border border-brand-primary/20 bg-white px-5 py-3 text-sm font-medium text-brand-primary shadow-sm hover:border-brand-primary/40"
-                      >
-                        Figma ekranını yeni sekmede aç
-                        <ExternalLink className="w-4 h-4" />
-                      </a>
+                      <div className="flex h-full w-full flex-col gap-3">
+                        {activeScreenEmbedUrl ? (
+                          <iframe
+                            title={activeScreen.name || "Figma prototype"}
+                            src={activeScreenEmbedUrl}
+                            className="min-h-[520px] w-full flex-1 rounded-[24px] border border-border-light bg-white shadow-[0_24px_70px_rgba(15,23,42,0.10)]"
+                            allowFullScreen
+                          />
+                        ) : null}
+                        <a
+                          href={activeScreen.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-2 rounded-full border border-brand-primary/20 bg-white px-5 py-3 text-sm font-medium text-brand-primary shadow-sm hover:border-brand-primary/40"
+                        >
+                          Figma prototipini yeni sekmede aç
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </div>
                     ) : (
                       <img
                         src={activeScreen.url}
@@ -1185,7 +1439,7 @@ const StudySession = () => {
             {sessionId && projectData && (
               <div className="min-w-0 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
                 <SearchoAI
-                  isActive={sessionStatus === 'active' && cameraGateCompleted}
+                  isActive={sessionStatus === 'active' && cameraGateCompleted && isScreenRecordingReady}
                   cameraStream={cameraStream}
                   projectContext={{
                     description: projectData.description || '',
@@ -1426,6 +1680,55 @@ const StudySession = () => {
                     </div>
                   </div>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {cameraGateCompleted && isScreenRecordingRequired && !isScreenRecordingReady && (
+        <div className="fixed inset-0 z-[58] flex items-center justify-center bg-[rgba(15,23,42,0.48)] px-4 backdrop-blur-md">
+          <Card className="w-full max-w-2xl overflow-hidden rounded-[32px] border border-white/60 bg-white/95 shadow-[0_30px_80px_rgba(15,23,42,0.25)]">
+            <CardContent className="space-y-6 p-6 md:p-8">
+              <div className="inline-flex items-center gap-2 rounded-full bg-brand-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-brand-primary">
+                <MonitorUp className="h-3.5 w-3.5" />
+                Ekran Kaydı Gerekli
+              </div>
+              <div className="space-y-3">
+                <h2 className="text-2xl font-semibold text-text-primary md:text-3xl">
+                  Figma prototipiyle etkileşiminizi kaydedelim
+                </h2>
+                <p className="text-base leading-relaxed text-text-secondary">
+                  Bu kullanılabilirlik testinde sadece ekran görüntünüz kaydedilir. Mikrofon veya sistem sesi bu kayda dahil edilmez.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border-light bg-muted/40 p-4 text-sm leading-6 text-text-secondary">
+                {screenRecordingMessage || 'Tarayıcı izin penceresinde Figma prototipinin açık olduğu sekmeyi veya pencereyi seçin.'}
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  onClick={() => void startScreenRecording()}
+                  disabled={screenRecordingState === 'requesting' || screenRecordingState === 'uploading'}
+                  className="gap-2 bg-brand-primary text-white hover:bg-brand-primary-hover"
+                >
+                  {screenRecordingState === 'requesting' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <MonitorUp className="h-4 w-4" />
+                  )}
+                  Ekran Paylaşımını Başlat
+                </Button>
+                {activeScreen?.source === "figma-link" ? (
+                  <a
+                    href={activeScreen.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-10 items-center gap-2 rounded-md border border-border-light bg-white px-4 text-sm font-medium text-text-primary hover:border-brand-primary/40"
+                  >
+                    Figma'yı yeni sekmede aç
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                ) : null}
               </div>
             </CardContent>
           </Card>

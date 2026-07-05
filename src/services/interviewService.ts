@@ -44,6 +44,15 @@ export interface InterviewProgress {
   percentage: number
 }
 
+export interface ScreenRecordingUploadTarget {
+  success: boolean
+  bucket: string
+  path: string
+  token: string
+  signedUrl?: string
+  mimeType: string
+}
+
 interface SubmitInterviewResponseResult {
   success: boolean
   response: InterviewResponse
@@ -247,6 +256,44 @@ export const interviewService = {
         responseId,
         ...responseData,
       }
+    });
+  },
+
+  async prepareScreenRecordingUpload(sessionId: string, responseData: {
+    mimeType?: string
+  }): Promise<ScreenRecordingUploadTarget> {
+    if (isDesignMode(sessionId)) {
+      return {
+        success: true,
+        bucket: 'interview-screen-recordings',
+        path: `mock-project/${sessionId}/screen-recording.webm`,
+        token: 'mock-token',
+        mimeType: responseData.mimeType || 'video/webm'
+      };
+    }
+
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'prepare_screen_recording_upload',
+      sessionId,
+      responseData
+    });
+  },
+
+  async finalizeScreenRecording(sessionId: string, responseData: {
+    path: string
+    mimeType?: string
+    durationMs?: number
+    sizeBytes?: number
+    metadata?: Record<string, unknown>
+  }) {
+    if (isDesignMode(sessionId)) {
+      return { success: true };
+    }
+
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'finalize_screen_recording',
+      sessionId,
+      responseData
     });
   },
 

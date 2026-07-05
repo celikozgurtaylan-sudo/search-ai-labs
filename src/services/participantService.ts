@@ -26,6 +26,10 @@ export interface StudySession {
   started_at?: string;
   ended_at?: string;
   notes?: string;
+  screen_recording_url?: string | null;
+  screen_recording_mime_type?: string | null;
+  screen_recording_duration_ms?: number | null;
+  screen_recording_metadata?: unknown;
   metadata?: any;
   created_at?: string;
   updated_at?: string;

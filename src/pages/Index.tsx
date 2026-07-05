@@ -4,7 +4,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, LogOut, ImagePlus, X, Sparkles, Plus } from "lucide-react";
+import { ArrowRight, LogOut, ImagePlus, X, Sparkles, Plus, Link as LinkIcon } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { AnimatedHeadline } from "@/components/ui/animated-headline";
 import { SearchoMark } from "@/components/icons/SearchoMark";
@@ -34,6 +34,8 @@ interface UploadedDesignScreen {
   name: string;
   url: string;
   source: "upload" | "figma-link";
+  interactionMode?: "static" | "prototype";
+  embedUrl?: string;
   mimeType?: string;
 }
 
@@ -43,6 +45,12 @@ interface UsabilityIntake {
   targetUsers: string;
   successSignals: string;
   riskAreas: string;
+}
+
+interface FigmaPrototypeDraft {
+  id: string;
+  name: string;
+  url: string;
 }
 
 const DESIGN_SCREENS_BUCKET = "design-screens";
@@ -60,6 +68,8 @@ const Index = () => {
   const [typedPlaceholderLength, setTypedPlaceholderLength] = useState(0);
   const [isDeletingPlaceholder, setIsDeletingPlaceholder] = useState(false);
   const [screenDrafts, setScreenDrafts] = useState<DesignScreenDraft[]>([]);
+  const [prototypeDrafts, setPrototypeDrafts] = useState<FigmaPrototypeDraft[]>([]);
+  const [prototypeUrlDraft, setPrototypeUrlDraft] = useState("");
   const [isUploadingScreens, setIsUploadingScreens] = useState(false);
   const [isDesignModuleOpen, setIsDesignModuleOpen] = useState(false);
   const [usabilityIntake, setUsabilityIntake] = useState<UsabilityIntake>({
@@ -73,7 +83,7 @@ const Index = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
 
-  const hasScreenContext = screenDrafts.length > 0;
+  const hasScreenContext = screenDrafts.length > 0 || prototypeDrafts.length > 0;
   const hasRequiredUsabilityAnswers = usabilityIntake.objective.trim().length > 0 && usabilityIntake.primaryTask.trim().length > 0;
   const isAgentEnhancedSelected = selectedResearchMode === "ai_enhanced";
   const isUsabilityModeActive = isDesignModuleOpen || hasScreenContext;
@@ -81,6 +91,22 @@ const Index = () => {
   const isUsabilityWarmVisible = (isUsabilityHovering || isUsabilityWarmActive) && !isAgentEnhancedSelected;
   const activePlaceholder = placeholderHints[activePlaceholderIndex];
   const visiblePlaceholder = activePlaceholder.slice(0, typedPlaceholderLength);
+
+  const buildFigmaEmbedUrl = (url: string) =>
+    `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(url)}`;
+
+  const isFigmaPrototypeUrl = (value: string) => {
+    try {
+      const url = new URL(value.trim());
+      return url.hostname.endsWith("figma.com") && (
+        url.pathname.includes("/proto/") ||
+        url.pathname.includes("/design/") ||
+        url.pathname.includes("/file/")
+      );
+    } catch {
+      return false;
+    }
+  };
 
   const triggerAgentEnhancedPress = () => {
     if (agentEnhancedPressTimeoutRef.current) {
@@ -211,6 +237,35 @@ const Index = () => {
     );
   };
 
+  const addPrototypeDraft = () => {
+    const normalizedUrl = prototypeUrlDraft.trim();
+    if (!isFigmaPrototypeUrl(normalizedUrl)) {
+      toast.error("Geçerli bir Figma prototype veya design linki girin.");
+      return;
+    }
+
+    setPrototypeDrafts((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        name: `Prototip ${prev.length + 1}`,
+        url: normalizedUrl,
+      },
+    ]);
+    setPrototypeUrlDraft("");
+    toast.success("Figma prototipi eklendi.");
+  };
+
+  const removePrototypeDraft = (draftId: string) => {
+    setPrototypeDrafts((prev) => prev.filter((draft) => draft.id !== draftId));
+  };
+
+  const renamePrototypeDraft = (draftId: string, nextName: string) => {
+    setPrototypeDrafts((prev) =>
+      prev.map((draft) => draft.id === draftId ? { ...draft, name: nextName } : draft)
+    );
+  };
+
   const fileToDataUrl = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -226,7 +281,16 @@ const Index = () => {
   });
 
   const uploadDesignScreens = async (): Promise<UploadedDesignScreen[]> => {
-    if (!user || screenDrafts.length === 0) return [];
+    const prototypeScreens = prototypeDrafts.map((draft) => ({
+      id: draft.id,
+      name: draft.name.trim() || "Figma Prototip",
+      url: draft.url,
+      source: "figma-link" as const,
+      interactionMode: "prototype" as const,
+      embedUrl: buildFigmaEmbedUrl(draft.url),
+    }));
+
+    if (!user || screenDrafts.length === 0) return prototypeScreens;
 
     setIsUploadingScreens(true);
     try {
@@ -237,10 +301,11 @@ const Index = () => {
             name: draft.name,
             url: await fileToDataUrl(draft.file),
             source: "upload" as const,
+            interactionMode: "static" as const,
             mimeType: draft.file.type
           }))
         );
-        return inlineScreens;
+        return [...inlineScreens, ...prototypeScreens];
       }
 
       let usedInlineFallback = false;
@@ -270,6 +335,7 @@ const Index = () => {
               name: draft.name,
               url: publicUrl,
               source: "upload" as const,
+              interactionMode: "static" as const,
               mimeType: draft.file.type
             };
           } catch (error) {
@@ -280,6 +346,7 @@ const Index = () => {
               name: draft.name,
               url: inlineUrl,
               source: "upload" as const,
+              interactionMode: "static" as const,
               mimeType: draft.file.type
             };
           }
@@ -290,7 +357,7 @@ const Index = () => {
         toast.warning("Ekranlar geçici olarak lokal veri olarak eklendi. Storage izinleri tamamlandığında otomatik yükleme aktif olur.");
       }
 
-      return uploads;
+      return [...uploads, ...prototypeScreens];
     } finally {
       setIsUploadingScreens(false);
     }
@@ -521,8 +588,67 @@ const Index = () => {
               </div>
 
               <p className="text-xs text-text-secondary">
-                Figma'da test etmek istediğiniz ekranı kopyalayın ve aşağıdaki alana yapıştırın.
+                Figma prototype linkini ekleyin veya test etmek istediğiniz statik ekranları kopyalayıp yapıştırın.
               </p>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-text-secondary">Figma Prototype Linki</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={prototypeUrlDraft}
+                    onChange={(event) => setPrototypeUrlDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        addPrototypeDraft();
+                      }
+                    }}
+                    placeholder="https://www.figma.com/proto/..."
+                    className="h-10 bg-white"
+                  />
+                  <Button type="button" variant="outline" onClick={addPrototypeDraft} className="h-10 gap-2">
+                    <LinkIcon className="h-4 w-4" />
+                    Ekle
+                  </Button>
+                </div>
+                <p className="text-[11px] leading-5 text-text-muted">
+                  Katılımcı bu prototipte etkileşime girerken ekran paylaşımı zorunlu olarak kaydedilir.
+                </p>
+              </div>
+
+              {prototypeDrafts.length > 0 &&
+                <div className="space-y-2">
+                  <p className="text-xs text-text-secondary">Eklenecek prototipler</p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {prototypeDrafts.map((draft) =>
+                      <div key={draft.id} className="group relative rounded-xl border border-border-light bg-white p-3">
+                        <div className="absolute right-2 top-2">
+                          <button
+                            type="button"
+                            onClick={() => removePrototypeDraft(draft.id)}
+                            className="flex h-6 w-6 items-center justify-center rounded-full bg-black/75 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                            aria-label="Remove prototype">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <div className="space-y-2 pr-7">
+                          <div className="flex items-center gap-2 text-xs font-medium text-brand-primary">
+                            <LinkIcon className="h-3.5 w-3.5" />
+                            Figma prototype
+                          </div>
+                          <Input
+                            value={draft.name}
+                            onChange={(event) => renamePrototypeDraft(draft.id, event.target.value)}
+                            placeholder="Prototip başlığı"
+                            className="h-9"
+                          />
+                          <p className="truncate text-[11px] text-text-muted">{draft.url}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              }
 
               <div className="space-y-2">
                 <Label className="text-xs text-text-secondary">Ekran Yapıştırma Alanı</Label>

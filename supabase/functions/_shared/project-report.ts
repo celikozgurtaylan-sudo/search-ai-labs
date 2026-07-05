@@ -540,6 +540,10 @@ async function generateAIEnhancedProjectReport(params: {
       anchorCoverageCount,
       followUpCount,
       sessionDurationMs: durationBetween(session.started_at, session.ended_at),
+      screenRecordingUrl: asString(session.screen_recording_url) || null,
+      screenRecordingMimeType: asString(session.screen_recording_mime_type) || null,
+      screenRecordingDurationMs: asNumber(session.screen_recording_duration_ms),
+      screenRecordingMetadata: isRecord(session.screen_recording_metadata) ? session.screen_recording_metadata : null,
       summary: "",
       quoteIds,
     };
@@ -1023,6 +1027,10 @@ export async function generateAndPersistProjectReport(
       sessionDurationMs: durationBetween(session.started_at, session.ended_at),
       hasAudioEvidence: sessionResponses.some((response) => asString(response.audio_url).length > 0),
       hasVideoEvidence: false,
+      screenRecordingUrl: asString(session.screen_recording_url) || null,
+      screenRecordingMimeType: asString(session.screen_recording_mime_type) || null,
+      screenRecordingDurationMs: asNumber(session.screen_recording_duration_ms),
+      screenRecordingMetadata: isRecord(session.screen_recording_metadata) ? session.screen_recording_metadata : null,
       summary: "",
       quoteIds: sessionQuoteIds,
     };

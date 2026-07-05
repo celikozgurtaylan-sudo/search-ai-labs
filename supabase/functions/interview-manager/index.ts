@@ -58,6 +58,7 @@ type ResponsePayload = {
 };
 
 const AUDIO_BUCKET = 'interview-audio';
+const SCREEN_RECORDINGS_BUCKET = 'interview-screen-recordings';
 const VIDEO_UPLOAD_DISABLED_CODE = 'video_upload_disabled';
 
 const decodeBase64 = (value: string) => {
@@ -85,6 +86,33 @@ const getAudioFileExtension = (mimeType?: string) => {
       return 'wav';
   }
 };
+
+const getScreenRecordingFileExtension = (mimeType?: string) => {
+  switch (mimeType?.toLowerCase()) {
+    case 'video/mp4':
+      return 'mp4';
+    case 'video/webm':
+    case 'video/webm;codecs=vp8':
+    case 'video/webm;codecs=vp9':
+      return 'webm';
+    default:
+      return 'webm';
+  }
+};
+
+async function resolveSessionProject(sessionId: string) {
+  const { data, error } = await supabase
+    .from('study_sessions')
+    .select('id, project_id, metadata')
+    .eq('id', sessionId)
+    .maybeSingle();
+
+  if (error || !data?.project_id) {
+    throw new Error(`Failed to resolve session project: ${error?.message ?? 'missing project_id'}`);
+  }
+
+  return data;
+}
 
 async function validateSessionToken(sessionId: string, sessionToken: string): Promise<boolean> {
   const { data, error } = await supabase
@@ -1442,6 +1470,10 @@ serve(async (req) => {
         return await skipQuestion(sessionId, responseData.questionId, responseData.metadata ?? {});
       case 'attach_response_media':
         return await attachResponseMedia(sessionId, responseData.responseId, responseData);
+      case 'prepare_screen_recording_upload':
+        return await prepareScreenRecordingUpload(sessionId, responseData ?? {});
+      case 'finalize_screen_recording':
+        return await finalizeScreenRecording(sessionId, responseData ?? {});
       case 'end_session_early':
         return await endSessionEarly(sessionId);
       default:
@@ -1748,6 +1780,112 @@ async function attachResponseMedia(sessionId: string, responseId: string, respon
 
   return new Response(
     JSON.stringify({ success: true, response: data }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+async function prepareScreenRecordingUpload(
+  sessionId: string,
+  responseData: {
+    mimeType?: string;
+  } = {},
+) {
+  const session = await resolveSessionProject(sessionId);
+  const mimeType = responseData.mimeType || 'video/webm';
+  const extension = getScreenRecordingFileExtension(mimeType);
+  const filePath = `${session.project_id}/${sessionId}/screen-recording-${Date.now()}.${extension}`;
+  const { data, error } = await supabase.storage
+    .from(SCREEN_RECORDINGS_BUCKET)
+    .createSignedUploadUrl(filePath);
+
+  if (error || !data) {
+    throw new Error(`Failed to prepare screen recording upload: ${error?.message ?? 'missing signed upload data'}`);
+  }
+
+  const metadata = isRecord(session.metadata) ? session.metadata : {};
+  await supabase
+    .from('study_sessions')
+    .update({
+      metadata: {
+        ...metadata,
+        screenRecording: {
+          ...(isRecord(metadata.screenRecording) ? metadata.screenRecording : {}),
+          uploadPreparedAt: new Date().toISOString(),
+          required: true,
+          audioCaptured: false,
+        },
+      },
+    })
+    .eq('id', sessionId);
+
+  return new Response(
+    JSON.stringify({
+      success: true,
+      bucket: SCREEN_RECORDINGS_BUCKET,
+      path: data.path ?? filePath,
+      token: data.token,
+      signedUrl: data.signedUrl,
+      mimeType,
+    }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+async function finalizeScreenRecording(
+  sessionId: string,
+  responseData: {
+    path?: string;
+    mimeType?: string;
+    durationMs?: number;
+    sizeBytes?: number;
+    metadata?: Record<string, unknown>;
+  } = {},
+) {
+  if (!responseData.path) {
+    throw new Error('Missing screen recording path');
+  }
+
+  const session = await resolveSessionProject(sessionId);
+  const expectedPrefix = `${session.project_id}/${sessionId}/`;
+  if (!responseData.path.startsWith(expectedPrefix)) {
+    throw new Error('Screen recording path does not match session');
+  }
+
+  const metadata = isRecord(session.metadata) ? session.metadata : {};
+  const screenRecordingMetadata = {
+    ...(isRecord(metadata.screenRecording) ? metadata.screenRecording : {}),
+    ...(responseData.metadata ?? {}),
+    finalizedAt: new Date().toISOString(),
+    required: true,
+    audioCaptured: false,
+    privateBucket: SCREEN_RECORDINGS_BUCKET,
+    sizeBytes: typeof responseData.sizeBytes === 'number' ? responseData.sizeBytes : null,
+  };
+
+  const { data, error } = await supabase
+    .from('study_sessions')
+    .update({
+      screen_recording_url: responseData.path,
+      screen_recording_mime_type: responseData.mimeType || 'video/webm',
+      screen_recording_duration_ms: typeof responseData.durationMs === 'number'
+        ? Math.max(0, Math.round(responseData.durationMs))
+        : null,
+      screen_recording_metadata: screenRecordingMetadata,
+      metadata: {
+        ...metadata,
+        screenRecording: screenRecordingMetadata,
+      },
+    })
+    .eq('id', sessionId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to finalize screen recording: ${error.message}`);
+  }
+
+  return new Response(
+    JSON.stringify({ success: true, session: data }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );
 }

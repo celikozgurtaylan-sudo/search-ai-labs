@@ -410,6 +410,10 @@ export type Database = {
           notes: string | null
           participant_id: string | null
           project_id: string
+          screen_recording_duration_ms: number | null
+          screen_recording_metadata: Json | null
+          screen_recording_mime_type: string | null
+          screen_recording_url: string | null
           scheduled_at: string | null
           session_token: string | null
           started_at: string | null
@@ -424,6 +428,10 @@ export type Database = {
           notes?: string | null
           participant_id?: string | null
           project_id: string
+          screen_recording_duration_ms?: number | null
+          screen_recording_metadata?: Json | null
+          screen_recording_mime_type?: string | null
+          screen_recording_url?: string | null
           scheduled_at?: string | null
           session_token?: string | null
           started_at?: string | null
@@ -438,6 +446,10 @@ export type Database = {
           notes?: string | null
           participant_id?: string | null
           project_id?: string
+          screen_recording_duration_ms?: number | null
+          screen_recording_metadata?: Json | null
+          screen_recording_mime_type?: string | null
+          screen_recording_url?: string | null
           scheduled_at?: string | null
           session_token?: string | null
           started_at?: string | null
