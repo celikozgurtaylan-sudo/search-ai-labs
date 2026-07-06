@@ -3,6 +3,7 @@ import {
   streamEdgeFunction,
   type EdgeConversationEntry,
 } from "@/lib/edgeFunctionStream";
+import type { ProjectInterviewReport } from "@/types/projectReport";
 
 export interface SyntheticPersona {
   id: string;
@@ -62,6 +63,40 @@ interface StartSessionResponse {
 
 interface SendMessageResponse {
   reply: string;
+}
+
+export interface SyntheticResearchRun {
+  id: string;
+  project_id: string;
+  user_id: string;
+  status: "running" | "completed" | "failed";
+  persona_count: number;
+  question_count: number;
+  response_count: number;
+  report: ProjectInterviewReport | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface SyntheticResearchResponse {
+  id: string;
+  run_id: string;
+  project_id: string;
+  user_id: string;
+  persona_id: string;
+  persona_snapshot: SyntheticPersona;
+  question_ref: string;
+  section: string;
+  question_text: string;
+  response_text: string;
+  created_at: string;
+}
+
+interface SyntheticResearchRunResponse {
+  run: SyntheticResearchRun | null;
+  responses: SyntheticResearchResponse[];
+  report: ProjectInterviewReport | null;
 }
 
 interface SyntheticFallbackResponse {
@@ -152,6 +187,21 @@ export const syntheticUserService = {
       message,
       conversationHistory: compact.conversationHistory,
       conversationSummary: compact.conversationSummary,
+    });
+  },
+
+  async runResearch(projectId: string, options: { personaIds?: string[] } = {}) {
+    return callSyntheticUsers<SyntheticResearchRunResponse>({
+      action: "run_research",
+      projectId,
+      personaIds: options.personaIds ?? [],
+    });
+  },
+
+  async getResearchRun(projectId: string) {
+    return callSyntheticUsers<SyntheticResearchRunResponse>({
+      action: "get_research_run",
+      projectId,
     });
   },
 

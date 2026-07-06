@@ -1,5 +1,5 @@
 export type ProjectReportStatus = "empty" | "generating" | "ready" | "failed";
-export type ProjectInterviewMode = "structured" | "ai_enhanced";
+export type ProjectInterviewMode = "structured" | "ai_enhanced" | "synthetic";
 
 export interface ProjectReportSourceStats {
   invitedParticipantCount: number;
@@ -60,6 +60,30 @@ export interface ProjectReportQuote {
   }>;
   videoUrl?: string | null;
   videoDurationMs?: number | null;
+  syntheticPersonaId?: string | null;
+  syntheticPersonaName?: string | null;
+}
+
+export interface ProjectReportSyntheticMeta {
+  runId: string;
+  dataset: string;
+  personaCount: number;
+  questionCount: number;
+  responseCount: number;
+  disclaimer: string;
+}
+
+export interface ProjectReportInferentialSection {
+  id: string;
+  title: string;
+  summary: string;
+  chartTitle?: string;
+  chartData?: Array<{
+    label: string;
+    value: number;
+    percent: number;
+  }>;
+  quoteIds: string[];
 }
 
 export interface ProjectReportFinding {
@@ -191,7 +215,7 @@ export interface ProjectInterviewReport {
   status: ProjectReportStatus;
   version: number;
   generatedAt: string | null;
-  generatedFrom: "transcript-only" | "ai-enhanced-transcript";
+  generatedFrom: "transcript-only" | "ai-enhanced-transcript" | "synthetic-personas";
   sourceStats: ProjectReportSourceStats;
   overview: ProjectReportOverview;
   executiveSummary: string;
@@ -205,6 +229,8 @@ export interface ProjectInterviewReport {
   participantJourneys: ProjectReportParticipantJourney[];
   turnCatalog: ProjectReportTurn[];
   quoteCatalog: ProjectReportQuote[];
+  syntheticMeta?: ProjectReportSyntheticMeta | null;
+  inferentialSections?: ProjectReportInferentialSection[];
   generationMeta: ProjectReportGenerationMeta;
 }
 

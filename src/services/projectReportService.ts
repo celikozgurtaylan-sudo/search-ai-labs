@@ -19,14 +19,31 @@ export const extractProjectReport = (analysis: unknown): ProjectInterviewReport 
   return rawReport as unknown as ProjectInterviewReport;
 };
 
+export const extractSyntheticProjectReport = (analysis: unknown): ProjectInterviewReport | null => {
+  if (!isRecord(analysis)) return null;
+  const syntheticUsers = analysis.syntheticUsers;
+  if (!isRecord(syntheticUsers)) return null;
+  const rawReport = syntheticUsers.report;
+  if (!isRecord(rawReport)) return null;
+
+  const status = rawReport.status;
+  if (status !== "empty" && status !== "generating" && status !== "ready" && status !== "failed") {
+    return null;
+  }
+
+  return rawReport as unknown as ProjectInterviewReport;
+};
+
 export const projectReportService = {
-  async getProjectReport(projectId: string): Promise<ProjectReportSnapshot> {
+  async getProjectReport(projectId: string, options: { synthetic?: boolean } = {}): Promise<ProjectReportSnapshot> {
     const project = await projectService.getProject(projectId);
 
     return {
       projectTitle: project?.title || "Araştırma Projesi",
       projectDescription: project?.description || "",
-      report: extractProjectReport(project?.analysis ?? null),
+      report: options.synthetic
+        ? extractSyntheticProjectReport(project?.analysis ?? null)
+        : extractProjectReport(project?.analysis ?? null),
     };
   },
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Bot, ChevronLeft, ChevronRight, Pause, Play, Square, Users } from "lucide-react";
+import { ArrowLeft, Bot, ChevronLeft, ChevronRight, Loader2, Pause, Play, Square, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -29,6 +29,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { projectService } from "@/services/projectService";
 import { participantService, StudyParticipant, StudySession } from "@/services/participantService";
+import { syntheticUserService } from "@/services/syntheticUserService";
 import { applyInterviewLinkAccess, getInterviewControlState } from "@/lib/interviewControl";
 import {
   createNextQuestionSetState,
@@ -43,6 +44,7 @@ import {
   normalizeAIEnhancedBrief,
   type AIEnhancedBrief,
 } from "@/lib/aiEnhancedResearch";
+import { toast } from "sonner";
 
 type WorkspaceStep = "guide" | "recruit" | "run" | "analyze";
 const WORKSPACE_CHAT_STORAGE_PREFIX = "searchai-workspace-chat";
@@ -439,6 +441,7 @@ const Workspace = () => {
   const [isGuideLoading, setIsGuideLoading] = useState(false);
   const [showPauseResearchDialog, setShowPauseResearchDialog] = useState(false);
   const [showCompleteResearchDialog, setShowCompleteResearchDialog] = useState(false);
+  const [isSyntheticAnalysisRunning, setIsSyntheticAnalysisRunning] = useState(false);
   const lastPersistedAnalysisKeyRef = useRef<string>("");
   const lastPersistedWorkspaceChatKeyRef = useRef<string>("");
   const restoredChatProjectIdRef = useRef<string | null>(null);
@@ -447,6 +450,7 @@ const Workspace = () => {
   const researchMode = useMemo(() => getResearchMode(projectData?.analysis), [projectData?.analysis]);
   const isAIEnhancedMode = researchMode === "ai_enhanced";
   const syntheticUsersEnabled = Boolean(projectData?.analysis?.syntheticUsers?.enabled);
+  const hasSyntheticReport = Boolean(projectData?.analysis?.syntheticUsers?.report);
   const aiEnhancedDisplayGuide = useMemo(
     () => buildAIEnhancedDisplayGuide(aiEnhancedBrief),
     [aiEnhancedBrief],
@@ -518,7 +522,7 @@ const Workspace = () => {
       setChatMessages(restoredChatState.messages);
       setChatConversationHistory(restoredChatState.conversationHistory);
       restoredChatProjectIdRef.current = sessionData.projectData?.id ?? null;
-      setShowSyntheticUsers(Boolean(sessionData.projectData?.analysis?.syntheticUsers?.enabled));
+      setShowSyntheticUsers(false);
       setCurrentStep((sessionData.autoStartPhase === "starting" ? "run" : sessionData.autoStartPhase || "run") as WorkspaceStep);
       setIsResearchRelated(true);
       localStorage.removeItem("researcher-session");
@@ -536,10 +540,7 @@ const Workspace = () => {
       setChatMessages(restoredChatState.messages);
       setChatConversationHistory(restoredChatState.conversationHistory);
       restoredChatProjectIdRef.current = parsedProject?.id ?? null;
-      setShowSyntheticUsers(
-        localStorage.getItem("searchai-workspace-synthetic-users") === "true" ||
-        Boolean(parsedProject?.analysis?.syntheticUsers?.enabled),
-      );
+      setShowSyntheticUsers(false);
       if (targetStep === "analyze" || persistedWorkflowStage === "analyze") {
         setCurrentStep("analyze");
       }
@@ -857,6 +858,22 @@ const Workspace = () => {
     getProjectTitle(projectData?.description ?? "");
 
   const getResearchSteps = () => {
+    if (syntheticUsersEnabled) {
+      const planningReady = Boolean(discussionGuide?.sections?.length) || currentStep === "analyze" || hasSyntheticReport;
+      return [
+        {
+          id: "planning",
+          title: "Araştırma Planlaması",
+          status: (currentStep === "guide" && !planningReady ? "current" : "completed") as const,
+        },
+        {
+          id: "analyze",
+          title: "Sentetik Analiz & Rapor",
+          status: (currentStep === "analyze" ? "current" : "upcoming") as const,
+        },
+      ];
+    }
+
     const planningReady = isAIEnhancedMode
       ? isAIEnhancedReady(aiEnhancedBrief) || currentStep === "recruit" || currentStep === "run" || currentStep === "analyze"
       : isResearchRelated || currentStep === "recruit" || currentStep === "run" || currentStep === "analyze";
@@ -897,8 +914,70 @@ const Workspace = () => {
     });
   };
 
+  const handleRunSyntheticAnalysis = async () => {
+    if (!projectData?.id || isSyntheticAnalysisRunning) return;
+    if (!discussionGuide?.sections?.length) {
+      toast.error("Sentetik analiz için önce araştırma planını oluşturun.");
+      return;
+    }
+
+    setIsSyntheticAnalysisRunning(true);
+    try {
+      const nextAnalysis = {
+        ...buildCurrentAnalysisSnapshot(true),
+        syntheticUsers: {
+          ...(projectData.analysis?.syntheticUsers || {}),
+          enabled: true,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+
+      await projectService.updateProject(projectData.id, {
+        analysis: nextAnalysis,
+      });
+
+      syncProjectData({
+        ...projectData,
+        analysis: nextAnalysis,
+      });
+
+      const result = await syntheticUserService.runResearch(projectData.id);
+      const refreshedProject = await projectService.getProject(projectData.id);
+      const completedAnalysis = refreshedProject?.analysis || {
+        ...nextAnalysis,
+        workflowStage: "analyze" as WorkspaceStep,
+        syntheticUsers: {
+          ...(nextAnalysis.syntheticUsers || {}),
+          report: result.report,
+          lastRunId: result.run?.id,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+
+      syncProjectData({
+        ...projectData,
+        title: refreshedProject?.title ?? projectData.title,
+        description: refreshedProject?.description ?? projectData.description,
+        analysis: completedAnalysis,
+      });
+      setCurrentStep("analyze");
+      setShowSyntheticUsers(false);
+      toast.success("Sentetik analiz raporu hazırlandı.");
+    } catch (error) {
+      console.error("Failed to run synthetic analysis:", error);
+      toast.error(error instanceof Error ? error.message : "Sentetik analiz üretilemedi.");
+    } finally {
+      setIsSyntheticAnalysisRunning(false);
+    }
+  };
+
   const handleNextStep = async () => {
     if (currentStep === "guide") {
+      if (syntheticUsersEnabled) {
+        await handleRunSyntheticAnalysis();
+        return;
+      }
+
       setCurrentStep("recruit");
       setShowRecruitment(true);
       return;
@@ -966,9 +1045,12 @@ const Workspace = () => {
             onClick={handleNextStep}
             className="bg-brand-primary hover:bg-brand-primary-hover text-white"
             disabled={
-              isAIEnhancedMode
+              isSyntheticAnalysisRunning ||
+              (syntheticUsersEnabled
+                ? !isResearchRelated || !discussionGuide || !isButtonReady
+                : isAIEnhancedMode
                 ? !isAIEnhancedReady(aiEnhancedBrief)
-                : !isResearchRelated || !discussionGuide || !isButtonReady
+                : !isResearchRelated || !discussionGuide || !isButtonReady)
             }
             title={
               isAIEnhancedMode
@@ -976,8 +1058,12 @@ const Workspace = () => {
                 : `Research: ${isResearchRelated}, Guide: ${!!discussionGuide}, Ready: ${isButtonReady}`
             }
           >
-            <Users className="w-4 h-4 mr-2" />
-            Sonraki: Katılımcıları Ekle →
+            {isSyntheticAnalysisRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Users className="w-4 h-4 mr-2" />}
+            {syntheticUsersEnabled
+              ? isSyntheticAnalysisRunning
+                ? "Sentetik Analiz Oluşturuluyor"
+                : "Sentetik Analizi Oluştur"
+              : "Sonraki: Katılımcıları Ekle →"}
           </Button>
         );
       case "recruit":
@@ -1108,6 +1194,8 @@ const Workspace = () => {
               <AnalysisPanel
                 projectId={projectData.id || ""}
                 sessionIds={sessions.map((session) => session.id!).filter(Boolean)}
+                synthetic={syntheticUsersEnabled}
+                onOpenSyntheticChat={() => setShowSyntheticUsers(true)}
               />
             ) : currentStep === "guide" ? (
               <AIEnhancedBriefingPanel
@@ -1220,6 +1308,8 @@ const Workspace = () => {
                 <AnalysisPanel
                   projectId={projectData.id || ""}
                   sessionIds={sessions.map((session) => session.id!).filter(Boolean)}
+                  synthetic={syntheticUsersEnabled}
+                  onOpenSyntheticChat={() => setShowSyntheticUsers(true)}
                 />
               ) : isGuideLoading ? (
                 <GuideLoadingPanel guide={discussionGuide} />

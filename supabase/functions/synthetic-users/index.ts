@@ -20,6 +20,10 @@ const supabase = createClient(
 );
 
 const MODEL = Deno.env.get("ORCHESTRATOR_MODEL") || "gpt-4.1";
+const SYNTHETIC_DATASET = "nvidia/Nemotron-Personas-Brazil";
+const DEFAULT_SYNTHETIC_PERSONA_COUNT = 6;
+const MAX_SYNTHETIC_PERSONAS = 8;
+const MAX_SYNTHETIC_QUESTIONS = 18;
 
 const parseBearerToken = (req: Request) => {
   const header = req.headers.get("Authorization");
@@ -28,6 +32,10 @@ const parseBearerToken = (req: Request) => {
 };
 
 const asString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+const asArray = <T>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const validateProjectOwner = async (projectId: string, token: string | null) => {
   if (!token) return null;
@@ -93,6 +101,31 @@ const sanitizePersonaSnapshot = (persona: SyntheticPersona) => ({
 
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string");
+
+const truncateText = (value: string, maxLength = 360) => {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1).trim()}…`;
+};
+
+const roundToOneDecimal = (value: number) => Math.round(value * 10) / 10;
+
+const normalizeTitle = (value: string) =>
+  value.toLocaleLowerCase("tr-TR").replace(/\s+/g, " ").trim();
+
+const isMissingSyntheticResearchTableError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /synthetic_research_runs|synthetic_research_responses|schema cache|relation .* does not exist/i.test(message);
+};
+
+interface SyntheticResearchResponseRow {
+  id: string;
+  persona_id: string;
+  persona_snapshot: Record<string, unknown>;
+  question_ref: string;
+  section: string;
+  question_text: string;
+  response_text: string;
+}
 
 const parsePersonaSnapshot = (value: unknown): SyntheticPersona | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -173,6 +206,452 @@ Kurallar:
 - Uydurma marka verisi, gizli sirket bilgisi, kisisel veri veya gercek musteri hikayesi ekleme.
 - Kisa, dogal ve arastirma icin yararli cevap ver.
 - Cevaplar Turkce olsun.`;
+
+const extractDiscussionGuideQuestions = (project: Record<string, unknown>) => {
+  const analysis = isRecord(project.analysis) ? project.analysis : {};
+  const guide = isRecord(analysis.discussionGuide) ? analysis.discussionGuide : null;
+  const sections = asArray<Record<string, unknown>>(guide?.sections);
+
+  return sections
+    .flatMap((section, sectionIndex) => {
+      const sectionTitle = asString(section.title, `Bölüm ${sectionIndex + 1}`);
+      return asArray<unknown>(section.questions)
+        .map((question, questionIndex) => ({
+          questionRef: `question-${sectionIndex + 1}-${questionIndex + 1}`,
+          section: sectionTitle,
+          questionText: asString(question),
+          order: sectionIndex * 100 + questionIndex,
+        }))
+        .filter((entry) => entry.questionText.length > 0);
+    })
+    .slice(0, MAX_SYNTHETIC_QUESTIONS);
+};
+
+const selectSyntheticPersonas = async (
+  topic: string,
+  requestedPersonaIds: string[],
+) => {
+  const pool = await loadNemotronSyntheticPersonaPool(topic);
+  const localizedPool = pool.map((persona) => localizeSyntheticPersonaForTurkishDisplay(persona));
+  const requestedSet = new Set(requestedPersonaIds.filter(Boolean));
+  const requestedPersonas = localizedPool.filter((persona) => requestedSet.has(persona.id));
+  const fallbackPersonas = localizedPool.filter((persona) => !requestedSet.has(persona.id));
+  const selected = [...requestedPersonas, ...fallbackPersonas].slice(
+    0,
+    Math.min(MAX_SYNTHETIC_PERSONAS, Math.max(requestedPersonaIds.length || DEFAULT_SYNTHETIC_PERSONA_COUNT, 1)),
+  );
+
+  if (selected.length === 0) {
+    return recommendSyntheticPersonas(topic)
+      .flatMap((recommendation) => recommendation.personas)
+      .map((persona) => localizeSyntheticPersonaForTurkishDisplay(persona))
+      .slice(0, DEFAULT_SYNTHETIC_PERSONA_COUNT);
+  }
+
+  return selected;
+};
+
+const requestSyntheticResearchAnswer = async ({
+  openaiApiKey,
+  project,
+  persona,
+  question,
+}: {
+  openaiApiKey: string;
+  project: Record<string, unknown>;
+  persona: SyntheticPersona;
+  question: { section: string; questionText: string };
+}) => {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openaiApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0.55,
+      messages: [
+        {
+          role: "system",
+          content: `${buildPersonaSystemPrompt(persona, project)}
+
+Bu bir otomatik sentetik arastirma kosusudur.
+Yanitin:
+- Turkce olsun.
+- 2-5 cumle olsun.
+- Bu personanin bakis acisini yansitsin.
+- Gercek katilimci kaniti gibi davranmasin.
+- Verilmeyen ekran, marka veya gizli bilgi uydurmasin.`,
+        },
+        {
+          role: "user",
+          content: `Bölüm: ${question.section}
+Araştırma sorusu: ${question.questionText}
+
+Bu soruya sentetik persona perspektifinden yanıt ver.`,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Synthetic research answer failed: ${response.status} ${await response.text()}`);
+  }
+
+  const data = await response.json();
+  return asString(data?.choices?.[0]?.message?.content);
+};
+
+const callReportLlm = async (input: {
+  projectTitle: string;
+  projectDescription: string;
+  responses: Array<Record<string, unknown>>;
+}) => {
+  const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!openaiApiKey) return null;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openaiApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0.25,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `Sen sentetik persona kosusundan cikarimsal UX arastirma raporu hazirlayan bir analistsin.
+Sadece verilen sentetik cevaplara dayan.
+Tum cikti Turkce ve gecerli JSON olmali.
+Her bulgu, tema ve oneri en az bir quoteId referansi icermeli.
+Gercek katilimci kaniti gibi yazma; cikarimsal/sentetik dil kullan.`,
+        },
+        {
+          role: "user",
+          content: `Proje:
+${JSON.stringify({ title: input.projectTitle, description: input.projectDescription }, null, 2)}
+
+Sentetik cevap katalogu:
+${JSON.stringify(input.responses, null, 2)}
+
+Sadece su JSON semasinda yanit ver:
+{
+  "executiveSummary": "kisa ozet",
+  "findings": [{"title":"", "summary":"", "quoteIds":["quote-1"], "questionRefs":["question-1"], "sessionRefs":["persona-1"]}],
+  "themes": [{"title":"", "description":"", "quoteIds":["quote-1"], "questionRefs":["question-1"]}],
+  "recommendations": [{"title":"", "description":"", "priority":"high|medium|low", "quoteIds":["quote-1"], "linkedFindingTitles":[""]}],
+  "questionInsights": [{"questionRef":"question-1", "summary":"", "quoteIds":["quote-1"]}],
+  "participantSummaries": [{"sessionRef":"persona-1", "summary":"", "quoteIds":["quote-1"]}]
+}`,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Synthetic report generation failed: ${response.status} ${await response.text()}`);
+  }
+
+  const data = await response.json();
+  const content = asString(data?.choices?.[0]?.message?.content);
+  return content ? JSON.parse(content) : null;
+};
+
+const clampPriority = (value: unknown): "high" | "medium" | "low" => {
+  if (value === "high" || value === "medium" || value === "low") return value;
+  return "medium";
+};
+
+const sanitizeIdList = (values: unknown, allowed: Set<string>) =>
+  Array.from(new Set(asArray<string>(values).filter((value) => typeof value === "string" && allowed.has(value))));
+
+const buildDistribution = (responses: Array<{ response_text: string }>) => {
+  const buckets = [
+    { label: "Olumlu / kolay", value: 0, terms: ["kolay", "güven", "güvenli", "anlaşılır", "net", "beğen", "rahat"] },
+    { label: "Kararsız / koşullu", value: 0, terms: ["kararsız", "emin değil", "duruma", "ama", "ancak", "koşul"] },
+    { label: "Olumsuz / riskli", value: 0, terms: ["zor", "karmaşık", "güvensiz", "endişe", "tereddüt", "rahatsız", "risk"] },
+  ];
+
+  responses.forEach((response) => {
+    const normalized = response.response_text.toLocaleLowerCase("tr-TR");
+    const match = buckets.find((bucket) => bucket.terms.some((term) => normalized.includes(term)));
+    if (match) {
+      match.value += 1;
+    } else {
+      buckets[1].value += 1;
+    }
+  });
+
+  const total = Math.max(responses.length, 1);
+  return buckets.map(({ label, value }) => ({
+    label,
+    value,
+    percent: roundToOneDecimal((value / total) * 100),
+  }));
+};
+
+const buildSyntheticReport = async ({
+  project,
+  run,
+  questions,
+  responses,
+}: {
+  project: Record<string, unknown>;
+  run: Record<string, unknown>;
+  questions: Array<{ questionRef: string; section: string; questionText: string; order: number }>;
+  responses: SyntheticResearchResponseRow[];
+}) => {
+  const personaRefs = new Map<string, string>();
+  const personaSnapshots = new Map<string, SyntheticPersona>();
+  responses.forEach((response) => {
+    if (!personaRefs.has(response.persona_id)) {
+      personaRefs.set(response.persona_id, `persona-${personaRefs.size + 1}`);
+    }
+    if (isRecord(response.persona_snapshot)) {
+      personaSnapshots.set(response.persona_id, response.persona_snapshot as SyntheticPersona);
+    }
+  });
+
+  const quoteCatalog = responses.map((response, index) => {
+    const persona = personaSnapshots.get(response.persona_id);
+    return {
+      quoteId: `quote-${index + 1}`,
+      responseId: response.id,
+      sessionId: response.persona_id,
+      sessionRef: personaRefs.get(response.persona_id) || response.persona_id,
+      participantId: null,
+      participantLabel: persona?.name || "Sentetik kullanıcı",
+      questionId: response.question_ref,
+      questionRef: response.question_ref,
+      questionText: response.question_text,
+      section: response.section,
+      text: truncateText(response.response_text),
+      audioUrl: null,
+      audioMimeType: null,
+      audioPrivacyTransform: null,
+      audioDurationMs: null,
+      transcriptSegments: [],
+      videoUrl: null,
+      videoDurationMs: null,
+      syntheticPersonaId: response.persona_id,
+      syntheticPersonaName: persona?.name || null,
+    };
+  });
+
+  const quoteIdSet = new Set(quoteCatalog.map((quote) => quote.quoteId));
+  const questionRefSet = new Set(questions.map((question) => question.questionRef));
+  const personaRefSet = new Set(Array.from(personaRefs.values()));
+  const llmInput = quoteCatalog.map((quote) => ({
+    quoteId: quote.quoteId,
+    sessionRef: quote.sessionRef,
+    participantLabel: quote.participantLabel,
+    questionRef: quote.questionRef,
+    section: quote.section,
+    questionText: quote.questionText,
+    text: quote.text,
+  }));
+
+  const llmResult = await callReportLlm({
+    projectTitle: asString(project.title, "Sentetik Araştırma"),
+    projectDescription: asString(project.description),
+    responses: llmInput,
+  }).catch((error) => {
+    console.error("[synthetic-users] synthetic report LLM failed", error instanceof Error ? error.message : error);
+    return null;
+  });
+
+  const rawFindings = asArray<Record<string, unknown>>(llmResult?.findings);
+  const findings = rawFindings
+    .map((finding, index) => ({
+      id: `finding-${index + 1}`,
+      title: asString(finding.title, `Sentetik bulgu ${index + 1}`),
+      summary: asString(finding.summary),
+      quoteIds: sanitizeIdList(finding.quoteIds, quoteIdSet),
+      questionRefs: sanitizeIdList(finding.questionRefs, questionRefSet),
+      sessionRefs: sanitizeIdList(finding.sessionRefs, personaRefSet),
+    }))
+    .filter((finding) => finding.summary && finding.quoteIds.length > 0)
+    .map((finding) => ({ ...finding, evidenceCount: finding.quoteIds.length }));
+
+  const findingTitleToId = new Map(findings.map((finding) => [normalizeTitle(finding.title), finding.id]));
+  const themes = asArray<Record<string, unknown>>(llmResult?.themes)
+    .map((theme, index) => {
+      const quoteIds = sanitizeIdList(theme.quoteIds, quoteIdSet);
+      return {
+        id: `theme-${index + 1}`,
+        title: asString(theme.title, `Sentetik tema ${index + 1}`),
+        description: asString(theme.description),
+        quoteIds,
+        questionRefs: sanitizeIdList(theme.questionRefs, questionRefSet),
+        evidenceCount: quoteIds.length,
+      };
+    })
+    .filter((theme) => theme.description && theme.quoteIds.length > 0);
+
+  const recommendations = asArray<Record<string, unknown>>(llmResult?.recommendations)
+    .map((recommendation, index) => ({
+      id: `recommendation-${index + 1}`,
+      title: asString(recommendation.title, `Sentetik öneri ${index + 1}`),
+      description: asString(recommendation.description),
+      priority: clampPriority(recommendation.priority),
+      quoteIds: sanitizeIdList(recommendation.quoteIds, quoteIdSet),
+      linkedFindingIds: asArray<string>(recommendation.linkedFindingTitles)
+        .map((title) => findingTitleToId.get(normalizeTitle(title)))
+        .filter((value): value is string => Boolean(value)),
+    }))
+    .filter((recommendation) => recommendation.description && recommendation.quoteIds.length > 0);
+
+  const questionInsights = new Map(
+    asArray<Record<string, unknown>>(llmResult?.questionInsights)
+      .map((entry) => [asString(entry.questionRef), {
+        summary: asString(entry.summary),
+        quoteIds: sanitizeIdList(entry.quoteIds, quoteIdSet),
+      }] as [string, { summary: string; quoteIds: string[] }])
+      .filter(([questionRef]) => questionRef.length > 0),
+  );
+
+  const participantSummaries = new Map(
+    asArray<Record<string, unknown>>(llmResult?.participantSummaries)
+      .map((entry) => [asString(entry.sessionRef), {
+        summary: asString(entry.summary),
+        quoteIds: sanitizeIdList(entry.quoteIds, quoteIdSet),
+      }] as [string, { summary: string; quoteIds: string[] }])
+      .filter(([sessionRef]) => sessionRef.length > 0),
+  );
+
+  const questionBreakdown = questions.map((question) => {
+    const questionResponses = responses.filter((response) => response.question_ref === question.questionRef);
+    const matchingQuoteIds = quoteCatalog
+      .filter((quote) => quote.questionRef === question.questionRef)
+      .map((quote) => quote.quoteId)
+      .slice(0, 4);
+    const insight = questionInsights.get(question.questionRef);
+    return {
+      questionRef: question.questionRef,
+      section: question.section,
+      questionText: question.questionText,
+      sessionCount: personaRefs.size,
+      answeredResponseCount: questionResponses.length,
+      skippedResponseCount: 0,
+      coverageRate: personaRefs.size > 0 ? roundToOneDecimal((questionResponses.length / personaRefs.size) * 100) : 0,
+      averageResponseDurationMs: null,
+      summary: insight?.summary || "",
+      quoteIds: insight?.quoteIds.length ? insight.quoteIds : matchingQuoteIds,
+    };
+  });
+
+  const participantBreakdown = Array.from(personaRefs.entries()).map(([personaId, personaRef]) => {
+    const persona = personaSnapshots.get(personaId);
+    const personaQuotes = quoteCatalog.filter((quote) => quote.syntheticPersonaId === personaId).map((quote) => quote.quoteId);
+    const summary = participantSummaries.get(personaRef);
+    return {
+      sessionId: personaId,
+      sessionRef: personaRef,
+      participantId: null,
+      participantLabel: persona?.name || "Sentetik kullanıcı",
+      status: "completed",
+      responseCount: personaQuotes.length,
+      answeredResponseCount: personaQuotes.length,
+      skippedResponseCount: 0,
+      averageResponseDurationMs: null,
+      sessionDurationMs: null,
+      hasAudioEvidence: false,
+      hasVideoEvidence: false,
+      screenRecordingUrl: null,
+      screenRecordingMimeType: null,
+      screenRecordingDurationMs: null,
+      screenRecordingMetadata: null,
+      summary: summary?.summary || persona?.context || "",
+      quoteIds: summary?.quoteIds.length ? summary.quoteIds : personaQuotes.slice(0, 4),
+    };
+  });
+
+  const inferentialSections = questions.slice(0, 8).map((question, index) => {
+    const questionResponses = responses.filter((response) => response.question_ref === question.questionRef);
+    const quoteIds = quoteCatalog
+      .filter((quote) => quote.questionRef === question.questionRef)
+      .map((quote) => quote.quoteId)
+      .slice(0, 4);
+    return {
+      id: `inferential-${index + 1}`,
+      title: question.questionText,
+      summary: questionInsights.get(question.questionRef)?.summary ||
+        `${questionResponses.length} sentetik persona bu soruya yanıt verdi; dağılım cevap metinlerindeki duygu ve risk sinyallerinden çıkarımsal olarak hesaplandı.`,
+      chartTitle: "Sentetik tepki dağılımı",
+      chartData: buildDistribution(questionResponses),
+      quoteIds,
+    };
+  });
+
+  const responseCount = responses.length;
+  const completedAt = new Date().toISOString();
+
+  return {
+    interviewMode: "synthetic",
+    status: responseCount === 0 ? "empty" : "ready",
+    version: 1,
+    generatedAt: completedAt,
+    generatedFrom: "synthetic-personas",
+    sourceStats: {
+      invitedParticipantCount: personaRefs.size,
+      joinedParticipantCount: personaRefs.size,
+      completedParticipantCount: personaRefs.size,
+      totalSessionCount: personaRefs.size,
+      completedSessionCount: personaRefs.size,
+      pendingSessionCount: 0,
+      questionTemplateCount: questions.length,
+      questionInstanceCount: questions.length * personaRefs.size,
+      responsesAnalyzed: responseCount,
+      skippedResponseCount: 0,
+      quoteCount: quoteCatalog.length,
+    },
+    overview: {
+      invitedParticipantCount: personaRefs.size,
+      joinedParticipantCount: personaRefs.size,
+      completedParticipantCount: personaRefs.size,
+      joinRate: 100,
+      completionRate: 100,
+      skipRate: 0,
+      averageResponseDurationMs: null,
+      averageSessionDurationMs: null,
+      averageResponsesPerCompletedSession: personaRefs.size > 0 ? roundToOneDecimal(responseCount / personaRefs.size) : 0,
+    },
+    executiveSummary: asString(llmResult?.executiveSummary) ||
+      `${personaRefs.size} sentetik persona, ${questions.length} araştırma sorusu üzerinden koşturuldu. Bu çıktı gerçek katılımcı kanıtı değil, karar öncesi çıkarımsal simülasyondur.`,
+    findings,
+    themes,
+    recommendations,
+    questionBreakdown,
+    participantBreakdown,
+    anchorCoverage: [],
+    followUpPaths: [],
+    participantJourneys: [],
+    turnCatalog: [],
+    quoteCatalog,
+    syntheticMeta: {
+      runId: asString(run.id),
+      dataset: SYNTHETIC_DATASET,
+      personaCount: personaRefs.size,
+      questionCount: questions.length,
+      responseCount,
+      disclaimer: "Sentetik kullanıcı çıktıları gerçek katılımcı kanıtı değildir; yalnızca çıkarımsal araştırma simülasyonu olarak kullanılmalıdır.",
+    },
+    inferentialSections,
+    generationMeta: {
+      trigger: "synthetic-run",
+      triggerSessionId: null,
+      generatedBy: MODEL,
+      llmUsed: Boolean(llmResult),
+      analyzedSessionIds: Array.from(personaRefs.keys()),
+      analyzedResponseIds: responses.map((response) => response.id),
+      failureMessage: null,
+    },
+  };
+};
 
 const requestChatReply = async ({
   openaiApiKey,
@@ -276,6 +755,217 @@ serve(async (req) => {
 
       if (messagesError) throw new Error(`Failed to load synthetic messages: ${messagesError.message}`);
       return json({ sessions: sessions ?? [], messages: messages ?? [] });
+    }
+
+    if (action === "get_research_run") {
+      const { data: run, error: runError } = await supabase
+        .from("synthetic_research_runs")
+        .select("*")
+        .eq("project_id", projectId)
+        .eq("user_id", access.user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (runError) {
+        if (isMissingSyntheticResearchTableError(runError)) {
+          const analysis = isRecord(access.project.analysis) ? access.project.analysis : {};
+          const syntheticUsers = isRecord(analysis.syntheticUsers) ? analysis.syntheticUsers : {};
+          return json({
+            run: null,
+            responses: [],
+            report: isRecord(syntheticUsers.report) ? syntheticUsers.report : null,
+          });
+        }
+        throw new Error(`Failed to load synthetic research run: ${runError.message}`);
+      }
+
+      const { data: responses, error: responsesError } = run?.id
+        ? await supabase
+          .from("synthetic_research_responses")
+          .select("*")
+          .eq("run_id", run.id)
+          .order("created_at", { ascending: true })
+        : { data: [], error: null };
+
+      if (responsesError) throw new Error(`Failed to load synthetic research responses: ${responsesError.message}`);
+
+      return json({
+        run: run ?? null,
+        responses: responses ?? [],
+        report: run?.report ?? null,
+      });
+    }
+
+    if (action === "run_research") {
+      const questions = extractDiscussionGuideQuestions(access.project);
+      if (questions.length === 0) {
+        return json({ error: "Synthetic research requires a generated discussion guide" }, 400);
+      }
+
+      const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+      if (!openaiApiKey) {
+        throw new Error("OPENAI_API_KEY is not set");
+      }
+
+      const topic = buildTopic(access.project);
+      const requestedPersonaIds = asArray<string>(payload.personaIds).filter((value) => typeof value === "string");
+      const personas = await selectSyntheticPersonas(topic, requestedPersonaIds);
+
+      if (personas.length === 0) {
+        return json({ error: "Synthetic personas could not be loaded" }, 500);
+      }
+
+      const { data: persistedRun, error: runError } = await supabase
+        .from("synthetic_research_runs")
+        .insert({
+          project_id: projectId,
+          user_id: access.user.id,
+          status: "running",
+          persona_count: personas.length,
+          question_count: questions.length,
+          response_count: 0,
+        })
+        .select("*")
+        .single();
+
+      const tableBackedRun = !runError;
+      if (runError && !isMissingSyntheticResearchTableError(runError)) {
+        throw new Error(`Failed to create synthetic research run: ${runError.message}`);
+      }
+
+      const run = persistedRun ?? {
+        id: crypto.randomUUID(),
+        project_id: projectId,
+        user_id: access.user.id,
+        status: "running",
+        persona_count: personas.length,
+        question_count: questions.length,
+        response_count: 0,
+        report: null,
+        error_message: null,
+        created_at: new Date().toISOString(),
+        completed_at: null,
+      };
+
+      try {
+        const responseRows = [];
+
+        for (const persona of personas) {
+          for (const question of questions) {
+            const answer = await requestSyntheticResearchAnswer({
+              openaiApiKey,
+              project: access.project,
+              persona,
+              question,
+            });
+
+            if (!answer) continue;
+            responseRows.push({
+              id: crypto.randomUUID(),
+              run_id: run.id,
+              project_id: projectId,
+              user_id: access.user.id,
+              persona_id: persona.id,
+              persona_snapshot: sanitizePersonaSnapshot(persona),
+              question_ref: question.questionRef,
+              section: question.section,
+              question_text: question.questionText,
+              response_text: answer,
+            });
+          }
+        }
+
+        const { data: insertedResponses, error: insertResponsesError } = tableBackedRun && responseRows.length > 0
+          ? await supabase
+            .from("synthetic_research_responses")
+            .insert(responseRows)
+            .select("*")
+          : { data: responseRows, error: null };
+
+        if (insertResponsesError && !isMissingSyntheticResearchTableError(insertResponsesError)) {
+          throw new Error(`Failed to store synthetic research responses: ${insertResponsesError.message}`);
+        }
+
+        const normalizedResponses = insertResponsesError ? responseRows : insertedResponses ?? [];
+
+        const report = await buildSyntheticReport({
+          project: access.project,
+          run,
+          questions,
+          responses: normalizedResponses,
+        });
+
+        const completedAt = new Date().toISOString();
+        const { data: updatedRun, error: updateRunError } = tableBackedRun
+          ? await supabase
+            .from("synthetic_research_runs")
+            .update({
+              status: "completed",
+              response_count: normalizedResponses.length,
+              report,
+              completed_at: completedAt,
+            })
+            .eq("id", run.id)
+            .select("*")
+            .single()
+          : {
+            data: {
+              ...run,
+              status: "completed",
+              response_count: normalizedResponses.length,
+              report,
+              completed_at: completedAt,
+            },
+            error: null,
+          };
+
+        if (updateRunError) throw new Error(`Failed to complete synthetic research run: ${updateRunError.message}`);
+
+        const analysis = isRecord(access.project.analysis) ? access.project.analysis : {};
+        const syntheticUsers = isRecord(analysis.syntheticUsers) ? analysis.syntheticUsers : {};
+        const nextAnalysis = {
+          ...analysis,
+          workflowStage: "analyze",
+          syntheticUsers: {
+            ...syntheticUsers,
+            enabled: true,
+            source: SYNTHETIC_DATASET,
+            lastRunId: run.id,
+            report,
+            updatedAt: completedAt,
+          },
+          updatedAt: completedAt,
+        };
+
+        const { error: projectUpdateError } = await supabase
+          .from("projects")
+          .update({ analysis: nextAnalysis })
+          .eq("id", projectId)
+          .eq("user_id", access.user.id);
+
+        if (projectUpdateError) {
+          throw new Error(`Failed to persist synthetic report: ${projectUpdateError.message}`);
+        }
+
+        return json({
+          run: updatedRun,
+          responses: normalizedResponses,
+          report,
+        });
+      } catch (error) {
+        if (tableBackedRun) {
+          await supabase
+            .from("synthetic_research_runs")
+            .update({
+              status: "failed",
+              error_message: error instanceof Error ? error.message : "Synthetic research run failed",
+              completed_at: new Date().toISOString(),
+            })
+            .eq("id", run.id);
+        }
+        throw error;
+      }
     }
 
     if (action === "start_session") {

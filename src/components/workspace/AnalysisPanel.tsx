@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,17 +7,21 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { generateResearchPresentation } from "@/services/presentationService";
 import { projectReportService } from "@/services/projectReportService";
+import { syntheticUserService } from "@/services/syntheticUserService";
 import type {
   ProjectReportAnchorCoverage,
   ProjectInterviewReport,
   ProjectReportFinding,
   ProjectReportFollowUpPath,
+  ProjectReportInferentialSection,
   ProjectReportParticipantJourney,
   ProjectReportQuote,
   ProjectReportRecommendation,
   ProjectReportTheme,
   ProjectReportTurn,
 } from "@/types/projectReport";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import {
   AlertCircle,
   BarChart3,
@@ -41,6 +45,8 @@ import { toast } from "sonner";
 interface AnalysisPanelProps {
   projectId: string;
   sessionIds: string[];
+  synthetic?: boolean;
+  onOpenSyntheticChat?: (personaId?: string | null) => void;
 }
 
 const formatPercent = (value: number) => `${Number.isFinite(value) ? value.toFixed(1) : "0.0"}%`;
@@ -197,9 +203,13 @@ const ScreenRecordingPlayer = ({
 const EvidenceQuotes = ({
   title,
   quotes,
+  synthetic,
+  onOpenSyntheticChat,
 }: {
   title?: string;
   quotes: ProjectReportQuote[];
+  synthetic?: boolean;
+  onOpenSyntheticChat?: (personaId?: string | null) => void;
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [activeQuoteId, setActiveQuoteId] = useState<string | null>(null);
@@ -324,12 +334,72 @@ const EvidenceQuotes = ({
                 {playingQuoteId === quote.quoteId ? "Pause" : "Play"}
               </Button>
             ) : null}
+            {synthetic && onOpenSyntheticChat ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenSyntheticChat(quote.syntheticPersonaId ?? null)}
+                className="shrink-0 gap-1.5"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                Konuş
+              </Button>
+            ) : null}
           </div>
         </div>
       ))}
     </div>
   );
 };
+
+const syntheticChartConfig = {
+  value: {
+    label: "Yanıt",
+    color: "hsl(var(--primary))",
+  },
+} satisfies ChartConfig;
+
+const SyntheticInferentialSectionCard = ({
+  section,
+  quotes,
+  onOpenSyntheticChat,
+}: {
+  section: ProjectReportInferentialSection;
+  quotes: ProjectReportQuote[];
+  onOpenSyntheticChat?: (personaId?: string | null) => void;
+}) => (
+  <Card className="border-border-light">
+    <CardHeader>
+      <div className="flex items-center gap-2">
+        <BarChart3 className="h-4 w-4 text-brand-primary" />
+        <CardTitle className="text-base">{section.title}</CardTitle>
+      </div>
+      <CardDescription className="text-sm leading-6 text-text-secondary">
+        {section.summary}
+      </CardDescription>
+    </CardHeader>
+    <CardContent className="space-y-4">
+      {Array.isArray(section.chartData) && section.chartData.length > 0 ? (
+        <div className="rounded-md border border-border-light bg-muted/20 p-3">
+          {section.chartTitle ? (
+            <p className="mb-3 text-sm font-medium text-text-primary">{section.chartTitle}</p>
+          ) : null}
+          <ChartContainer config={syntheticChartConfig} className="h-[220px] w-full">
+            <BarChart data={section.chartData} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
+              <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={11} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar dataKey="value" fill="var(--color-value)" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ChartContainer>
+        </div>
+      ) : null}
+      <EvidenceQuotes synthetic quotes={quotes} onOpenSyntheticChat={onOpenSyntheticChat} />
+    </CardContent>
+  </Card>
+);
 
 const EmptyReportState = ({
   hasSessions,
@@ -374,9 +444,13 @@ const takeQuotes = (quoteMap: Map<string, ProjectReportQuote>, quoteIds: string[
 const FindingCard = ({
   finding,
   quotes,
+  synthetic,
+  onOpenSyntheticChat,
 }: {
   finding: ProjectReportFinding;
   quotes: ProjectReportQuote[];
+  synthetic?: boolean;
+  onOpenSyntheticChat?: (personaId?: string | null) => void;
 }) => (
   <Card className="border-border-light">
     <CardHeader className="space-y-3">
@@ -391,7 +465,7 @@ const FindingCard = ({
       </CardDescription>
     </CardHeader>
     <CardContent>
-      <EvidenceQuotes quotes={quotes} />
+      <EvidenceQuotes synthetic={synthetic} quotes={quotes} onOpenSyntheticChat={onOpenSyntheticChat} />
     </CardContent>
   </Card>
 );
@@ -399,9 +473,13 @@ const FindingCard = ({
 const ThemeCard = ({
   theme,
   quotes,
+  synthetic,
+  onOpenSyntheticChat,
 }: {
   theme: ProjectReportTheme;
   quotes: ProjectReportQuote[];
+  synthetic?: boolean;
+  onOpenSyntheticChat?: (personaId?: string | null) => void;
 }) => (
   <Card className="border-border-light">
     <CardHeader className="space-y-3">
@@ -414,7 +492,7 @@ const ThemeCard = ({
       </CardDescription>
     </CardHeader>
     <CardContent>
-      <EvidenceQuotes quotes={quotes} />
+      <EvidenceQuotes synthetic={synthetic} quotes={quotes} onOpenSyntheticChat={onOpenSyntheticChat} />
     </CardContent>
   </Card>
 );
@@ -423,10 +501,14 @@ const RecommendationCard = ({
   report,
   recommendation,
   quotes,
+  synthetic,
+  onOpenSyntheticChat,
 }: {
   report: ProjectInterviewReport;
   recommendation: ProjectReportRecommendation;
   quotes: ProjectReportQuote[];
+  synthetic?: boolean;
+  onOpenSyntheticChat?: (personaId?: string | null) => void;
 }) => {
   const linkedTitles = findFindingTitles(report, recommendation.linkedFindingIds);
 
@@ -454,13 +536,25 @@ const RecommendationCard = ({
         ) : null}
       </CardHeader>
       <CardContent>
-        <EvidenceQuotes quotes={quotes} />
+        <EvidenceQuotes synthetic={synthetic} quotes={quotes} onOpenSyntheticChat={onOpenSyntheticChat} />
       </CardContent>
     </Card>
   );
 };
 
 const getNavigationSections = (report: ProjectInterviewReport | null) => {
+  if (report?.interviewMode === "synthetic") {
+    return [
+      { id: "overview", label: "Genel Bakış" },
+      { id: "inferential", label: "Çıkarımsal Paneller" },
+      { id: "findings", label: "Önemli Bulgular" },
+      { id: "themes", label: "Temalar" },
+      { id: "recommendations", label: "Öneriler" },
+      { id: "questions", label: "Soru Dağılımı" },
+      { id: "participants", label: "Personalar" },
+    ];
+  }
+
   if (report?.interviewMode === "ai_enhanced") {
     return [
       { id: "overview", label: "Genel Bakış" },
@@ -640,7 +734,7 @@ const TurnCard = ({ turn }: { turn: ProjectReportTurn }) => (
 const truncateTurn = (value: string, maxLength = 120) =>
   value.length > maxLength ? `${value.slice(0, maxLength - 1).trim()}…` : value;
 
-const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
+const AnalysisPanel = ({ projectId, sessionIds, synthetic = false, onOpenSyntheticChat }: AnalysisPanelProps) => {
   const [projectTitle, setProjectTitle] = useState("Araştırma Projesi");
   const [projectDescription, setProjectDescription] = useState("");
   const [report, setReport] = useState<ProjectInterviewReport | null>(null);
@@ -656,7 +750,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
   );
   const navigationSections = useMemo(() => getNavigationSections(report), [report]);
 
-  const hasSessions = sessionIds.length > 0;
+  const hasSessions = synthetic ? Boolean(report?.syntheticMeta?.responseCount) : sessionIds.length > 0;
   const hasRenderableReport = Boolean(
     report && (
       report.generatedAt ||
@@ -672,7 +766,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
     ),
   );
 
-  const loadSavedReport = async (silent = false) => {
+  const loadSavedReport = useCallback(async (silent = false) => {
     if (!projectId) {
       setLoadError("Geçerli bir proje bulunamadı.");
       setIsLoading(false);
@@ -685,7 +779,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
     try {
       setLoadError(null);
-      const snapshot = await projectReportService.getProjectReport(projectId);
+      const snapshot = await projectReportService.getProjectReport(projectId, { synthetic });
       setProjectTitle(snapshot.projectTitle);
       setProjectDescription(snapshot.projectDescription);
       setReport(snapshot.report);
@@ -695,11 +789,11 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [projectId, synthetic]);
 
   useEffect(() => {
     void loadSavedReport();
-  }, [projectId]);
+  }, [loadSavedReport]);
 
   useEffect(() => {
     if (report?.status !== "generating") return;
@@ -709,7 +803,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
     }, 5000);
 
     return () => window.clearInterval(intervalId);
-  }, [report?.status, projectId]);
+  }, [loadSavedReport, report?.status]);
 
   useEffect(() => {
     if (!report) return;
@@ -734,7 +828,7 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
     });
 
     return () => observer.disconnect();
-  }, [report]);
+  }, [navigationSections, report]);
 
   useEffect(() => {
     if (navigationSections.length > 0) {
@@ -747,9 +841,11 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
     setIsGenerating(true);
     try {
-      const nextReport = await projectReportService.generateProjectReport(projectId, { force: true });
+      const nextReport = synthetic
+        ? (await syntheticUserService.runResearch(projectId)).report
+        : await projectReportService.generateProjectReport(projectId, { force: true });
       setReport(nextReport);
-      toast.success("Analiz raporu güncellendi.");
+      toast.success(synthetic ? "Sentetik analiz yeniden üretildi." : "Analiz raporu güncellendi.");
       void loadSavedReport(true);
     } catch (error) {
       console.error("Failed to regenerate report:", error);
@@ -880,7 +976,11 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                 {report.status === "ready" ? "Hazır" : report.status === "generating" ? "Güncelleniyor" : report.status === "failed" ? "Hata" : "Boş"}
               </Badge>
               <Badge variant={report.interviewMode === "ai_enhanced" ? "default" : "outline"}>
-                {report.interviewMode === "ai_enhanced" ? "AI Enhanced" : "Yapılandırılmış"}
+                {report.interviewMode === "synthetic"
+                  ? "Sentetik / Çıkarımsal"
+                  : report.interviewMode === "ai_enhanced"
+                    ? "AI Enhanced"
+                    : "Yapılandırılmış"}
               </Badge>
               <Badge variant="outline">
                 {report.sourceStats.completedSessionCount} tamamlanan oturum
@@ -890,7 +990,9 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
               </Badge>
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-text-primary">Analiz Raporu</h1>
+              <h1 className="text-2xl font-bold text-text-primary">
+                {report.interviewMode === "synthetic" ? "Sentetik Analiz Raporu" : "Analiz Raporu"}
+              </h1>
               <p className="mt-1 text-sm text-text-secondary">{projectTitle}</p>
               {projectDescription ? (
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-text-muted">{projectDescription}</p>
@@ -922,6 +1024,21 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
             <CardContent className="flex items-start gap-3 p-4 text-amber-800">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <p className="text-sm">{loadError}</p>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {report.interviewMode === "synthetic" ? (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="flex items-start gap-3 p-4 text-amber-900">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Bu çıktı gerçek katılımcı kanıtı değildir.</p>
+                <p className="text-sm">
+                  {report.syntheticMeta?.disclaimer ||
+                    "Sentetik kullanıcı sonuçları karar öncesi çıkarımsal simülasyon olarak değerlendirilmelidir."}
+                </p>
+              </div>
             </CardContent>
           </Card>
         ) : null}
@@ -966,9 +1083,11 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
               <CardContent className="space-y-6">
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <ReportMetricCard
-                    title="Katılım"
+                    title={report.interviewMode === "synthetic" ? "Persona" : "Katılım"}
                     value={`${report.overview.completedParticipantCount}/${report.overview.invitedParticipantCount}`}
-                    description={`Katılım oranı ${formatPercent(report.overview.joinRate)} • Tamamlama oranı ${formatPercent(report.overview.completionRate)}`}
+                    description={report.interviewMode === "synthetic"
+                      ? `${report.syntheticMeta?.dataset || "Sentetik veri seti"} üzerinden seçildi.`
+                      : `Katılım oranı ${formatPercent(report.overview.joinRate)} • Tamamlama oranı ${formatPercent(report.overview.completionRate)}`}
                   />
                   <ReportMetricCard
                     title={report.interviewMode === "ai_enhanced" ? "Anchor Sayısı" : "Skip Oranı"}
@@ -1028,10 +1147,14 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                       <p>
                         {report.interviewMode === "ai_enhanced"
                           ? `${report.anchorCoverage.length} anchor omurga ve ${report.turnCatalog.length} gerçek konuşma turu üzerinden çalışıldı.`
+                          : report.interviewMode === "synthetic"
+                            ? `${report.syntheticMeta?.personaCount || report.sourceStats.completedSessionCount} sentetik persona ve ${report.syntheticMeta?.questionCount || report.sourceStats.questionTemplateCount} plan sorusu üzerinden simülasyon çalıştırıldı.`
                           : `${report.sourceStats.questionTemplateCount} benzersiz soru şablonu ve ${report.sourceStats.questionInstanceCount} soru örneği üzerinden çalışıldı.`}
                       </p>
                       <p>
-                        Her bulgu yalnızca kaydedilmiş transcriptlerden ve tamamlanma/skip/süre verilerinden üretildi.
+                        {report.interviewMode === "synthetic"
+                          ? "Her bulgu yalnızca sentetik persona cevaplarından üretildi; gerçek kullanıcı davranışı veya kanıtı olarak yorumlanmamalıdır."
+                          : "Her bulgu yalnızca kaydedilmiş transcriptlerden ve tamamlanma/skip/süre verilerinden üretildi."}
                       </p>
                       <p>
                         Analiz üretim kaynağı: <span className="font-medium text-text-primary">{report.generatedFrom}</span>
@@ -1041,6 +1164,34 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                 </div>
               </CardContent>
             </Card>
+
+            {report.interviewMode === "synthetic" ? (
+              <Card id="inferential" className="border-border-light">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-brand-primary" />
+                    <CardTitle>Çıkarımsal Paneller</CardTitle>
+                  </div>
+                  <CardDescription>
+                    Sentetik persona cevaplarından üretilen soru bazlı dağılımlar ve bağlamsal yorumlar.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {!report.inferentialSections?.length ? (
+                    <p className="text-sm text-text-secondary">Henüz çıkarımsal panel oluşturulmadı.</p>
+                  ) : (
+                    report.inferentialSections.map((section) => (
+                      <SyntheticInferentialSectionCard
+                        key={section.id}
+                        section={section}
+                        quotes={takeQuotes(quoteMap, section.quoteIds)}
+                        onOpenSyntheticChat={onOpenSyntheticChat}
+                      />
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            ) : null}
 
             <Card id="findings" className="border-border-light">
               <CardHeader>
@@ -1061,6 +1212,8 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                       key={finding.id}
                       finding={finding}
                       quotes={takeQuotes(quoteMap, finding.quoteIds)}
+                      synthetic={report.interviewMode === "synthetic"}
+                      onOpenSyntheticChat={onOpenSyntheticChat}
                     />
                   ))
                 )}
@@ -1082,7 +1235,13 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                   <p className="text-sm text-text-secondary">Tema çıkarımı için yeterli tekrar eden kanıt bulunamadı.</p>
                 ) : (
                   report.themes.map((theme) => (
-                    <ThemeCard key={theme.id} theme={theme} quotes={takeQuotes(quoteMap, theme.quoteIds)} />
+                    <ThemeCard
+                      key={theme.id}
+                      theme={theme}
+                      quotes={takeQuotes(quoteMap, theme.quoteIds)}
+                      synthetic={report.interviewMode === "synthetic"}
+                      onOpenSyntheticChat={onOpenSyntheticChat}
+                    />
                   ))
                 )}
               </CardContent>
@@ -1108,6 +1267,8 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                       report={report}
                       recommendation={recommendation}
                       quotes={takeQuotes(quoteMap, recommendation.quoteIds)}
+                      synthetic={report.interviewMode === "synthetic"}
+                      onOpenSyntheticChat={onOpenSyntheticChat}
                     />
                   ))
                 )}
@@ -1272,7 +1433,11 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                           <p className="text-sm leading-6 text-text-secondary">{question.summary}</p>
                         ) : null}
 
-                        <EvidenceQuotes quotes={takeQuotes(quoteMap, question.quoteIds)} />
+                        <EvidenceQuotes
+                          synthetic={report.interviewMode === "synthetic"}
+                          quotes={takeQuotes(quoteMap, question.quoteIds)}
+                          onOpenSyntheticChat={onOpenSyntheticChat}
+                        />
                       </CardContent>
                     </Card>
                   ))
@@ -1281,20 +1446,26 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
             </Card>
             )}
 
-            {report.interviewMode === "structured" ? (
+            {report.interviewMode === "structured" || report.interviewMode === "synthetic" ? (
             <Card id="participants" className="border-border-light">
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-brand-primary" />
-                  <CardTitle>Katılımcılar</CardTitle>
+                  <CardTitle>{report.interviewMode === "synthetic" ? "Personalar" : "Katılımcılar"}</CardTitle>
                 </div>
               <CardDescription>
-                  Oturum bazında kapsama, süre, skip ve özet kanıtlar.
+                  {report.interviewMode === "synthetic"
+                    ? "Sentetik persona bazında kapsama, özet ve alıntılar."
+                    : "Oturum bazında kapsama, süre, skip ve özet kanıtlar."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {report.participantBreakdown.length === 0 ? (
-                  <p className="text-sm text-text-secondary">Henüz katılımcı bazında gösterilecek tamamlanmış oturum yok.</p>
+                  <p className="text-sm text-text-secondary">
+                    {report.interviewMode === "synthetic"
+                      ? "Henüz persona bazında gösterilecek sentetik cevap yok."
+                      : "Henüz katılımcı bazında gösterilecek tamamlanmış oturum yok."}
+                  </p>
                 ) : (
                   report.participantBreakdown.map((participant) => (
                     <Card key={participant.sessionId} className="border-border-light bg-muted/20">
@@ -1316,9 +1487,9 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
 
                         <div className="grid gap-4 md:grid-cols-3">
                           <ReportMetricCard
-                            title="Oturum Süresi"
-                            value={formatDuration(participant.sessionDurationMs)}
-                            description="started_at ve ended_at üzerinden hesaplandı."
+                            title={report.interviewMode === "synthetic" ? "Persona Cevabı" : "Oturum Süresi"}
+                            value={report.interviewMode === "synthetic" ? String(participant.responseCount) : formatDuration(participant.sessionDurationMs)}
+                            description={report.interviewMode === "synthetic" ? "Bu personadan alınan sentetik yanıt sayısı." : "started_at ve ended_at üzerinden hesaplandı."}
                           />
                           <ReportMetricCard
                             title="Ort. Yanıt"
@@ -1342,7 +1513,11 @@ const AnalysisPanel = ({ projectId, sessionIds }: AnalysisPanelProps) => {
                           durationMs={participant.screenRecordingDurationMs}
                         />
 
-                        <EvidenceQuotes quotes={takeQuotes(quoteMap, participant.quoteIds)} />
+                        <EvidenceQuotes
+                          synthetic={report.interviewMode === "synthetic"}
+                          quotes={takeQuotes(quoteMap, participant.quoteIds)}
+                          onOpenSyntheticChat={onOpenSyntheticChat}
+                        />
                       </CardContent>
                     </Card>
                   ))
