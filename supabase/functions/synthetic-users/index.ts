@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   findPersonaById,
+  loadNemotronSyntheticPersonas,
   recommendSyntheticPersonas,
   type SyntheticPersona,
 } from "../_shared/synthetic-personas.ts";
@@ -88,6 +89,41 @@ const sanitizePersonaSnapshot = (persona: SyntheticPersona) => ({
   traits: persona.traits,
   tags: persona.tags,
 });
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
+const parsePersonaSnapshot = (value: unknown): SyntheticPersona | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const persona = value as Record<string, unknown>;
+  if (
+    typeof persona.id !== "string" ||
+    typeof persona.name !== "string" ||
+    typeof persona.group !== "string" ||
+    typeof persona.ageRange !== "string" ||
+    typeof persona.occupation !== "string" ||
+    typeof persona.context !== "string" ||
+    !isStringArray(persona.goals) ||
+    !isStringArray(persona.frustrations) ||
+    !isStringArray(persona.traits) ||
+    !isStringArray(persona.tags)
+  ) {
+    return null;
+  }
+
+  return {
+    id: persona.id,
+    name: persona.name,
+    group: persona.group,
+    ageRange: persona.ageRange,
+    occupation: persona.occupation,
+    context: persona.context,
+    goals: persona.goals,
+    frustrations: persona.frustrations,
+    traits: persona.traits,
+    tags: persona.tags,
+  };
+};
 
 const loadSession = async (sessionId: string, projectId: string, userId: string) => {
   const { data: session, error } = await supabase
@@ -200,8 +236,19 @@ serve(async (req) => {
     }
 
     if (action === "recommend") {
+      try {
+        const nemotronPersonas = await loadNemotronSyntheticPersonas();
+        return json({
+          recommendations: recommendSyntheticPersonas(buildTopic(access.project), 4, nemotronPersonas),
+          source: "nvidia/Nemotron-Personas-USA",
+        });
+      } catch (error) {
+        console.error("[synthetic-users] Nemotron dataset fallback", error instanceof Error ? error.message : error);
+      }
+
       return json({
         recommendations: recommendSyntheticPersonas(buildTopic(access.project)),
+        source: "local_fallback",
       });
     }
 
@@ -230,7 +277,7 @@ serve(async (req) => {
 
     if (action === "start_session") {
       const personaId = asString(payload.personaId);
-      const persona = findPersonaById(personaId);
+      const persona = findPersonaById(personaId) ?? parsePersonaSnapshot(payload.personaSnapshot);
       if (!persona) {
         return json({ error: "Unknown synthetic persona" }, 400);
       }

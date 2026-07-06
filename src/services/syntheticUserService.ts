@@ -128,11 +128,12 @@ export const syntheticUserService = {
     };
   },
 
-  async startSession(projectId: string, personaId: string) {
+  async startSession(projectId: string, persona: SyntheticPersona) {
     return callSyntheticUsers<StartSessionResponse>({
       action: "start_session",
       projectId,
-      personaId,
+      personaId: persona.id,
+      personaSnapshot: persona,
     });
   },
 

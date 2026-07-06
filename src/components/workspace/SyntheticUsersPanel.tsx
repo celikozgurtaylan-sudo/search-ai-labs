@@ -139,7 +139,7 @@ const SyntheticUsersPanel = ({
     }
 
     try {
-      const payload = await syntheticUserService.startSession(projectId, persona.id);
+      const payload = await syntheticUserService.startSession(projectId, persona);
       setSessions((prev) => [payload.session, ...prev]);
       setMessagesBySession((prev) => ({
         ...prev,

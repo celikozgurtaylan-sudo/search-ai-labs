@@ -18,6 +18,39 @@ export interface SyntheticPersonaRecommendation {
   personas: SyntheticPersona[];
 }
 
+interface NemotronPersonaRow {
+  uuid?: string;
+  professional_persona?: string;
+  persona?: string;
+  cultural_background?: string;
+  skills_and_expertise?: string;
+  skills_and_expertise_list?: string;
+  hobbies_and_interests?: string;
+  hobbies_and_interests_list?: string;
+  career_goals_and_ambitions?: string;
+  sex?: string;
+  age?: number;
+  marital_status?: string;
+  education_level?: string;
+  bachelors_field?: string;
+  occupation?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
+interface NemotronRowsResponse {
+  rows?: Array<{
+    row_idx: number;
+    row: NemotronPersonaRow;
+  }>;
+}
+
+const NEMOTRON_PERSONAS_ENDPOINT = "https://datasets-server.huggingface.co/rows";
+const NEMOTRON_PERSONAS_DATASET = "nvidia/Nemotron-Personas-USA";
+const DEFAULT_NEMOTRON_LENGTH = 100;
+const PERSONAS_PER_RECOMMENDATION_GROUP = 3;
+
 const normalize = (value: string) =>
   value
     .toLocaleLowerCase("tr-TR")
@@ -30,6 +63,139 @@ const normalize = (value: string) =>
     .replace(/[^a-z0-9\s-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+const humanizeSnakeCase = (value?: string) =>
+  (value || "")
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const compactSentence = (value?: string, fallback = "") => {
+  const trimmed = (value || "").replace(/\s+/g, " ").trim();
+  if (!trimmed) return fallback;
+  const sentence = trimmed.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim();
+  return sentence || trimmed;
+};
+
+const splitListString = (value?: string) =>
+  (value || "")
+    .replace(/^\s*\[/, "")
+    .replace(/\]\s*$/, "")
+    .split(/',\s*'|",\s*"|,\s*/)
+    .map((item) => item.replace(/^['"\s]+|['"\s]+$/g, "").trim())
+    .filter(Boolean);
+
+const splitGoalSentences = (value?: string) =>
+  ((value || "").match(/[^.!?]+[.!?]+/g) ?? [value || ""])
+    .map((item) => item.trim())
+    .filter((item) => item.length > 24)
+    .slice(0, 3);
+
+const ageToRange = (age?: number) => {
+  if (!Number.isFinite(age)) return "25-54";
+  const numericAge = Number(age);
+  const start = Math.max(18, Math.floor(numericAge / 10) * 10);
+  return `${start}-${start + 9}`;
+};
+
+const inferGroup = (row: NemotronPersonaRow) => {
+  const text = normalize([
+    row.occupation,
+    row.professional_persona,
+    row.skills_and_expertise,
+    row.career_goals_and_ambitions,
+  ].filter(Boolean).join(" "));
+
+  if (/\b(research|scientist|engineer|software|computer|data|machine|programming|stem)\b/.test(text)) {
+    return "Technology and Research Personas";
+  }
+  if (/\b(food|restaurant|service|retail|cash|customer|hospitality)\b/.test(text)) {
+    return "Service and Customer-Facing Personas";
+  }
+  if (/\b(community|event|arts|culture|outreach|volunteer|education|teacher)\b/.test(text)) {
+    return "Community and Creative Personas";
+  }
+  if (/\b(finance|budget|accounting|manager|administrative|operations|business)\b/.test(text)) {
+    return "Operations and Practical Planners";
+  }
+  if (/\b(health|care|senior|not in workforce|retired)\b/.test(text)) {
+    return "Life-Stage and Care Personas";
+  }
+
+  return "General US Consumer Personas";
+};
+
+const inferTags = (row: NemotronPersonaRow) => {
+  const text = normalize([
+    row.occupation,
+    row.education_level,
+    row.bachelors_field,
+    row.skills_and_expertise,
+    row.hobbies_and_interests,
+    row.career_goals_and_ambitions,
+    row.city,
+    row.state,
+  ].filter(Boolean).join(" "));
+  const tags = new Set<string>(["nemotron", "usa", "synthetic-persona"]);
+
+  Object.entries(TOPIC_KEYWORDS).forEach(([tag, keywords]) => {
+    if (keywords.some((keyword) => text.includes(normalize(keyword))) || text.includes(normalize(tag))) {
+      tags.add(tag);
+    }
+  });
+
+  [
+    ["technology", /\b(research|scientist|engineer|software|computer|data|machine|programming|ai|stem)\b/],
+    ["service", /\b(food|restaurant|service|retail|customer|hospitality)\b/],
+    ["community", /\b(community|event|culture|outreach|volunteer)\b/],
+    ["creative", /\b(art|design|creative|music|writing|photography)\b/],
+    ["planning", /\b(budget|schedule|organize|planning|management|administrative)\b/],
+    ["education", /\b(teacher|education|college|student|training|mentor)\b/],
+  ].forEach(([tag, pattern]) => {
+    if ((pattern as RegExp).test(text)) tags.add(tag as string);
+  });
+
+  return Array.from(tags).slice(0, 10);
+};
+
+const inferName = (row: NemotronPersonaRow, index: number) => {
+  const source = row.persona || row.professional_persona || "";
+  const name = source.match(/^([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,2})\b/)?.[1];
+  return name || `Nemotron Persona ${index + 1}`;
+};
+
+const mapNemotronRowToPersona = (row: NemotronPersonaRow, index: number): SyntheticPersona => {
+  const skills = splitListString(row.skills_and_expertise_list).slice(0, 4);
+  const hobbies = splitListString(row.hobbies_and_interests_list).slice(0, 3);
+  const goals = splitGoalSentences(row.career_goals_and_ambitions);
+  const location = [row.city, row.state].filter(Boolean).join(", ");
+  const occupation = humanizeSnakeCase(row.occupation) || humanizeSnakeCase(row.education_level) || "Synthetic persona";
+
+  return {
+    id: `nemotron-${row.uuid || index}`,
+    name: inferName(row, index),
+    group: inferGroup(row),
+    ageRange: ageToRange(row.age),
+    occupation: location ? `${occupation} - ${location}` : occupation,
+    context: compactSentence(row.persona || row.professional_persona, "US-based synthetic persona from NVIDIA Nemotron Personas."),
+    goals: goals.length > 0 ? goals : [
+      compactSentence(row.career_goals_and_ambitions, "Make practical decisions that fit their life context."),
+      "Understand value, effort, and tradeoffs before committing.",
+    ],
+    frustrations: [
+      "Unclear value or next steps",
+      "Experiences that ignore their personal context",
+      "Too much friction when trying to complete a task",
+    ],
+    traits: [
+      ...skills,
+      ...hobbies,
+      humanizeSnakeCase(row.education_level),
+    ].filter(Boolean).slice(0, 5),
+    tags: inferTags(row),
+  };
+};
 
 export const SYNTHETIC_PERSONAS: SyntheticPersona[] = [
   {
@@ -144,11 +310,39 @@ const TOPIC_KEYWORDS: Record<string, string[]> = {
 export const findSyntheticPersonaById = (personaId: string) =>
   SYNTHETIC_PERSONAS.find((persona) => persona.id === personaId) ?? null;
 
-export const recommendSyntheticPersonas = (topic: string, limit = 4): SyntheticPersonaRecommendation[] => {
+export const loadNemotronSyntheticPersonas = async ({
+  offset = 0,
+  length = DEFAULT_NEMOTRON_LENGTH,
+}: {
+  offset?: number;
+  length?: number;
+} = {}) => {
+  const params = new URLSearchParams({
+    dataset: NEMOTRON_PERSONAS_DATASET,
+    config: "default",
+    split: "train",
+    offset: String(offset),
+    length: String(length),
+  });
+  const response = await fetch(`${NEMOTRON_PERSONAS_ENDPOINT}?${params.toString()}`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to load Nemotron personas: ${response.status}`);
+  }
+
+  const payload = await response.json() as NemotronRowsResponse;
+  return (payload.rows ?? []).map(({ row }, index) => mapNemotronRowToPersona(row, offset + index));
+};
+
+export const recommendSyntheticPersonas = (
+  topic: string,
+  limit = 4,
+  personas: SyntheticPersona[] = SYNTHETIC_PERSONAS,
+): SyntheticPersonaRecommendation[] => {
   const normalizedTopic = normalize(topic);
   const topicTokens = new Set(normalizedTopic.split(" ").filter(Boolean));
 
-  const scored = SYNTHETIC_PERSONAS.map((persona) => {
+  const scored = personas.map((persona) => {
     const tagScore = persona.tags.reduce((total, tag) => total + (normalizedTopic.includes(normalize(tag)) ? 4 : 0), 0);
     const keywordScore = Object.entries(TOPIC_KEYWORDS).reduce((total, [tag, keywords]) => {
       if (!persona.tags.includes(tag)) return total;
@@ -167,11 +361,11 @@ export const recommendSyntheticPersonas = (topic: string, limit = 4): SyntheticP
     return { persona, score: tagScore + keywordScore + tokenScore };
   });
 
-  const grouped = new Map<string, { score: number; personas: SyntheticPersona[]; reasons: Set<string> }>();
+  const grouped = new Map<string, { score: number; personas: Array<{ persona: SyntheticPersona; score: number }>; reasons: Set<string> }>();
   scored.forEach(({ persona, score }) => {
     const entry = grouped.get(persona.group) ?? { score: 0, personas: [], reasons: new Set<string>() };
     entry.score += score;
-    entry.personas.push(persona);
+    entry.personas.push({ persona, score });
     persona.tags.forEach((tag) => {
       if (normalizedTopic.includes(normalize(tag)) || TOPIC_KEYWORDS[tag]?.some((keyword) => normalizedTopic.includes(normalize(keyword)))) {
         entry.reasons.add(tag);
@@ -185,7 +379,10 @@ export const recommendSyntheticPersonas = (topic: string, limit = 4): SyntheticP
       group,
       score: entry.score,
       reasons: Array.from(entry.reasons).slice(0, 4),
-      personas: entry.personas,
+      personas: entry.personas
+        .sort((a, b) => b.score - a.score || a.persona.name.localeCompare(b.persona.name, "tr"))
+        .slice(0, PERSONAS_PER_RECOMMENDATION_GROUP)
+        .map(({ persona }) => persona),
     }))
     .sort((a, b) => b.score - a.score || a.group.localeCompare(b.group, "tr"))
     .slice(0, limit);
