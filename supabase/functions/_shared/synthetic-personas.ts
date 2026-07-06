@@ -1,6 +1,7 @@
 export {
   SYNTHETIC_PERSONAS,
   findSyntheticPersonaById as findPersonaById,
+  localizeSyntheticPersonaForTurkishDisplay,
   loadNemotronSyntheticPersonaPool,
   loadNemotronSyntheticPersonas,
   recommendSyntheticPersonas,

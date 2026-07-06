@@ -54,10 +54,18 @@ const NEMOTRON_PAGE_LENGTH = 100;
 const NEMOTRON_DEFAULT_TOTAL_ROWS = 1_000_000;
 const NEMOTRON_POOL_PAGE_COUNT = 10;
 const PERSONAS_PER_RECOMMENDATION_GROUP = 3;
+const TURKISH_FEMALE_NAMES = ["Elif", "Zeynep", "Derya", "Selin", "Aylin", "Ece", "Burcu", "Merve", "Deniz", "Seda", "İpek", "Aslı"];
+const TURKISH_MALE_NAMES = ["Mert", "Kerem", "Burak", "Can", "Emre", "Onur", "Barış", "Tolga", "Kaan", "Deniz", "Arda", "Cem"];
+const TURKISH_NEUTRAL_NAMES = ["Deniz", "Ece", "Can", "Özgür", "Derya", "İlker", "Ekin", "Yağmur"];
 
 const normalize = (value: string) =>
   value
     .toLocaleLowerCase("tr-TR")
+    .replace(/[áàâãä]/g, "a")
+    .replace(/[éèêë]/g, "e")
+    .replace(/[íìîï]/g, "i")
+    .replace(/[óòôõö]/g, "o")
+    .replace(/[úùûü]/g, "u")
     .replace(/ç/g, "c")
     .replace(/ğ/g, "g")
     .replace(/ı/g, "i")
@@ -114,24 +122,86 @@ const inferGroup = (row: NemotronPersonaRow) => {
     row.career_goals_and_ambitions,
   ].filter(Boolean).join(" "));
 
-  if (/\b(research|scientist|engineer|software|computer|data|machine|programming|stem)\b/.test(text)) {
-    return "Technology and Research Personas";
+  if (/\b(research|scientist|engineer|software|computer|data|machine|programming|stem|pesquisa|cientista|engenheiro|tecnologia|programacao|dados)\b/.test(text)) {
+    return "Teknoloji ve Araştırma Personaları";
   }
-  if (/\b(food|restaurant|service|retail|cash|customer|hospitality)\b/.test(text)) {
-    return "Service and Customer-Facing Personas";
+  if (/\b(food|restaurant|service|retail|cash|customer|hospitality|servico|varejo|vendedor|cliente|comercio|mercado|caixa|atendimento)\b/.test(text)) {
+    return "Hizmet ve Müşteri Deneyimi Personaları";
   }
-  if (/\b(community|event|arts|culture|outreach|volunteer|education|teacher)\b/.test(text)) {
-    return "Community and Creative Personas";
+  if (/\b(community|event|arts|culture|outreach|volunteer|education|teacher|comunidade|evento|arte|cultura|voluntario|educacao|professor|artesao)\b/.test(text)) {
+    return "Topluluk ve Yaratıcı Yaşam Personaları";
   }
-  if (/\b(finance|budget|accounting|manager|administrative|operations|business)\b/.test(text)) {
-    return "Operations and Practical Planners";
+  if (/\b(finance|budget|accounting|manager|administrative|operations|business|financa|orcamento|contabilidade|administracao|operacao|gestao|supervisor|coordenador)\b/.test(text)) {
+    return "Operasyon ve Planlama Personaları";
   }
-  if (/\b(health|care|senior|not in workforce|retired)\b/.test(text)) {
-    return "Life-Stage and Care Personas";
+  if (/\b(health|care|senior|not in workforce|retired|saude|cuidado|idoso|aposentado|fora da forca)\b/.test(text)) {
+    return "Yaşam Evresi ve Bakım Personaları";
   }
 
-  return "General Brazilian Consumer Personas";
+  return "Brezilyalı Genel Tüketici Personaları";
 };
+
+const translateOccupation = (value?: string) => {
+  const normalized = normalize(value || "");
+
+  if (!normalized) return "Brezilya bağlamında sentetik kullanıcı";
+  if (/\b(operador|maquina|montador|instalacao|industria|metalurgia|producao)\b/.test(normalized)) {
+    return "makine operatörü ve üretim çalışanı";
+  }
+  if (/\b(servico|vendedor|comercio|mercado|varejo|cliente|caixa|pdv)\b/.test(normalized)) {
+    return "hizmet ve perakende çalışanı";
+  }
+  if (/\b(artesao|artesanato|cultura|arte|bordado|renda)\b/.test(normalized)) {
+    return "zanaat ve kültür odaklı kullanıcı";
+  }
+  if (/\b(administrador|administracao|coordenador|gestao|supervisor)\b/.test(normalized)) {
+    return "operasyon ve yönetim deneyimi olan kullanıcı";
+  }
+  if (/\b(professor|educacao|ensino|estudante)\b/.test(normalized)) {
+    return "eğitim bağlamında kullanıcı";
+  }
+  if (/\b(saude|enfermagem|cuidador|medico|farmacia)\b/.test(normalized)) {
+    return "sağlık ve bakım bağlamında kullanıcı";
+  }
+  if (/\b(agricultura|rural|campo|agro|trator)\b/.test(normalized)) {
+    return "tarım ve yerel işletme bağlamında kullanıcı";
+  }
+  if (/\b(ocupacao mal definida|no occupation|sem ocupacao)\b/.test(normalized)) {
+    return "genel yaşam bağlamından kullanıcı";
+  }
+
+  return "Brezilya bağlamında sentetik kullanıcı";
+};
+
+const buildTurkishContext = (row: NemotronPersonaRow, name: string, occupation: string) => {
+  const location = [row.municipality || row.city, row.state].filter(Boolean).join(", ");
+  const age = Number.isFinite(row.age) ? `${row.age} yaşında, ` : "";
+  const locationText = location ? `${location} çevresinde yaşayan` : "Brezilya'da yaşayan";
+
+  return `${name}, ${age}${locationText} ${occupation}. Günlük kararlarında yerel yaşam koşulları, çalışma düzeni, aile/topluluk ilişkileri ve pratik beklentiler belirleyicidir. Araştırma konusuna bu Brezilya bağlamından, Türkçe yanıt verecek şekilde tepki verir.`;
+};
+
+const translateGroupName = (group: string) => {
+  if (group === "Technology and Research Personas") return "Teknoloji ve Araştırma Personaları";
+  if (group === "Service and Customer-Facing Personas") return "Hizmet ve Müşteri Deneyimi Personaları";
+  if (group === "Community and Creative Personas") return "Topluluk ve Yaratıcı Yaşam Personaları";
+  if (group === "Operations and Practical Planners") return "Operasyon ve Planlama Personaları";
+  if (group === "Life-Stage and Care Personas") return "Yaşam Evresi ve Bakım Personaları";
+  if (group === "General Brazilian Consumer Personas") return "Brezilyalı Genel Tüketici Personaları";
+  return group;
+};
+
+const buildTurkishGoals = (occupation: string) => [
+  "Günlük işlerini ve kararlarını daha az sürtünmeyle tamamlamak",
+  "Güven, maliyet, zaman ve pratik faydayı net biçimde anlamak",
+  `${occupation} perspektifinden gerçekçi ve uygulanabilir çözümler görmek`,
+];
+
+const BRAZILIAN_PERSONA_FRUSTRATIONS = [
+  "Belirsiz yönlendirmeler ve karmaşık açıklamalar",
+  "Yerel yaşam koşullarını dikkate almayan deneyimler",
+  "Gereksiz adımlar, zaman kaybı ve güven eksikliği",
+];
 
 const inferTags = (row: NemotronPersonaRow) => {
   const text = normalize([
@@ -169,39 +239,67 @@ const inferTags = (row: NemotronPersonaRow) => {
 
 const inferName = (row: NemotronPersonaRow, index: number) => {
   const source = row.persona || row.professional_persona || "";
-  const name = source.match(/^([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,2})\b/)?.[1];
+  const name = source.match(/^([\p{Lu}][\p{L}'-]+(?:\s+[\p{Lu}][\p{L}'-]+){0,2})\b/u)?.[1];
   return name || `Nemotron Persona ${index + 1}`;
+};
+
+const pickTurkishName = (seed: string, sex?: string) => {
+  const normalizedSex = normalize(sex || "");
+  const names = normalizedSex.includes("feminino")
+    ? TURKISH_FEMALE_NAMES
+    : normalizedSex.includes("masculino")
+      ? TURKISH_MALE_NAMES
+      : TURKISH_NEUTRAL_NAMES;
+
+  return names[hashText(seed) % names.length];
 };
 
 const mapNemotronRowToPersona = (row: NemotronPersonaRow, index: number): SyntheticPersona => {
   const skills = splitListString(row.skills_and_expertise_list).slice(0, 4);
   const hobbies = splitListString(row.hobbies_and_interests_list).slice(0, 3);
-  const goals = splitGoalSentences(row.career_goals_and_ambitions);
   const location = [row.municipality || row.city, row.state].filter(Boolean).join(", ");
-  const occupation = humanizeSnakeCase(row.occupation) || humanizeSnakeCase(row.education_level) || "Synthetic persona";
+  const occupation = translateOccupation(row.occupation || row.professional_persona || row.education_level);
+  const name = pickTurkishName(row.uuid || inferName(row, index), row.sex);
 
   return {
     id: `nemotron-${row.uuid || index}`,
-    name: inferName(row, index),
+    name,
     group: inferGroup(row),
     ageRange: ageToRange(row.age),
     occupation: location ? `${occupation} - ${location}` : occupation,
-    context: compactSentence(row.persona || row.professional_persona, "Brazil-based synthetic persona from NVIDIA Nemotron Personas."),
-    goals: goals.length > 0 ? goals : [
-      compactSentence(row.career_goals_and_ambitions, "Make practical decisions that fit their life context."),
-      "Understand value, effort, and tradeoffs before committing.",
-    ],
-    frustrations: [
-      "Unclear value or next steps",
-      "Experiences that ignore their personal context",
-      "Too much friction when trying to complete a task",
-    ],
+    context: buildTurkishContext(row, name, occupation),
+    goals: buildTurkishGoals(occupation),
+    frustrations: BRAZILIAN_PERSONA_FRUSTRATIONS,
     traits: [
       ...skills,
       ...hobbies,
       humanizeSnakeCase(row.education_level),
     ].filter(Boolean).slice(0, 5),
     tags: inferTags(row),
+  };
+};
+
+export const localizeSyntheticPersonaForTurkishDisplay = (persona: SyntheticPersona): SyntheticPersona => {
+  if (!persona.id.startsWith("nemotron-")) return persona;
+
+  const [rawOccupation, rawLocation] = persona.occupation.split(" - ");
+  const occupation = translateOccupation(rawOccupation || persona.occupation);
+  const location = rawLocation?.trim();
+  const name = TURKISH_FEMALE_NAMES.includes(persona.name) || TURKISH_MALE_NAMES.includes(persona.name) || TURKISH_NEUTRAL_NAMES.includes(persona.name)
+    ? persona.name
+    : pickTurkishName(persona.id);
+  const context = location
+    ? `${name}, ${location} çevresinde yaşayan ${occupation}. Araştırma konusuna Brezilya'daki günlük yaşamı, iş düzeni ve pratik beklentileri üzerinden Türkçe yanıt verir.`
+    : `${name}, Brezilya bağlamında yaşayan ${occupation}. Araştırma konusuna yerel yaşamı, iş düzeni ve pratik beklentileri üzerinden Türkçe yanıt verir.`;
+
+  return {
+    ...persona,
+    name,
+    group: translateGroupName(persona.group),
+    occupation: location ? `${occupation} - ${location}` : occupation,
+    context,
+    goals: buildTurkishGoals(occupation),
+    frustrations: BRAZILIAN_PERSONA_FRUSTRATIONS,
   };
 };
 

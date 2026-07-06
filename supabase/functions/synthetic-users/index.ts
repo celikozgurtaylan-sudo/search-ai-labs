@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   findPersonaById,
+  localizeSyntheticPersonaForTurkishDisplay,
   loadNemotronSyntheticPersonaPool,
   recommendSyntheticPersonas,
   type SyntheticPersona,
@@ -283,15 +284,16 @@ serve(async (req) => {
       if (!persona) {
         return json({ error: "Unknown synthetic persona" }, 400);
       }
+      const localizedPersona = localizeSyntheticPersonaForTurkishDisplay(persona);
 
       const { data: session, error } = await supabase
         .from("synthetic_user_sessions")
         .insert({
           project_id: projectId,
           user_id: access.user.id,
-          persona_id: persona.id,
-          persona_snapshot: sanitizePersonaSnapshot(persona),
-          title: `${persona.name} - ${persona.group}`,
+          persona_id: localizedPersona.id,
+          persona_snapshot: sanitizePersonaSnapshot(localizedPersona),
+          title: `${localizedPersona.name} - ${localizedPersona.group}`,
         })
         .select("*")
         .single();
@@ -312,7 +314,9 @@ serve(async (req) => {
         return json({ error: "Synthetic session not found" }, 404);
       }
 
-      const persona = findPersonaById(session.persona_id) ?? session.persona_snapshot as SyntheticPersona;
+      const persona = localizeSyntheticPersonaForTurkishDisplay(
+        findPersonaById(session.persona_id) ?? session.persona_snapshot as SyntheticPersona,
+      );
       const history = await loadMessages(sessionId);
 
       const { error: researcherInsertError } = await supabase

@@ -13,6 +13,7 @@ import {
 } from "@/services/syntheticUserService";
 import type { EdgeConversationEntry } from "@/lib/edgeFunctionStream";
 import {
+  localizeSyntheticPersonaForTurkishDisplay,
   loadNemotronSyntheticPersonaPool,
   recommendSyntheticPersonas,
   type SyntheticPersona,
@@ -57,6 +58,9 @@ const SyntheticUsersPanel = ({
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null;
+  const activePersona = activeSession?.persona_snapshot
+    ? localizeSyntheticPersonaForTurkishDisplay(activeSession.persona_snapshot)
+    : null;
   const activeMessages = activeSession ? messagesBySession[activeSession.id] ?? [] : [];
 
   const flattenedPersonas = useMemo(
@@ -116,15 +120,16 @@ const SyntheticUsersPanel = ({
   }, [loadSyntheticState]);
 
   const createLocalSession = (persona: SyntheticPersona) => {
+    const localizedPersona = localizeSyntheticPersonaForTurkishDisplay(persona);
     const now = new Date().toISOString();
     const session: SyntheticUserSession = {
-      id: `local-${persona.id}-${Date.now()}`,
+      id: `local-${localizedPersona.id}-${Date.now()}`,
       project_id: projectId,
       user_id: "local",
-      persona_id: persona.id,
-      persona_snapshot: persona,
+      persona_id: localizedPersona.id,
+      persona_snapshot: localizedPersona,
       status: "active",
-      title: `${persona.name} - ${persona.group}`,
+      title: `${localizedPersona.name} - ${localizedPersona.group}`,
       created_at: now,
       updated_at: now,
     };
@@ -135,28 +140,29 @@ const SyntheticUsersPanel = ({
       [session.id]: [],
     }));
     setActiveSessionId(session.id);
-    toast.success(`${persona.name} ile sentetik sohbet hazır.`);
+    toast.success(`${localizedPersona.name} ile sentetik sohbet hazır.`);
   };
 
   const startPersonaSession = async (persona: SyntheticPersona) => {
+    const localizedPersona = localizeSyntheticPersonaForTurkishDisplay(persona);
     if (!backendAvailable) {
-      createLocalSession(persona);
+      createLocalSession(localizedPersona);
       return;
     }
 
     try {
-      const payload = await syntheticUserService.startSession(projectId, persona);
+      const payload = await syntheticUserService.startSession(projectId, localizedPersona);
       setSessions((prev) => [payload.session, ...prev]);
       setMessagesBySession((prev) => ({
         ...prev,
         [payload.session.id]: payload.messages ?? [],
       }));
       setActiveSessionId(payload.session.id);
-      toast.success(`${persona.name} ile sentetik sohbet hazır.`);
+      toast.success(`${localizedPersona.name} ile sentetik sohbet hazır.`);
     } catch (error) {
       console.error("Failed to start synthetic session:", error);
       setBackendAvailable(false);
-      createLocalSession(persona);
+      createLocalSession(localizedPersona);
     }
   };
 
@@ -182,7 +188,7 @@ const SyntheticUsersPanel = ({
     try {
       const conversationHistory = buildConversationHistory(activeMessages);
       const requestFallbackReply = () => syntheticUserService.sendFallbackMessage({
-        persona: activeSession.persona_snapshot,
+        persona: activePersona ?? localizeSyntheticPersonaForTurkishDisplay(activeSession.persona_snapshot),
         projectTitle,
         projectDescription,
         message: trimmed,
@@ -282,24 +288,33 @@ const SyntheticUsersPanel = ({
                         <Card key={persona.id} className="border-border-light">
                           <CardContent className="p-3">
                             <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <UserRound className="h-4 w-4 text-text-muted" />
-                                  <p className="font-medium text-text-primary">{persona.name}</p>
-                                </div>
-                                <p className="mt-1 text-xs text-text-secondary">{persona.occupation} · {persona.ageRange}</p>
-                              </div>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void startPersonaSession(persona)}
-                                title="Sentetik sohbet başlat"
-                              >
-                                Başlat
-                              </Button>
+                              {(() => {
+                                const localizedPersona = localizeSyntheticPersonaForTurkishDisplay(persona);
+                                return (
+                                  <>
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <UserRound className="h-4 w-4 text-text-muted" />
+                                        <p className="font-medium text-text-primary">{localizedPersona.name}</p>
+                                      </div>
+                                      <p className="mt-1 text-xs text-text-secondary">{localizedPersona.occupation} · {localizedPersona.ageRange}</p>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => void startPersonaSession(localizedPersona)}
+                                      title="Sentetik sohbet başlat"
+                                    >
+                                      Başlat
+                                    </Button>
+                                  </>
+                                );
+                              })()}
                             </div>
-                            <p className="mt-3 text-xs leading-5 text-text-secondary">{persona.context}</p>
+                            <p className="mt-3 text-xs leading-5 text-text-secondary">
+                              {localizeSyntheticPersonaForTurkishDisplay(persona).context}
+                            </p>
                           </CardContent>
                         </Card>
                       ))}
@@ -317,10 +332,10 @@ const SyntheticUsersPanel = ({
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-text-primary">
-                        {activeSession.persona_snapshot?.name || activeSession.title}
+                        {activePersona?.name || activeSession.title}
                       </p>
                       <p className="mt-1 text-xs text-text-secondary">
-                        {activeSession.persona_snapshot?.group} · {activeSession.persona_snapshot?.context}
+                        {activePersona?.group} · {activePersona?.context}
                       </p>
                     </div>
                     <Badge variant="outline" className="shrink-0">Sentetik</Badge>
