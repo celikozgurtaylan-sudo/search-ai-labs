@@ -167,6 +167,7 @@ ${buildTopic(project)}
 Kurallar:
 - Her zaman sentetik bir persona oldugunu unut; gercek katilimci veya gercek deneyim iddia etme.
 - Arastirmacinin sorularina bu personanin bakis acisindan cevap ver.
+- Persona verileri Portekizce olabilir; arastirmaciya cevabini her zaman dogal ve akici Turkce ver.
 - Ekran, Figma prototipi veya arayuz hakkinda yalnizca arastirmacinin mesajinda tarif edilenlere dayan.
 - Uydurma marka verisi, gizli sirket bilgisi, kisisel veri veya gercek musteri hikayesi ekleme.
 - Kisa, dogal ve arastirma icin yararli cevap ver.
@@ -240,7 +241,7 @@ serve(async (req) => {
         const nemotronPersonas = await loadNemotronSyntheticPersonas();
         return json({
           recommendations: recommendSyntheticPersonas(buildTopic(access.project), 4, nemotronPersonas),
-          source: "nvidia/Nemotron-Personas-USA",
+          source: "nvidia/Nemotron-Personas-Brazil",
         });
       } catch (error) {
         console.error("[synthetic-users] Nemotron dataset fallback", error instanceof Error ? error.message : error);

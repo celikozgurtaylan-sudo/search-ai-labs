@@ -35,6 +35,7 @@ interface NemotronPersonaRow {
   bachelors_field?: string;
   occupation?: string;
   city?: string;
+  municipality?: string;
   state?: string;
   country?: string;
 }
@@ -47,7 +48,7 @@ interface NemotronRowsResponse {
 }
 
 const NEMOTRON_PERSONAS_ENDPOINT = "https://datasets-server.huggingface.co/rows";
-const NEMOTRON_PERSONAS_DATASET = "nvidia/Nemotron-Personas-USA";
+const NEMOTRON_PERSONAS_DATASET = "nvidia/Nemotron-Personas-Brazil";
 const DEFAULT_NEMOTRON_LENGTH = 100;
 const PERSONAS_PER_RECOMMENDATION_GROUP = 3;
 
@@ -123,7 +124,7 @@ const inferGroup = (row: NemotronPersonaRow) => {
     return "Life-Stage and Care Personas";
   }
 
-  return "General US Consumer Personas";
+  return "General Brazilian Consumer Personas";
 };
 
 const inferTags = (row: NemotronPersonaRow) => {
@@ -134,10 +135,11 @@ const inferTags = (row: NemotronPersonaRow) => {
     row.skills_and_expertise,
     row.hobbies_and_interests,
     row.career_goals_and_ambitions,
+    row.municipality,
     row.city,
     row.state,
   ].filter(Boolean).join(" "));
-  const tags = new Set<string>(["nemotron", "usa", "synthetic-persona"]);
+  const tags = new Set<string>(["nemotron", "brazil", "brasil", "synthetic-persona"]);
 
   Object.entries(TOPIC_KEYWORDS).forEach(([tag, keywords]) => {
     if (keywords.some((keyword) => text.includes(normalize(keyword))) || text.includes(normalize(tag))) {
@@ -169,7 +171,7 @@ const mapNemotronRowToPersona = (row: NemotronPersonaRow, index: number): Synthe
   const skills = splitListString(row.skills_and_expertise_list).slice(0, 4);
   const hobbies = splitListString(row.hobbies_and_interests_list).slice(0, 3);
   const goals = splitGoalSentences(row.career_goals_and_ambitions);
-  const location = [row.city, row.state].filter(Boolean).join(", ");
+  const location = [row.municipality || row.city, row.state].filter(Boolean).join(", ");
   const occupation = humanizeSnakeCase(row.occupation) || humanizeSnakeCase(row.education_level) || "Synthetic persona";
 
   return {
@@ -178,7 +180,7 @@ const mapNemotronRowToPersona = (row: NemotronPersonaRow, index: number): Synthe
     group: inferGroup(row),
     ageRange: ageToRange(row.age),
     occupation: location ? `${occupation} - ${location}` : occupation,
-    context: compactSentence(row.persona || row.professional_persona, "US-based synthetic persona from NVIDIA Nemotron Personas."),
+    context: compactSentence(row.persona || row.professional_persona, "Brazil-based synthetic persona from NVIDIA Nemotron Personas."),
     goals: goals.length > 0 ? goals : [
       compactSentence(row.career_goals_and_ambitions, "Make practical decisions that fit their life context."),
       "Understand value, effort, and tradeoffs before committing.",
@@ -297,14 +299,14 @@ export const SYNTHETIC_PERSONAS: SyntheticPersona[] = [
 ];
 
 const TOPIC_KEYWORDS: Record<string, string[]> = {
-  banking: ["banka", "bankacilik", "kredi", "kart", "finans", "odeme", "hesap", "sigorta", "yatirim", "fibabanka"],
-  ecommerce: ["e-ticaret", "eticaret", "urun", "sepet", "checkout", "satinalma", "siparis", "kargo", "iade", "kampanya"],
-  b2b: ["b2b", "saas", "dashboard", "panel", "crm", "operasyon", "ekip", "admin", "entegrasyon", "workflow"],
-  accessibility: ["erisilebilir", "engelli", "kontrast", "okunabilir", "kapsayici", "yasli", "klavye"],
-  mobile: ["mobil", "app", "uygulama", "ios", "android", "telefon"],
-  onboarding: ["onboarding", "kayit", "basvuru", "ilk", "aktivasyon", "uye", "form"],
-  trust: ["guven", "risk", "kvkk", "gizlilik", "izin", "onay", "sozlesme"],
-  conversion: ["donusum", "landing", "acilis", "cta", "reklam", "funnel"],
+  banking: ["banka", "bankacilik", "kredi", "kart", "finans", "odeme", "hesap", "sigorta", "yatirim", "fibabanka", "banco", "credito", "cartao", "pagamento", "conta", "financeiro"],
+  ecommerce: ["e-ticaret", "eticaret", "urun", "sepet", "checkout", "satinalma", "siparis", "kargo", "iade", "kampanya", "comercio", "varejo", "vendas", "mercado", "loja", "cliente"],
+  b2b: ["b2b", "saas", "dashboard", "panel", "crm", "operasyon", "ekip", "admin", "entegrasyon", "workflow", "gestao", "equipe", "processo", "industria"],
+  accessibility: ["erisilebilir", "engelli", "kontrast", "okunabilir", "kapsayici", "yasli", "klavye", "idoso", "acessibilidade", "inclusao"],
+  mobile: ["mobil", "app", "uygulama", "ios", "android", "telefon", "celular", "aplicativo"],
+  onboarding: ["onboarding", "kayit", "basvuru", "ilk", "aktivasyon", "uye", "form", "cadastro", "primeiro", "inscricao"],
+  trust: ["guven", "risk", "kvkk", "gizlilik", "izin", "onay", "sozlesme", "confianca", "risco", "privacidade", "seguranca"],
+  conversion: ["donusum", "landing", "acilis", "cta", "reklam", "funnel", "conversao", "campanha", "funil"],
 };
 
 export const findSyntheticPersonaById = (personaId: string) =>

@@ -102,6 +102,7 @@ ${[projectTitle, projectDescription].filter(Boolean).join("\n")}
 Kurallar:
 - Gercek katilimci gibi davranma; sentetik persona perspektifinden cevap ver.
 - Arastirmacinin sordugu soruya bu personanin bakis acisindan, Turkce ve dogal cevap ver.
+- Persona verileri Portekizce olabilir; arastirmaciya her zaman akici Turkce yanit ver.
 - Gizli sirket bilgisi, gercek musteri hikayesi veya kisisel veri uydurma.
 - Ekran veya prototip hakkinda yalnizca arastirmacinin tarif ettiklerine dayan.
 
