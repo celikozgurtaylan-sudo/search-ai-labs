@@ -64,11 +64,49 @@ interface SendMessageResponse {
   reply: string;
 }
 
+interface SyntheticFallbackResponse {
+  chatResponse?: string;
+}
+
 const callSyntheticUsers = <T>(body: Record<string, unknown>) =>
   streamEdgeFunction<T>({
     functionName: "synthetic-users",
     body,
   });
+
+const buildFallbackPersonaPrompt = ({
+  persona,
+  projectTitle,
+  projectDescription,
+  message,
+}: {
+  persona: SyntheticPersona;
+  projectTitle?: string | null;
+  projectDescription?: string;
+  message: string;
+}) => `Sentetik kullanici simulasyonu olarak yanit ver.
+
+Persona:
+- Ad: ${persona.name}
+- Grup: ${persona.group}
+- Yas araligi: ${persona.ageRange}
+- Meslek/baglam: ${persona.occupation}
+- Durum: ${persona.context}
+- Hedefler: ${persona.goals.join(", ")}
+- Frustrasyonlar: ${persona.frustrations.join(", ")}
+- Davranis ozellikleri: ${persona.traits.join(", ")}
+
+Arastirma konusu:
+${[projectTitle, projectDescription].filter(Boolean).join("\n")}
+
+Kurallar:
+- Gercek katilimci gibi davranma; sentetik persona perspektifinden cevap ver.
+- Arastirmacinin sordugu soruya bu personanin bakis acisindan, Turkce ve dogal cevap ver.
+- Gizli sirket bilgisi, gercek musteri hikayesi veya kisisel veri uydurma.
+- Ekran veya prototip hakkinda yalnizca arastirmacinin tarif ettiklerine dayan.
+
+Arastirmacinin sorusu:
+${message}`;
 
 export const syntheticUserService = {
   async recommendPersonas(projectId: string) {
@@ -113,5 +151,34 @@ export const syntheticUserService = {
       conversationHistory: compact.conversationHistory,
       conversationSummary: compact.conversationSummary,
     });
+  },
+
+  async sendFallbackMessage({
+    persona,
+    projectTitle,
+    projectDescription,
+    message,
+    history,
+  }: {
+    persona: SyntheticPersona;
+    projectTitle?: string | null;
+    projectDescription?: string;
+    message: string;
+    history: EdgeConversationEntry[];
+  }) {
+    const compact = buildCompactConversationPayload(history);
+    const data = await streamEdgeFunction<SyntheticFallbackResponse>({
+      functionName: "turkish-chat",
+      body: {
+        message: buildFallbackPersonaPrompt({ persona, projectTitle, projectDescription, message }),
+        conversationHistory: compact.conversationHistory,
+        conversationSummary: compact.conversationSummary,
+        researchMode: "structured",
+      },
+    });
+
+    return {
+      reply: data.chatResponse?.trim() || "Bu persona açısından yanıtlayabilmem için biraz daha bağlam paylaşabilir misiniz?",
+    };
   },
 };

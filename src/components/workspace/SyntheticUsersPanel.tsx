@@ -52,7 +52,6 @@ const SyntheticUsersPanel = ({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [backendAvailable, setBackendAvailable] = useState(true);
-  const [backendNotice, setBackendNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -76,7 +75,6 @@ const SyntheticUsersPanel = ({
   const loadSyntheticState = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
-    setBackendNotice(null);
 
     const localRecommendations = recommendSyntheticPersonas(recommendationTopic);
     setRecommendations(localRecommendations);
@@ -96,14 +94,12 @@ const SyntheticUsersPanel = ({
       setMessagesBySession(groupMessagesBySession(sessionPayload.messages));
       setActiveSessionId((current) => current ?? sessionPayload.sessions[0]?.id ?? null);
       setBackendAvailable(true);
-      setBackendNotice(null);
     } else {
       console.error("Failed to load synthetic sessions:", sessionResult.reason);
       setSessions([]);
       setMessagesBySession({});
       setActiveSessionId(null);
       setBackendAvailable(false);
-      setBackendNotice("Sentetik kullanıcı önerileri hazır, ancak sohbet için Supabase migration ve synthetic-users Edge Function deploy edilmeli.");
     }
 
     setLoading(false);
@@ -113,9 +109,32 @@ const SyntheticUsersPanel = ({
     void loadSyntheticState();
   }, [loadSyntheticState]);
 
+  const createLocalSession = (persona: SyntheticPersona) => {
+    const now = new Date().toISOString();
+    const session: SyntheticUserSession = {
+      id: `local-${persona.id}-${Date.now()}`,
+      project_id: projectId,
+      user_id: "local",
+      persona_id: persona.id,
+      persona_snapshot: persona,
+      status: "active",
+      title: `${persona.name} - ${persona.group}`,
+      created_at: now,
+      updated_at: now,
+    };
+
+    setSessions((prev) => [session, ...prev]);
+    setMessagesBySession((prev) => ({
+      ...prev,
+      [session.id]: [],
+    }));
+    setActiveSessionId(session.id);
+    toast.success(`${persona.name} ile sentetik sohbet hazır.`);
+  };
+
   const startPersonaSession = async (persona: SyntheticPersona) => {
     if (!backendAvailable) {
-      toast.error("Sohbet başlatmak için synthetic-users backend'i deploy edilmeli.");
+      createLocalSession(persona);
       return;
     }
 
@@ -131,8 +150,7 @@ const SyntheticUsersPanel = ({
     } catch (error) {
       console.error("Failed to start synthetic session:", error);
       setBackendAvailable(false);
-      setBackendNotice("Sohbet başlatılamadı. Supabase migration ve synthetic-users Edge Function deploy durumunu kontrol edin.");
-      toast.error("Sentetik sohbet başlatılamadı.");
+      createLocalSession(persona);
     }
   };
 
@@ -156,12 +174,23 @@ const SyntheticUsersPanel = ({
     }));
 
     try {
-      const reply = await syntheticUserService.sendMessage(
-        projectId,
-        activeSession.id,
-        trimmed,
-        buildConversationHistory(activeMessages),
-      );
+      const conversationHistory = buildConversationHistory(activeMessages);
+      const requestFallbackReply = () => syntheticUserService.sendFallbackMessage({
+        persona: activeSession.persona_snapshot,
+        projectTitle,
+        projectDescription,
+        message: trimmed,
+        history: conversationHistory,
+      });
+      const reply = activeSession.id.startsWith("local-")
+        ? await requestFallbackReply()
+        : await syntheticUserService
+          .sendMessage(projectId, activeSession.id, trimmed, conversationHistory)
+          .catch(async (error) => {
+            console.error("Falling back to turkish-chat for synthetic user message:", error);
+            setBackendAvailable(false);
+            return requestFallbackReply();
+          });
 
       const syntheticMessage: SyntheticUserMessage = {
         id: `local-synthetic-${Date.now()}`,
@@ -177,7 +206,6 @@ const SyntheticUsersPanel = ({
       }));
     } catch (error) {
       console.error("Failed to send synthetic message:", error);
-      setBackendNotice("Sentetik kullanıcı yanıtı alınamadı. Edge Function deploy, OPENAI_API_KEY ve tablo migration durumunu kontrol edin.");
       toast.error("Sentetik kullanıcı yanıtı alınamadı.");
     } finally {
       setSending(false);
@@ -221,12 +249,6 @@ const SyntheticUsersPanel = ({
                   Sentetik kullanıcı konuşmaları gerçek katılımcı kanıtı değildir ve Analiz & Rapor çıktısına karışmaz.
                 </div>
 
-                {backendNotice ? (
-                  <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-900">
-                    {backendNotice}
-                  </div>
-                ) : null}
-
                 {loading ? (
                   <div className="flex items-center gap-2 text-sm text-text-secondary">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -266,10 +288,9 @@ const SyntheticUsersPanel = ({
                                 size="sm"
                                 variant="outline"
                                 onClick={() => void startPersonaSession(persona)}
-                                disabled={!backendAvailable}
-                                title={backendAvailable ? "Sentetik sohbet başlat" : "Sohbet için synthetic-users backend deploy edilmeli"}
+                                title="Sentetik sohbet başlat"
                               >
-                                {backendAvailable ? "Başlat" : "Backend gerekli"}
+                                Başlat
                               </Button>
                             </div>
                             <p className="mt-3 text-xs leading-5 text-text-secondary">{persona.context}</p>
