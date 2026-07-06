@@ -8,12 +8,15 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import {
   syntheticUserService,
-  type SyntheticPersona,
-  type SyntheticPersonaRecommendation,
   type SyntheticUserMessage,
   type SyntheticUserSession,
 } from "@/services/syntheticUserService";
 import type { EdgeConversationEntry } from "@/lib/edgeFunctionStream";
+import {
+  recommendSyntheticPersonas,
+  type SyntheticPersona,
+  type SyntheticPersonaRecommendation,
+} from "@/lib/syntheticPersonas";
 
 interface SyntheticUsersPanelProps {
   projectId: string;
@@ -48,6 +51,8 @@ const SyntheticUsersPanel = ({
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
+  const [backendAvailable, setBackendAvailable] = useState(true);
+  const [backendNotice, setBackendNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -59,6 +64,11 @@ const SyntheticUsersPanel = ({
     [recommendations],
   );
 
+  const recommendationTopic = useMemo(
+    () => [projectTitle, projectDescription].filter(Boolean).join("\n"),
+    [projectDescription, projectTitle],
+  );
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [activeMessages.length, sending]);
@@ -66,29 +76,49 @@ const SyntheticUsersPanel = ({
   const loadSyntheticState = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
-    try {
-      const [nextRecommendations, sessionPayload] = await Promise.all([
-        syntheticUserService.recommendPersonas(projectId),
-        syntheticUserService.listSessions(projectId),
-      ]);
+    setBackendNotice(null);
 
-      setRecommendations(nextRecommendations);
+    const localRecommendations = recommendSyntheticPersonas(recommendationTopic);
+    setRecommendations(localRecommendations);
+
+    const [remoteRecommendationsResult, sessionResult] = await Promise.allSettled([
+      syntheticUserService.recommendPersonas(projectId),
+      syntheticUserService.listSessions(projectId),
+    ]);
+
+    if (remoteRecommendationsResult.status === "fulfilled" && remoteRecommendationsResult.value.length > 0) {
+      setRecommendations(remoteRecommendationsResult.value);
+    }
+
+    if (sessionResult.status === "fulfilled") {
+      const sessionPayload = sessionResult.value;
       setSessions(sessionPayload.sessions);
       setMessagesBySession(groupMessagesBySession(sessionPayload.messages));
       setActiveSessionId((current) => current ?? sessionPayload.sessions[0]?.id ?? null);
-    } catch (error) {
-      console.error("Failed to load synthetic users:", error);
-      toast.error("Sentetik kullanıcılar yüklenemedi.");
-    } finally {
-      setLoading(false);
+      setBackendAvailable(true);
+      setBackendNotice(null);
+    } else {
+      console.error("Failed to load synthetic sessions:", sessionResult.reason);
+      setSessions([]);
+      setMessagesBySession({});
+      setActiveSessionId(null);
+      setBackendAvailable(false);
+      setBackendNotice("Sentetik kullanıcı önerileri hazır, ancak sohbet için Supabase migration ve synthetic-users Edge Function deploy edilmeli.");
     }
-  }, [projectId]);
+
+    setLoading(false);
+  }, [projectId, recommendationTopic]);
 
   useEffect(() => {
     void loadSyntheticState();
   }, [loadSyntheticState]);
 
   const startPersonaSession = async (persona: SyntheticPersona) => {
+    if (!backendAvailable) {
+      toast.error("Sohbet başlatmak için synthetic-users backend'i deploy edilmeli.");
+      return;
+    }
+
     try {
       const payload = await syntheticUserService.startSession(projectId, persona.id);
       setSessions((prev) => [payload.session, ...prev]);
@@ -100,6 +130,8 @@ const SyntheticUsersPanel = ({
       toast.success(`${persona.name} ile sentetik sohbet hazır.`);
     } catch (error) {
       console.error("Failed to start synthetic session:", error);
+      setBackendAvailable(false);
+      setBackendNotice("Sohbet başlatılamadı. Supabase migration ve synthetic-users Edge Function deploy durumunu kontrol edin.");
       toast.error("Sentetik sohbet başlatılamadı.");
     }
   };
@@ -145,6 +177,7 @@ const SyntheticUsersPanel = ({
       }));
     } catch (error) {
       console.error("Failed to send synthetic message:", error);
+      setBackendNotice("Sentetik kullanıcı yanıtı alınamadı. Edge Function deploy, OPENAI_API_KEY ve tablo migration durumunu kontrol edin.");
       toast.error("Sentetik kullanıcı yanıtı alınamadı.");
     } finally {
       setSending(false);
@@ -188,6 +221,12 @@ const SyntheticUsersPanel = ({
                   Sentetik kullanıcı konuşmaları gerçek katılımcı kanıtı değildir ve Analiz & Rapor çıktısına karışmaz.
                 </div>
 
+                {backendNotice ? (
+                  <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-900">
+                    {backendNotice}
+                  </div>
+                ) : null}
+
                 {loading ? (
                   <div className="flex items-center gap-2 text-sm text-text-secondary">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -222,8 +261,15 @@ const SyntheticUsersPanel = ({
                                 </div>
                                 <p className="mt-1 text-xs text-text-secondary">{persona.occupation} · {persona.ageRange}</p>
                               </div>
-                              <Button type="button" size="sm" variant="outline" onClick={() => void startPersonaSession(persona)}>
-                                Başlat
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void startPersonaSession(persona)}
+                                disabled={!backendAvailable}
+                                title={backendAvailable ? "Sentetik sohbet başlat" : "Sohbet için synthetic-users backend deploy edilmeli"}
+                              >
+                                {backendAvailable ? "Başlat" : "Backend gerekli"}
                               </Button>
                             </div>
                             <p className="mt-3 text-xs leading-5 text-text-secondary">{persona.context}</p>

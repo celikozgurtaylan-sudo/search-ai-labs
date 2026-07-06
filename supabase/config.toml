@@ -30,3 +30,6 @@ verify_jwt = false
 
 [functions.text-to-speech]
 verify_jwt = false
+
+[functions.synthetic-users]
+verify_jwt = true

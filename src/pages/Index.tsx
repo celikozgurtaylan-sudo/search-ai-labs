@@ -294,6 +294,7 @@ const Index = () => {
           syntheticUsers: {
             enabled: true,
             source: "manual_seed_v1",
+            topic: projectDesc,
             createdAt: new Date().toISOString(),
           },
         },
