@@ -3,7 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   findPersonaById,
-  loadNemotronSyntheticPersonas,
+  loadNemotronSyntheticPersonaPool,
   recommendSyntheticPersonas,
   type SyntheticPersona,
 } from "../_shared/synthetic-personas.ts";
@@ -238,9 +238,10 @@ serve(async (req) => {
 
     if (action === "recommend") {
       try {
-        const nemotronPersonas = await loadNemotronSyntheticPersonas();
+        const topic = buildTopic(access.project);
+        const nemotronPersonas = await loadNemotronSyntheticPersonaPool(topic);
         return json({
-          recommendations: recommendSyntheticPersonas(buildTopic(access.project), 4, nemotronPersonas),
+          recommendations: recommendSyntheticPersonas(topic, 4, nemotronPersonas),
           source: "nvidia/Nemotron-Personas-Brazil",
         });
       } catch (error) {

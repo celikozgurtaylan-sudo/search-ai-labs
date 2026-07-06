@@ -13,6 +13,7 @@ import {
 } from "@/services/syntheticUserService";
 import type { EdgeConversationEntry } from "@/lib/edgeFunctionStream";
 import {
+  loadNemotronSyntheticPersonaPool,
   recommendSyntheticPersonas,
   type SyntheticPersona,
   type SyntheticPersonaRecommendation,
@@ -76,9 +77,6 @@ const SyntheticUsersPanel = ({
     if (!projectId) return;
     setLoading(true);
 
-    const localRecommendations = recommendSyntheticPersonas(recommendationTopic);
-    setRecommendations(localRecommendations);
-
     const [remoteRecommendationsResult, sessionResult] = await Promise.allSettled([
       syntheticUserService.recommendPersonas(projectId),
       syntheticUserService.listSessions(projectId),
@@ -86,6 +84,14 @@ const SyntheticUsersPanel = ({
 
     if (remoteRecommendationsResult.status === "fulfilled" && remoteRecommendationsResult.value.length > 0) {
       setRecommendations(remoteRecommendationsResult.value);
+    } else {
+      try {
+        const nemotronPersonas = await loadNemotronSyntheticPersonaPool(recommendationTopic);
+        setRecommendations(recommendSyntheticPersonas(recommendationTopic, 4, nemotronPersonas));
+      } catch (error) {
+        console.error("Failed to load Nemotron Brazil fallback personas:", error);
+        setRecommendations(recommendSyntheticPersonas(recommendationTopic));
+      }
     }
 
     if (sessionResult.status === "fulfilled") {

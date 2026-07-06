@@ -45,11 +45,14 @@ interface NemotronRowsResponse {
     row_idx: number;
     row: NemotronPersonaRow;
   }>;
+  num_rows_total?: number;
 }
 
 const NEMOTRON_PERSONAS_ENDPOINT = "https://datasets-server.huggingface.co/rows";
 const NEMOTRON_PERSONAS_DATASET = "nvidia/Nemotron-Personas-Brazil";
-const DEFAULT_NEMOTRON_LENGTH = 100;
+const NEMOTRON_PAGE_LENGTH = 100;
+const NEMOTRON_DEFAULT_TOTAL_ROWS = 1_000_000;
+const NEMOTRON_POOL_PAGE_COUNT = 10;
 const PERSONAS_PER_RECOMMENDATION_GROUP = 3;
 
 const normalize = (value: string) =>
@@ -64,6 +67,9 @@ const normalize = (value: string) =>
     .replace(/[^a-z0-9\s-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+const hashText = (value: string) =>
+  normalize(value).split("").reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) >>> 0, 0);
 
 const humanizeSnakeCase = (value?: string) =>
   (value || "")
@@ -314,7 +320,7 @@ export const findSyntheticPersonaById = (personaId: string) =>
 
 export const loadNemotronSyntheticPersonas = async ({
   offset = 0,
-  length = DEFAULT_NEMOTRON_LENGTH,
+  length = NEMOTRON_PAGE_LENGTH,
 }: {
   offset?: number;
   length?: number;
@@ -334,6 +340,39 @@ export const loadNemotronSyntheticPersonas = async ({
 
   const payload = await response.json() as NemotronRowsResponse;
   return (payload.rows ?? []).map(({ row }, index) => mapNemotronRowToPersona(row, offset + index));
+};
+
+const buildNemotronOffsets = (topic: string, pageCount = NEMOTRON_POOL_PAGE_COUNT) => {
+  const maxOffset = NEMOTRON_DEFAULT_TOTAL_ROWS - NEMOTRON_PAGE_LENGTH;
+  const stride = Math.floor(NEMOTRON_DEFAULT_TOTAL_ROWS / pageCount);
+  const topicSeed = hashText(topic || "general synthetic users");
+  const offsets = new Set<number>([0]);
+
+  for (let index = 0; index < pageCount; index += 1) {
+    const offset = ((topicSeed + index * stride) % maxOffset);
+    offsets.add(Math.floor(offset / NEMOTRON_PAGE_LENGTH) * NEMOTRON_PAGE_LENGTH);
+  }
+
+  return Array.from(offsets).slice(0, pageCount);
+};
+
+export const loadNemotronSyntheticPersonaPool = async (topic: string, pageCount = NEMOTRON_POOL_PAGE_COUNT) => {
+  const offsets = buildNemotronOffsets(topic, pageCount);
+  const results = await Promise.allSettled(
+    offsets.map((offset) => loadNemotronSyntheticPersonas({ offset, length: NEMOTRON_PAGE_LENGTH })),
+  );
+  const personas = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+
+  if (personas.length === 0) {
+    const firstError = results.find((result) => result.status === "rejected");
+    throw new Error(
+      firstError?.status === "rejected" && firstError.reason instanceof Error
+        ? firstError.reason.message
+        : "Failed to load Nemotron Brazil personas",
+    );
+  }
+
+  return personas;
 };
 
 export const recommendSyntheticPersonas = (
