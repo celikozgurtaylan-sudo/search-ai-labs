@@ -1195,7 +1195,7 @@ const Workspace = () => {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-[100dvh] overflow-hidden bg-canvas">
+      <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-canvas">
         <header className="border-b border-border-light bg-white flex-shrink-0 relative z-60">
           <div className="max-w-full mx-auto px-6 py-4">
             <div className="flex items-center justify-between">
@@ -1239,7 +1239,7 @@ const Workspace = () => {
         </header>
 
         {showSyntheticUsers ? (
-          <div className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden">
             <SyntheticUsersPanel
               projectId={projectData.id || ""}
               projectTitle={projectData.title}
@@ -1248,7 +1248,7 @@ const Workspace = () => {
             />
           </div>
         ) : isAIEnhancedMode ? (
-          <div className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden">
             {currentStep === "analyze" ? (
               <AnalysisPanel
                 projectId={projectData.id || ""}
@@ -1293,7 +1293,7 @@ const Workspace = () => {
             )}
           </div>
         ) : shouldShowCenteredGuideChat ? (
-          <div className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden">
             <ChatPanel
               key={`chat-centered-${projectData.id || "draft"}`}
               projectData={projectData}
@@ -1315,7 +1315,7 @@ const Workspace = () => {
         ) : (
           <ResizablePanelGroup
             direction={isMobile ? "vertical" : "horizontal"}
-            className="h-[calc(100dvh-73px)] min-h-0 overflow-hidden"
+            className="min-h-0 flex-1 overflow-hidden"
           >
             <ResizablePanel
               defaultSize={isChatCollapsed ? 4 : currentStep === "guide" ? 24 : 25}
