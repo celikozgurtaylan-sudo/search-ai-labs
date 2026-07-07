@@ -1,5 +1,7 @@
 export {
   SYNTHETIC_PERSONAS,
+  dedupeSyntheticPersonaNames,
+  dedupeSyntheticPersonaRecommendationNames,
   findSyntheticPersonaById as findPersonaById,
   localizeSyntheticPersonaForTurkishDisplay,
   loadNemotronSyntheticPersonaPool,

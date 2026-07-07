@@ -67,6 +67,7 @@ export interface ProjectReportQuote {
 export interface ProjectReportSyntheticMeta {
   runId: string;
   dataset: string;
+  sampleSize?: number;
   personaCount: number;
   questionCount: number;
   responseCount: number;

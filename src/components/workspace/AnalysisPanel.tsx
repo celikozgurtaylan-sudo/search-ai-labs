@@ -46,6 +46,7 @@ interface AnalysisPanelProps {
   projectId: string;
   sessionIds: string[];
   synthetic?: boolean;
+  syntheticSampleSize?: number;
   onOpenSyntheticChat?: (personaId?: string | null) => void;
 }
 
@@ -734,7 +735,7 @@ const TurnCard = ({ turn }: { turn: ProjectReportTurn }) => (
 const truncateTurn = (value: string, maxLength = 120) =>
   value.length > maxLength ? `${value.slice(0, maxLength - 1).trim()}…` : value;
 
-const AnalysisPanel = ({ projectId, sessionIds, synthetic = false, onOpenSyntheticChat }: AnalysisPanelProps) => {
+const AnalysisPanel = ({ projectId, sessionIds, synthetic = false, syntheticSampleSize, onOpenSyntheticChat }: AnalysisPanelProps) => {
   const [projectTitle, setProjectTitle] = useState("Araştırma Projesi");
   const [projectDescription, setProjectDescription] = useState("");
   const [report, setReport] = useState<ProjectInterviewReport | null>(null);
@@ -842,7 +843,7 @@ const AnalysisPanel = ({ projectId, sessionIds, synthetic = false, onOpenSynthet
     setIsGenerating(true);
     try {
       const nextReport = synthetic
-        ? (await syntheticUserService.runResearch(projectId)).report
+        ? (await syntheticUserService.runResearch(projectId, { sampleSize: syntheticSampleSize })).report
         : await projectReportService.generateProjectReport(projectId, { force: true });
       setReport(nextReport);
       toast.success(synthetic ? "Sentetik analiz yeniden üretildi." : "Analiz raporu güncellendi.");
@@ -1086,7 +1087,7 @@ const AnalysisPanel = ({ projectId, sessionIds, synthetic = false, onOpenSynthet
                     title={report.interviewMode === "synthetic" ? "Persona" : "Katılım"}
                     value={`${report.overview.completedParticipantCount}/${report.overview.invitedParticipantCount}`}
                     description={report.interviewMode === "synthetic"
-                      ? `${report.syntheticMeta?.dataset || "Sentetik veri seti"} üzerinden seçildi.`
+                      ? `${report.syntheticMeta?.sampleSize || report.syntheticMeta?.personaCount || report.overview.invitedParticipantCount} kişilik sentetik örneklem seçildi.`
                       : `Katılım oranı ${formatPercent(report.overview.joinRate)} • Tamamlama oranı ${formatPercent(report.overview.completionRate)}`}
                   />
                   <ReportMetricCard

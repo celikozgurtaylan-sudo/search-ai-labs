@@ -54,9 +54,18 @@ const NEMOTRON_PAGE_LENGTH = 100;
 const NEMOTRON_DEFAULT_TOTAL_ROWS = 1_000_000;
 const NEMOTRON_POOL_PAGE_COUNT = 10;
 const PERSONAS_PER_RECOMMENDATION_GROUP = 3;
-const TURKISH_FEMALE_NAMES = ["Elif", "Zeynep", "Derya", "Selin", "Aylin", "Ece", "Burcu", "Merve", "Deniz", "Seda", "İpek", "Aslı"];
-const TURKISH_MALE_NAMES = ["Mert", "Kerem", "Burak", "Can", "Emre", "Onur", "Barış", "Tolga", "Kaan", "Deniz", "Arda", "Cem"];
-const TURKISH_NEUTRAL_NAMES = ["Deniz", "Ece", "Can", "Özgür", "Derya", "İlker", "Ekin", "Yağmur"];
+const TURKISH_FEMALE_NAMES = [
+  "Elif", "Zeynep", "Derya", "Selin", "Aylin", "Ece", "Burcu", "Merve", "Deniz", "Seda", "İpek", "Aslı",
+  "Buse", "Ceren", "Gizem", "Melis", "Nazlı", "Pınar", "Yasemin", "İrem", "Tuğçe", "Begüm", "Cansu", "Nihan",
+  "Özge", "Şule", "Gökçe", "Dilara", "Bahar", "Esra", "Hande", "Leyla", "Nil", "Sibel",
+];
+const TURKISH_MALE_NAMES = [
+  "Mert", "Kerem", "Burak", "Can", "Emre", "Onur", "Barış", "Tolga", "Kaan", "Deniz", "Arda", "Cem",
+  "Ahmet", "Mehmet", "Ali", "Berk", "Eren", "Serkan", "Umut", "Volkan", "Yunus", "Hakan", "Ozan", "Tuna",
+  "Levent", "Murat", "Sinan", "Taylan", "Alp", "Koray", "Fırat", "İlker",
+];
+const TURKISH_NEUTRAL_NAMES = ["Deniz", "Ece", "Can", "Özgür", "Derya", "İlker", "Ekin", "Yağmur", "Evren", "Doğa", "Rüzgar", "Umut"];
+const COUNTRY_OR_LOCATION_PATTERN = /\b(brazil|brasil|brazilian|brasileir[oa]s?|brezilya|brezilyalı|sao paulo|são paulo|rio de janeiro|minas gerais|goias|goiás|bahia|parana|paraná|ceara|ceará|pernambuco|amazonas|paraiba|paraíba|municipality|municipio|município|state|estado)\b/gi;
 
 const normalize = (value: string) =>
   value
@@ -92,6 +101,14 @@ const compactSentence = (value?: string, fallback = "") => {
   const sentence = trimmed.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim();
   return sentence || trimmed;
 };
+
+const stripDatasetLocationLanguage = (value?: string) =>
+  (value || "")
+    .replace(COUNTRY_OR_LOCATION_PATTERN, "")
+    .replace(/\s+-\s+[^.·,;]+(?:,\s*[^.·,;]+)?/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .trim();
 
 const splitListString = (value?: string) =>
   (value || "")
@@ -138,13 +155,13 @@ const inferGroup = (row: NemotronPersonaRow) => {
     return "Yaşam Evresi ve Bakım Personaları";
   }
 
-  return "Brezilyalı Genel Tüketici Personaları";
+  return "Genel Tüketici Personaları";
 };
 
 const translateOccupation = (value?: string) => {
-  const normalized = normalize(value || "");
+  const normalized = normalize(stripDatasetLocationLanguage(value || ""));
 
-  if (!normalized) return "Brezilya bağlamında sentetik kullanıcı";
+  if (!normalized) return "genel yaşam bağlamından kullanıcı";
   if (/\b(operador|maquina|montador|instalacao|industria|metalurgia|producao)\b/.test(normalized)) {
     return "makine operatörü ve üretim çalışanı";
   }
@@ -170,15 +187,13 @@ const translateOccupation = (value?: string) => {
     return "genel yaşam bağlamından kullanıcı";
   }
 
-  return "Brezilya bağlamında sentetik kullanıcı";
+  return "genel yaşam bağlamından kullanıcı";
 };
 
 const buildTurkishContext = (row: NemotronPersonaRow, name: string, occupation: string) => {
-  const location = [row.municipality || row.city, row.state].filter(Boolean).join(", ");
   const age = Number.isFinite(row.age) ? `${row.age} yaşında, ` : "";
-  const locationText = location ? `${location} çevresinde yaşayan` : "Brezilya'da yaşayan";
 
-  return `${name}, ${age}${locationText} ${occupation}. Günlük kararlarında yerel yaşam koşulları, çalışma düzeni, aile/topluluk ilişkileri ve pratik beklentiler belirleyicidir. Araştırma konusuna bu Brezilya bağlamından, Türkçe yanıt verecek şekilde tepki verir.`;
+  return `${name}, ${age}${occupation}. Günlük kararlarında çalışma düzeni, aile/topluluk ilişkileri, pratiklik, güven ve maliyet beklentileri belirleyicidir. Araştırma konusuna doğal Türkçe ile tepki verir.`;
 };
 
 const translateGroupName = (group: string) => {
@@ -187,8 +202,8 @@ const translateGroupName = (group: string) => {
   if (group === "Community and Creative Personas") return "Topluluk ve Yaratıcı Yaşam Personaları";
   if (group === "Operations and Practical Planners") return "Operasyon ve Planlama Personaları";
   if (group === "Life-Stage and Care Personas") return "Yaşam Evresi ve Bakım Personaları";
-  if (group === "General Brazilian Consumer Personas") return "Brezilyalı Genel Tüketici Personaları";
-  return group;
+  if (group === "General Brazilian Consumer Personas") return "Genel Tüketici Personaları";
+  return stripDatasetLocationLanguage(group).replace(/^General\s+/i, "Genel ") || "Genel Tüketici Personaları";
 };
 
 const buildTurkishGoals = (occupation: string) => [
@@ -197,9 +212,9 @@ const buildTurkishGoals = (occupation: string) => [
   `${occupation} perspektifinden gerçekçi ve uygulanabilir çözümler görmek`,
 ];
 
-const BRAZILIAN_PERSONA_FRUSTRATIONS = [
+const SYNTHETIC_PERSONA_FRUSTRATIONS = [
   "Belirsiz yönlendirmeler ve karmaşık açıklamalar",
-  "Yerel yaşam koşullarını dikkate almayan deneyimler",
+  "Günlük ihtiyaçları dikkate almayan deneyimler",
   "Gereksiz adımlar, zaman kaybı ve güven eksikliği",
 ];
 
@@ -215,7 +230,7 @@ const inferTags = (row: NemotronPersonaRow) => {
     row.city,
     row.state,
   ].filter(Boolean).join(" "));
-  const tags = new Set<string>(["nemotron", "brazil", "brasil", "synthetic-persona"]);
+  const tags = new Set<string>(["nemotron", "synthetic-persona"]);
 
   Object.entries(TOPIC_KEYWORDS).forEach(([tag, keywords]) => {
     if (keywords.some((keyword) => text.includes(normalize(keyword))) || text.includes(normalize(tag))) {
@@ -243,7 +258,7 @@ const inferName = (row: NemotronPersonaRow, index: number) => {
   return name || `Nemotron Persona ${index + 1}`;
 };
 
-const pickTurkishName = (seed: string, sex?: string) => {
+const pickTurkishName = (seed: string, sex?: string, usedNames?: Set<string>) => {
   const normalizedSex = normalize(sex || "");
   const names = normalizedSex.includes("feminino")
     ? TURKISH_FEMALE_NAMES
@@ -251,13 +266,23 @@ const pickTurkishName = (seed: string, sex?: string) => {
       ? TURKISH_MALE_NAMES
       : TURKISH_NEUTRAL_NAMES;
 
-  return names[hashText(seed) % names.length];
+  const startIndex = hashText(seed) % names.length;
+  for (let offset = 0; offset < names.length; offset += 1) {
+    const candidate = names[(startIndex + offset) % names.length];
+    if (!usedNames?.has(candidate)) {
+      usedNames?.add(candidate);
+      return candidate;
+    }
+  }
+
+  const fallbackName = `${names[startIndex]} ${usedNames ? usedNames.size + 1 : ""}`.trim();
+  usedNames?.add(fallbackName);
+  return fallbackName;
 };
 
 const mapNemotronRowToPersona = (row: NemotronPersonaRow, index: number): SyntheticPersona => {
   const skills = splitListString(row.skills_and_expertise_list).slice(0, 4);
   const hobbies = splitListString(row.hobbies_and_interests_list).slice(0, 3);
-  const location = [row.municipality || row.city, row.state].filter(Boolean).join(", ");
   const occupation = translateOccupation(row.occupation || row.professional_persona || row.education_level);
   const name = pickTurkishName(row.uuid || inferName(row, index), row.sex);
 
@@ -266,10 +291,10 @@ const mapNemotronRowToPersona = (row: NemotronPersonaRow, index: number): Synthe
     name,
     group: inferGroup(row),
     ageRange: ageToRange(row.age),
-    occupation: location ? `${occupation} - ${location}` : occupation,
+    occupation,
     context: buildTurkishContext(row, name, occupation),
     goals: buildTurkishGoals(occupation),
-    frustrations: BRAZILIAN_PERSONA_FRUSTRATIONS,
+    frustrations: SYNTHETIC_PERSONA_FRUSTRATIONS,
     traits: [
       ...skills,
       ...hobbies,
@@ -282,25 +307,65 @@ const mapNemotronRowToPersona = (row: NemotronPersonaRow, index: number): Synthe
 export const localizeSyntheticPersonaForTurkishDisplay = (persona: SyntheticPersona): SyntheticPersona => {
   if (!persona.id.startsWith("nemotron-")) return persona;
 
-  const [rawOccupation, rawLocation] = persona.occupation.split(" - ");
+  const [rawOccupation] = persona.occupation.split(" - ");
   const occupation = translateOccupation(rawOccupation || persona.occupation);
-  const location = rawLocation?.trim();
   const name = TURKISH_FEMALE_NAMES.includes(persona.name) || TURKISH_MALE_NAMES.includes(persona.name) || TURKISH_NEUTRAL_NAMES.includes(persona.name)
     ? persona.name
     : pickTurkishName(persona.id);
-  const context = location
-    ? `${name}, ${location} çevresinde yaşayan ${occupation}. Araştırma konusuna Brezilya'daki günlük yaşamı, iş düzeni ve pratik beklentileri üzerinden Türkçe yanıt verir.`
-    : `${name}, Brezilya bağlamında yaşayan ${occupation}. Araştırma konusuna yerel yaşamı, iş düzeni ve pratik beklentileri üzerinden Türkçe yanıt verir.`;
+  const context = `${name}, ${occupation}. Araştırma konusuna günlük yaşamı, iş düzeni ve pratik beklentileri üzerinden doğal Türkçe ile yanıt verir.`;
 
   return {
     ...persona,
     name,
     group: translateGroupName(persona.group),
-    occupation: location ? `${occupation} - ${location}` : occupation,
+    occupation,
     context,
     goals: buildTurkishGoals(occupation),
-    frustrations: BRAZILIAN_PERSONA_FRUSTRATIONS,
+    frustrations: SYNTHETIC_PERSONA_FRUSTRATIONS,
+    tags: persona.tags.filter((tag) => !["brazil", "brasil", "brazilian"].includes(normalize(tag))),
   };
+};
+
+export const dedupeSyntheticPersonaNames = (personas: SyntheticPersona[]) => {
+  const usedNames = new Set<string>();
+
+  return personas.map((persona) => {
+    const localizedPersona = localizeSyntheticPersonaForTurkishDisplay(persona);
+    const isKnownName = [
+      ...TURKISH_FEMALE_NAMES,
+      ...TURKISH_MALE_NAMES,
+      ...TURKISH_NEUTRAL_NAMES,
+    ].includes(localizedPersona.name);
+    const nextName = isKnownName && !usedNames.has(localizedPersona.name)
+      ? localizedPersona.name
+      : pickTurkishName(`${localizedPersona.id}-${usedNames.size}`, undefined, usedNames);
+
+    if (isKnownName && nextName === localizedPersona.name) {
+      usedNames.add(nextName);
+    }
+
+    return {
+      ...localizedPersona,
+      name: nextName,
+      context: localizedPersona.context.replace(localizedPersona.name, nextName),
+    };
+  });
+};
+
+export const dedupeSyntheticPersonaRecommendationNames = (
+  recommendations: SyntheticPersonaRecommendation[],
+): SyntheticPersonaRecommendation[] => {
+  const dedupedPersonas = dedupeSyntheticPersonaNames(
+    recommendations.flatMap((recommendation) => recommendation.personas),
+  );
+  const byId = new Map(dedupedPersonas.map((persona) => [persona.id, persona]));
+
+  return recommendations.map((recommendation) => ({
+    ...recommendation,
+    group: translateGroupName(recommendation.group),
+    reasons: recommendation.reasons.filter((reason) => !["brazil", "brasil", "brazilian"].includes(normalize(reason))),
+    personas: recommendation.personas.map((persona) => byId.get(persona.id) ?? localizeSyntheticPersonaForTurkishDisplay(persona)),
+  }));
 };
 
 export const SYNTHETIC_PERSONAS: SyntheticPersona[] = [
@@ -466,7 +531,7 @@ export const loadNemotronSyntheticPersonaPool = async (topic: string, pageCount 
     throw new Error(
       firstError?.status === "rejected" && firstError.reason instanceof Error
         ? firstError.reason.message
-        : "Failed to load Nemotron Brazil personas",
+        : "Failed to load synthetic personas",
     );
   }
 

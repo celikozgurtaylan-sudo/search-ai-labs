@@ -2,6 +2,8 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  dedupeSyntheticPersonaNames,
+  dedupeSyntheticPersonaRecommendationNames,
   findPersonaById,
   localizeSyntheticPersonaForTurkishDisplay,
   loadNemotronSyntheticPersonaPool,
@@ -22,7 +24,8 @@ const supabase = createClient(
 const MODEL = Deno.env.get("ORCHESTRATOR_MODEL") || "gpt-4.1";
 const SYNTHETIC_DATASET = "nvidia/Nemotron-Personas-Brazil";
 const DEFAULT_SYNTHETIC_PERSONA_COUNT = 6;
-const MAX_SYNTHETIC_PERSONAS = 8;
+const MIN_SYNTHETIC_PERSONAS = 3;
+const MAX_SYNTHETIC_PERSONAS = 12;
 const MAX_SYNTHETIC_QUESTIONS = 18;
 
 const parseBearerToken = (req: Request) => {
@@ -33,6 +36,12 @@ const parseBearerToken = (req: Request) => {
 
 const asString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 const asArray = <T>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
+
+const clampSyntheticSampleSize = (value: unknown) => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return DEFAULT_SYNTHETIC_PERSONA_COUNT;
+  return Math.min(MAX_SYNTHETIC_PERSONAS, Math.max(MIN_SYNTHETIC_PERSONAS, Math.round(numericValue)));
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -201,7 +210,8 @@ ${buildTopic(project)}
 Kurallar:
 - Her zaman sentetik bir persona oldugunu unut; gercek katilimci veya gercek deneyim iddia etme.
 - Arastirmacinin sorularina bu personanin bakis acisindan cevap ver.
-- Persona verileri Portekizce olabilir; arastirmaciya cevabini her zaman dogal ve akici Turkce ver.
+- Cevabini her zaman dogal ve akici Turkce ver; Turkiye'deki kullanici beklentilerine uyarlanmis gibi dusun.
+- Veri seti kaynakli ulke, sehir, eyalet, belediye veya Brezilya/Portekizce baglam ayrintilarini asla soyleme.
 - Ekran, Figma prototipi veya arayuz hakkinda yalnizca arastirmacinin mesajinda tarif edilenlere dayan.
 - Uydurma marka verisi, gizli sirket bilgisi, kisisel veri veya gercek musteri hikayesi ekleme.
 - Kisa, dogal ve arastirma icin yararli cevap ver.
@@ -230,25 +240,23 @@ const extractDiscussionGuideQuestions = (project: Record<string, unknown>) => {
 const selectSyntheticPersonas = async (
   topic: string,
   requestedPersonaIds: string[],
+  sampleSize: number,
 ) => {
   const pool = await loadNemotronSyntheticPersonaPool(topic);
   const localizedPool = pool.map((persona) => localizeSyntheticPersonaForTurkishDisplay(persona));
   const requestedSet = new Set(requestedPersonaIds.filter(Boolean));
   const requestedPersonas = localizedPool.filter((persona) => requestedSet.has(persona.id));
   const fallbackPersonas = localizedPool.filter((persona) => !requestedSet.has(persona.id));
-  const selected = [...requestedPersonas, ...fallbackPersonas].slice(
-    0,
-    Math.min(MAX_SYNTHETIC_PERSONAS, Math.max(requestedPersonaIds.length || DEFAULT_SYNTHETIC_PERSONA_COUNT, 1)),
-  );
+  const selected = [...requestedPersonas, ...fallbackPersonas].slice(0, sampleSize);
 
   if (selected.length === 0) {
-    return recommendSyntheticPersonas(topic)
+    return dedupeSyntheticPersonaNames(recommendSyntheticPersonas(topic)
       .flatMap((recommendation) => recommendation.personas)
       .map((persona) => localizeSyntheticPersonaForTurkishDisplay(persona))
-      .slice(0, DEFAULT_SYNTHETIC_PERSONA_COUNT);
+      .slice(0, sampleSize));
   }
 
-  return selected;
+  return dedupeSyntheticPersonaNames(selected);
 };
 
 const requestSyntheticResearchAnswer = async ({
@@ -282,6 +290,7 @@ Yanitin:
 - 2-5 cumle olsun.
 - Bu personanin bakis acisini yansitsin.
 - Gercek katilimci kaniti gibi davranmasin.
+- Brezilya, Portekizce, sehir, eyalet veya belediye baglami soylemesin.
 - Verilmeyen ekran, marka veya gizli bilgi uydurmasin.`,
         },
         {
@@ -635,6 +644,7 @@ const buildSyntheticReport = async ({
     syntheticMeta: {
       runId: asString(run.id),
       dataset: SYNTHETIC_DATASET,
+      sampleSize: Number(run.persona_count) || personaRefs.size,
       personaCount: personaRefs.size,
       questionCount: questions.length,
       responseCount,
@@ -721,7 +731,7 @@ serve(async (req) => {
         const topic = buildTopic(access.project);
         const nemotronPersonas = await loadNemotronSyntheticPersonaPool(topic);
         return json({
-          recommendations: recommendSyntheticPersonas(topic, 4, nemotronPersonas),
+          recommendations: dedupeSyntheticPersonaRecommendationNames(recommendSyntheticPersonas(topic, 4, nemotronPersonas)),
           source: "nvidia/Nemotron-Personas-Brazil",
         });
       } catch (error) {
@@ -729,7 +739,7 @@ serve(async (req) => {
       }
 
       return json({
-        recommendations: recommendSyntheticPersonas(buildTopic(access.project)),
+        recommendations: dedupeSyntheticPersonaRecommendationNames(recommendSyntheticPersonas(buildTopic(access.project))),
         source: "local_fallback",
       });
     }
@@ -810,7 +820,8 @@ serve(async (req) => {
 
       const topic = buildTopic(access.project);
       const requestedPersonaIds = asArray<string>(payload.personaIds).filter((value) => typeof value === "string");
-      const personas = await selectSyntheticPersonas(topic, requestedPersonaIds);
+      const sampleSize = clampSyntheticSampleSize(payload.sampleSize);
+      const personas = await selectSyntheticPersonas(topic, requestedPersonaIds, sampleSize);
 
       if (personas.length === 0) {
         return json({ error: "Synthetic personas could not be loaded" }, 500);
@@ -931,6 +942,7 @@ serve(async (req) => {
             ...syntheticUsers,
             enabled: true,
             source: SYNTHETIC_DATASET,
+            sampleSize,
             lastRunId: run.id,
             report,
             updatedAt: completedAt,

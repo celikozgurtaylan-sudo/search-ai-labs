@@ -327,8 +327,7 @@ export const shouldRetryTTSError = (error: unknown) => {
     return true;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const e = error as any;
+  const e = error as TTSRequestError & { code?: string };
 
   if (isQuotaExceededTTSError(error) || e.code === "missing_elevenlabs_key") {
     return false;

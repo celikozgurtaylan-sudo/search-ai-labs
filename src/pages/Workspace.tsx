@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Bot, ChevronLeft, ChevronRight, Loader2, Pause, Play, Square, Users } from "lucide-react";
+import { ArrowLeft, Bot, ChevronLeft, ChevronRight, Loader2, Minus, Pause, Play, Plus, Square, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -48,6 +48,15 @@ import { toast } from "sonner";
 
 type WorkspaceStep = "guide" | "recruit" | "run" | "analyze";
 const WORKSPACE_CHAT_STORAGE_PREFIX = "searchai-workspace-chat";
+const SYNTHETIC_SAMPLE_SIZE_MIN = 3;
+const SYNTHETIC_SAMPLE_SIZE_MAX = 12;
+const SYNTHETIC_SAMPLE_SIZE_DEFAULT = 6;
+
+const clampSyntheticSampleSize = (value: unknown) => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return SYNTHETIC_SAMPLE_SIZE_DEFAULT;
+  return Math.min(SYNTHETIC_SAMPLE_SIZE_MAX, Math.max(SYNTHETIC_SAMPLE_SIZE_MIN, Math.round(numericValue)));
+};
 
 const getPersistedWorkflowStage = (analysis: any): WorkspaceStep | null => {
   const workflowStage = analysis?.workflowStage;
@@ -442,6 +451,7 @@ const Workspace = () => {
   const [showPauseResearchDialog, setShowPauseResearchDialog] = useState(false);
   const [showCompleteResearchDialog, setShowCompleteResearchDialog] = useState(false);
   const [isSyntheticAnalysisRunning, setIsSyntheticAnalysisRunning] = useState(false);
+  const [syntheticSampleSize, setSyntheticSampleSize] = useState(SYNTHETIC_SAMPLE_SIZE_DEFAULT);
   const lastPersistedAnalysisKeyRef = useRef<string>("");
   const lastPersistedWorkspaceChatKeyRef = useRef<string>("");
   const restoredChatProjectIdRef = useRef<string | null>(null);
@@ -457,6 +467,10 @@ const Workspace = () => {
   );
   const hasStructuredGuide = Boolean(discussionGuide?.sections?.length);
   const shouldShowCenteredGuideChat = !isAIEnhancedMode && currentStep === "guide" && !hasStructuredGuide;
+
+  useEffect(() => {
+    setSyntheticSampleSize(clampSyntheticSampleSize(projectData?.analysis?.syntheticUsers?.sampleSize));
+  }, [projectData?.analysis?.syntheticUsers?.sampleSize]);
 
   const syncProjectData = useCallback((nextProjectData: ProjectData) => {
     setProjectData(nextProjectData);
@@ -928,6 +942,7 @@ const Workspace = () => {
         syntheticUsers: {
           ...(projectData.analysis?.syntheticUsers || {}),
           enabled: true,
+          sampleSize: syntheticSampleSize,
           updatedAt: new Date().toISOString(),
         },
       };
@@ -941,13 +956,14 @@ const Workspace = () => {
         analysis: nextAnalysis,
       });
 
-      const result = await syntheticUserService.runResearch(projectData.id);
+      const result = await syntheticUserService.runResearch(projectData.id, { sampleSize: syntheticSampleSize });
       const refreshedProject = await projectService.getProject(projectData.id);
       const completedAnalysis = refreshedProject?.analysis || {
         ...nextAnalysis,
         workflowStage: "analyze" as WorkspaceStep,
         syntheticUsers: {
           ...(nextAnalysis.syntheticUsers || {}),
+          sampleSize: syntheticSampleSize,
           report: result.report,
           lastRunId: result.run?.id,
           updatedAt: new Date().toISOString(),
@@ -1040,18 +1056,61 @@ const Workspace = () => {
   const getStepButton = () => {
     switch (currentStep) {
       case "guide":
+        {
+          const guideCtaDisabled = isSyntheticAnalysisRunning ||
+            (syntheticUsersEnabled
+              ? !isResearchRelated || !discussionGuide || !isButtonReady
+              : isAIEnhancedMode
+              ? !isAIEnhancedReady(aiEnhancedBrief)
+              : !isResearchRelated || !discussionGuide || !isButtonReady);
+
+          if (syntheticUsersEnabled) {
+            return (
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex h-10 items-center gap-2 rounded-md border border-border-light bg-white px-2 text-sm text-text-secondary">
+                  <span className="px-1 font-medium">Örneklem</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => setSyntheticSampleSize((current) => clampSyntheticSampleSize(current - 1))}
+                    disabled={isSyntheticAnalysisRunning || syntheticSampleSize <= SYNTHETIC_SAMPLE_SIZE_MIN}
+                    title="Sentetik kullanıcı sayısını azalt"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                  <span className="w-8 text-center font-semibold text-text-primary">{syntheticSampleSize}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => setSyntheticSampleSize((current) => clampSyntheticSampleSize(current + 1))}
+                    disabled={isSyntheticAnalysisRunning || syntheticSampleSize >= SYNTHETIC_SAMPLE_SIZE_MAX}
+                    title="Sentetik kullanıcı sayısını artır"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Button
+                  onClick={handleNextStep}
+                  className="bg-brand-primary hover:bg-brand-primary-hover text-white"
+                  disabled={guideCtaDisabled}
+                  title={`Research: ${isResearchRelated}, Guide: ${!!discussionGuide}, Ready: ${isButtonReady}`}
+                >
+                  {isSyntheticAnalysisRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Users className="w-4 h-4 mr-2" />}
+                  {isSyntheticAnalysisRunning ? "Sentetik Analiz Oluşturuluyor" : "Sentetik Analizi Oluştur"}
+                </Button>
+              </div>
+            );
+          }
+
         return (
           <Button
             onClick={handleNextStep}
             className="bg-brand-primary hover:bg-brand-primary-hover text-white"
-            disabled={
-              isSyntheticAnalysisRunning ||
-              (syntheticUsersEnabled
-                ? !isResearchRelated || !discussionGuide || !isButtonReady
-                : isAIEnhancedMode
-                ? !isAIEnhancedReady(aiEnhancedBrief)
-                : !isResearchRelated || !discussionGuide || !isButtonReady)
-            }
+            disabled={guideCtaDisabled}
             title={
               isAIEnhancedMode
                 ? `AI Enhanced hazır: ${isAIEnhancedReady(aiEnhancedBrief)}`
@@ -1059,13 +1118,10 @@ const Workspace = () => {
             }
           >
             {isSyntheticAnalysisRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Users className="w-4 h-4 mr-2" />}
-            {syntheticUsersEnabled
-              ? isSyntheticAnalysisRunning
-                ? "Sentetik Analiz Oluşturuluyor"
-                : "Sentetik Analizi Oluştur"
-              : "Sonraki: Katılımcıları Ekle →"}
+            Sonraki: Katılımcıları Ekle →
           </Button>
         );
+        }
       case "recruit":
         return (
           <Button
@@ -1195,6 +1251,7 @@ const Workspace = () => {
                 projectId={projectData.id || ""}
                 sessionIds={sessions.map((session) => session.id!).filter(Boolean)}
                 synthetic={syntheticUsersEnabled}
+                syntheticSampleSize={syntheticSampleSize}
                 onOpenSyntheticChat={() => setShowSyntheticUsers(true)}
               />
             ) : currentStep === "guide" ? (
@@ -1309,6 +1366,7 @@ const Workspace = () => {
                   projectId={projectData.id || ""}
                   sessionIds={sessions.map((session) => session.id!).filter(Boolean)}
                   synthetic={syntheticUsersEnabled}
+                  syntheticSampleSize={syntheticSampleSize}
                   onOpenSyntheticChat={() => setShowSyntheticUsers(true)}
                 />
               ) : isGuideLoading ? (

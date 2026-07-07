@@ -13,6 +13,7 @@ import {
 } from "@/services/syntheticUserService";
 import type { EdgeConversationEntry } from "@/lib/edgeFunctionStream";
 import {
+  dedupeSyntheticPersonaRecommendationNames,
   localizeSyntheticPersonaForTurkishDisplay,
   loadNemotronSyntheticPersonaPool,
   recommendSyntheticPersonas,
@@ -87,14 +88,14 @@ const SyntheticUsersPanel = ({
     ]);
 
     if (remoteRecommendationsResult.status === "fulfilled" && remoteRecommendationsResult.value.length > 0) {
-      setRecommendations(remoteRecommendationsResult.value);
+      setRecommendations(dedupeSyntheticPersonaRecommendationNames(remoteRecommendationsResult.value));
     } else {
       try {
         const nemotronPersonas = await loadNemotronSyntheticPersonaPool(recommendationTopic);
-        setRecommendations(recommendSyntheticPersonas(recommendationTopic, 4, nemotronPersonas));
+        setRecommendations(dedupeSyntheticPersonaRecommendationNames(recommendSyntheticPersonas(recommendationTopic, 4, nemotronPersonas)));
       } catch (error) {
-        console.error("Failed to load Nemotron Brazil fallback personas:", error);
-        setRecommendations(recommendSyntheticPersonas(recommendationTopic));
+        console.error("Failed to load synthetic fallback personas:", error);
+        setRecommendations(dedupeSyntheticPersonaRecommendationNames(recommendSyntheticPersonas(recommendationTopic)));
       }
     }
 
@@ -335,7 +336,7 @@ const SyntheticUsersPanel = ({
                         {activePersona?.name || activeSession.title}
                       </p>
                       <p className="mt-1 text-xs text-text-secondary">
-                        {activePersona?.group} · {activePersona?.context}
+                        {activePersona?.group} · {activePersona?.occupation} · {activePersona?.ageRange}
                       </p>
                     </div>
                     <Badge variant="outline" className="shrink-0">Sentetik</Badge>

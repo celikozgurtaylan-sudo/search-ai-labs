@@ -137,7 +137,7 @@ ${[projectTitle, projectDescription].filter(Boolean).join("\n")}
 Kurallar:
 - Gercek katilimci gibi davranma; sentetik persona perspektifinden cevap ver.
 - Arastirmacinin sordugu soruya bu personanin bakis acisindan, Turkce ve dogal cevap ver.
-- Persona verileri Portekizce olabilir; arastirmaciya her zaman akici Turkce yanit ver.
+- Veri seti kaynakli ulke, sehir, eyalet, belediye veya yabanci dil baglami soyleme.
 - Gizli sirket bilgisi, gercek musteri hikayesi veya kisisel veri uydurma.
 - Ekran veya prototip hakkinda yalnizca arastirmacinin tarif ettiklerine dayan.
 
@@ -190,11 +190,12 @@ export const syntheticUserService = {
     });
   },
 
-  async runResearch(projectId: string, options: { personaIds?: string[] } = {}) {
+  async runResearch(projectId: string, options: { personaIds?: string[]; sampleSize?: number } = {}) {
     return callSyntheticUsers<SyntheticResearchRunResponse>({
       action: "run_research",
       projectId,
       personaIds: options.personaIds ?? [],
+      sampleSize: options.sampleSize,
     });
   },
 
