@@ -396,7 +396,10 @@ const GuideLoadingPanel = ({ guide }: { guide: any }) => {
     <div className="h-full flex flex-col overflow-hidden bg-white border-l border-border-light">
       <div className="border-b border-border-light p-6 flex-shrink-0">
         <div className="space-y-3 max-w-xl">
-          <Skeleton className="h-6 w-72" />
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin text-brand-primary" />
+            <Skeleton className="h-6 w-72" />
+          </div>
           <Skeleton className="h-4 w-40" />
         </div>
       </div>
@@ -466,7 +469,7 @@ const Workspace = () => {
     [aiEnhancedBrief],
   );
   const hasStructuredGuide = Boolean(discussionGuide?.sections?.length);
-  const shouldShowCenteredGuideChat = !isAIEnhancedMode && currentStep === "guide" && !hasStructuredGuide;
+  const shouldShowCenteredGuideChat = !isAIEnhancedMode && currentStep === "guide" && !hasStructuredGuide && !syntheticUsersEnabled;
 
   useEffect(() => {
     setSyntheticSampleSize(clampSyntheticSampleSize(projectData?.analysis?.syntheticUsers?.sampleSize));

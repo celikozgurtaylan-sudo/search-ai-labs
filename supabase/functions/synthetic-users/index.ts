@@ -27,6 +27,7 @@ const DEFAULT_SYNTHETIC_PERSONA_COUNT = 6;
 const MIN_SYNTHETIC_PERSONAS = 3;
 const MAX_SYNTHETIC_PERSONAS = 12;
 const MAX_SYNTHETIC_QUESTIONS = 18;
+const SYNTHETIC_PERSONA_BATCH_CONCURRENCY = 4;
 
 const parseBearerToken = (req: Request) => {
   const header = req.headers.get("Authorization");
@@ -45,6 +46,24 @@ const clampSyntheticSampleSize = (value: unknown) => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const parseJsonObject = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    try {
+      return JSON.parse(trimmed.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+};
 
 const validateProjectOwner = async (projectId: string, token: string | null) => {
   if (!token) return null;
@@ -128,6 +147,9 @@ const isMissingSyntheticResearchTableError = (error: unknown) => {
 
 interface SyntheticResearchResponseRow {
   id: string;
+  run_id?: string;
+  project_id?: string;
+  user_id?: string;
   persona_id: string;
   persona_snapshot: Record<string, unknown>;
   question_ref: string;
@@ -259,17 +281,23 @@ const selectSyntheticPersonas = async (
   return dedupeSyntheticPersonaNames(selected);
 };
 
-const requestSyntheticResearchAnswer = async ({
+const buildFallbackSyntheticAnswer = (
+  persona: SyntheticPersona,
+  question: { section: string; questionText: string },
+) =>
+  `${persona.name} perspektifinden baktığımda bu konuda önce ihtiyacın aciliyetine, maliyete ve güven veren açıklamalara bakarım. ${question.section} bağlamında karar vermeden önce koşulları net görmek, riski anlamak ve süreci pratik tamamlayabilmek isterim. Belirsiz ifadeler veya fazla adım varsa bu seçeneği erteleyebilirim.`;
+
+const requestSyntheticResearchAnswersForPersona = async ({
   openaiApiKey,
   project,
   persona,
-  question,
+  questions,
 }: {
   openaiApiKey: string;
   project: Record<string, unknown>;
   persona: SyntheticPersona;
-  question: { section: string; questionText: string };
-}) => {
+  questions: Array<{ questionRef: string; section: string; questionText: string }>;
+}): Promise<Array<{ questionRef: string; responseText: string }>> => {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -279,6 +307,7 @@ const requestSyntheticResearchAnswer = async ({
     body: JSON.stringify({
       model: MODEL,
       temperature: 0.55,
+      response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
@@ -287,18 +316,30 @@ const requestSyntheticResearchAnswer = async ({
 Bu bir otomatik sentetik arastirma kosusudur.
 Yanitin:
 - Turkce olsun.
-- 2-5 cumle olsun.
+- Her soruya 2-4 cumleyle cevap ver.
 - Bu personanin bakis acisini yansitsin.
 - Gercek katilimci kaniti gibi davranmasin.
 - Brezilya, Portekizce, sehir, eyalet veya belediye baglami soylemesin.
-- Verilmeyen ekran, marka veya gizli bilgi uydurmasin.`,
+- Verilmeyen ekran, marka veya gizli bilgi uydurmasin.
+- Gecerli JSON disinda metin yazma.`,
         },
         {
           role: "user",
-          content: `Bölüm: ${question.section}
-Araştırma sorusu: ${question.questionText}
+          content: `Aşağıdaki araştırma sorularını bu sentetik persona perspektifinden cevapla.
 
-Bu soruya sentetik persona perspektifinden yanıt ver.`,
+Sorular:
+${JSON.stringify(questions.map((question) => ({
+  questionRef: question.questionRef,
+  section: question.section,
+  questionText: question.questionText,
+})), null, 2)}
+
+Sadece şu JSON şemasında dön:
+{
+  "answers": [
+    { "questionRef": "question-1-1", "responseText": "2-4 cümlelik Türkçe cevap" }
+  ]
+}`,
         },
       ],
     }),
@@ -309,7 +350,39 @@ Bu soruya sentetik persona perspektifinden yanıt ver.`,
   }
 
   const data = await response.json();
-  return asString(data?.choices?.[0]?.message?.content);
+  const content = asString(data?.choices?.[0]?.message?.content);
+  const parsed = parseJsonObject(content);
+  const rawAnswers = isRecord(parsed) ? asArray<Record<string, unknown>>(parsed.answers) : [];
+  const answerMap = new Map(
+    rawAnswers
+      .map((answer) => [asString(answer.questionRef), asString(answer.responseText)] as [string, string])
+      .filter(([questionRef, responseText]) => questionRef && responseText),
+  );
+
+  return questions.map((question) => ({
+    questionRef: question.questionRef,
+    responseText: answerMap.get(question.questionRef) || buildFallbackSyntheticAnswer(persona, question),
+  }));
+};
+
+const mapWithConcurrency = async <T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) => {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(concurrency, 1), items.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }));
+
+  return results;
 };
 
 const callReportLlm = async (input: {
@@ -860,32 +933,48 @@ serve(async (req) => {
       };
 
       try {
-        const responseRows = [];
-
-        for (const persona of personas) {
-          for (const question of questions) {
-            const answer = await requestSyntheticResearchAnswer({
+        const personaAnswerBatches = await mapWithConcurrency(
+          personas,
+          SYNTHETIC_PERSONA_BATCH_CONCURRENCY,
+          async (persona) => {
+            const answers = await requestSyntheticResearchAnswersForPersona({
               openaiApiKey,
               project: access.project,
               persona,
-              question,
+              questions,
+            }).catch((error) => {
+              console.error(
+                "[synthetic-users] persona batch answer failed",
+                persona.id,
+                error instanceof Error ? error.message : error,
+              );
+              return questions.map((question) => ({
+                questionRef: question.questionRef,
+                responseText: buildFallbackSyntheticAnswer(persona, question),
+              }));
             });
 
-            if (!answer) continue;
-            responseRows.push({
-              id: crypto.randomUUID(),
-              run_id: run.id,
-              project_id: projectId,
-              user_id: access.user.id,
-              persona_id: persona.id,
-              persona_snapshot: sanitizePersonaSnapshot(persona),
-              question_ref: question.questionRef,
-              section: question.section,
-              question_text: question.questionText,
-              response_text: answer,
-            });
-          }
-        }
+            return answers.map((answer): SyntheticResearchResponseRow | null => {
+              const question = questions.find((entry) => entry.questionRef === answer.questionRef);
+              if (!question || !answer.responseText) return null;
+
+              return {
+                id: crypto.randomUUID(),
+                run_id: run.id,
+                project_id: projectId,
+                user_id: access.user.id,
+                persona_id: persona.id,
+                persona_snapshot: sanitizePersonaSnapshot(persona),
+                question_ref: question.questionRef,
+                section: question.section,
+                question_text: question.questionText,
+                response_text: answer.responseText,
+              };
+            }).filter((row): row is SyntheticResearchResponseRow => Boolean(row));
+          },
+        );
+
+        const responseRows = personaAnswerBatches.flat();
 
         const { data: insertedResponses, error: insertResponsesError } = tableBackedRun && responseRows.length > 0
           ? await supabase

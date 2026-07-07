@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildFallbackQuestions,
   ensureWarmupSection,
+  isWarmupSection,
   repairGeneratedQuestions,
   resolveQuestionMode,
   sanitizeGeneratedQuestions,
@@ -415,16 +416,63 @@ const inferSectionTitle = (questions: string[], index: number) => {
   return fallbackTitles[index] || `Araştırma Odağı ${index + 1}`;
 };
 
-const normalizeResearchPlan = (plan: any, mode: ResearchQuestionMode = "interview") => {
+const isGenericSyntheticSectionTitle = (title: string) => {
+  const normalized = normalizeForMatch(title);
+  return normalized === "deger ve motivasyon" ||
+    normalized === "deger motivasyon" ||
+    normalized === "kullanim motivasyonu" ||
+    normalized === "motivasyon" ||
+    normalized === "giris" ||
+    normalized === "giris ve isinma" ||
+    normalized === "isinma";
+};
+
+const inferSyntheticSectionTitle = (questions: string[], index: number) => {
+  const corpus = normalizeForMatch(questions.join(" "));
+
+  if (/(firsat|nereden|bul|kesfet|kanal|duy|haberdar|bilgi|erisim)/.test(corpus)) {
+    return "Fırsat Keşfi ve Erişim Kanalları";
+  }
+
+  if (/(guven|risk|kosul|faiz|maliyet|karar|onay|belge|teminat)/.test(corpus)) {
+    return "Karar Kriterleri ve Güven";
+  }
+
+  if (/(kullan|deneyim|alis|davranis|surec|ihtiyac|nakit|finansman)/.test(corpus)) {
+    return "Kullanım Bağlamı ve Alışkanlıklar";
+  }
+
+  if (/(engel|zor|belirsiz|tereddut|iyilestir|oner|destek)/.test(corpus)) {
+    return "Engeller ve İyileştirme Fırsatları";
+  }
+
+  const fallbackTitles = [
+    "Kullanım Bağlamı ve Alışkanlıklar",
+    "Fırsat Keşfi ve Erişim Kanalları",
+    "Karar Kriterleri ve Güven",
+    "Engeller ve İyileştirme Fırsatları",
+  ];
+
+  return fallbackTitles[index] || `Sentetik Araştırma Odağı ${index + 1}`;
+};
+
+const normalizeResearchPlan = (
+  plan: any,
+  mode: ResearchQuestionMode = "interview",
+  options: { syntheticPlanning?: boolean } = {},
+) => {
   if (!plan || !Array.isArray(plan.sections)) {
     return plan;
   }
 
+  const syntheticPlanning = options.syntheticPlanning === true;
   const usedTitles = new Set<string>();
   const normalizedSections = plan.sections
     .filter(Boolean)
+    .filter((section: any) => !syntheticPlanning || !isWarmupSection(section))
     .slice(0, MAX_RESEARCH_PLAN_SECTIONS)
     .map((section: any, index: number) => {
+      const qualitySectionIndex = syntheticPlanning ? index + 1 : index;
       const rawQuestions = Array.isArray(section?.questions)
         ? section.questions
             .map((question: string) => cleanText(restoreTurkishCharacters(question)))
@@ -435,22 +483,22 @@ const normalizeResearchPlan = (plan: any, mode: ResearchQuestionMode = "intervie
       const rawTitle = cleanText(restoreTurkishCharacters(section?.title));
       const repairedQuestions = repairGeneratedQuestions(rawQuestions, {
         sectionTitle: rawTitle,
-        sectionIndex: index,
+        sectionIndex: qualitySectionIndex,
         mode,
       });
 
       let { valid: questions } = sanitizeGeneratedQuestions(repairedQuestions, {
         sectionTitle: rawTitle,
-        sectionIndex: index,
+        sectionIndex: qualitySectionIndex,
         mode,
       });
 
       if (questions.length < 2) {
         const fallbackQuestions = repairGeneratedQuestions(
-          buildFallbackQuestions(rawTitle, index, mode),
+          buildFallbackQuestions(rawTitle, qualitySectionIndex, mode),
           {
             sectionTitle: rawTitle,
-            sectionIndex: index,
+            sectionIndex: qualitySectionIndex,
             mode,
           },
         );
@@ -458,14 +506,16 @@ const normalizeResearchPlan = (plan: any, mode: ResearchQuestionMode = "intervie
           [...questions, ...fallbackQuestions],
           {
             sectionTitle: rawTitle,
-            sectionIndex: index,
+            sectionIndex: qualitySectionIndex,
             mode,
           },
         );
         questions = repairedFallbacks.slice(0, 4);
       }
 
-      const preferredTitle = rawTitle && !isGenericSectionTitle(rawTitle)
+      const preferredTitle = syntheticPlanning
+        ? (rawTitle && !isGenericSyntheticSectionTitle(rawTitle) ? rawTitle : inferSyntheticSectionTitle(questions, index))
+        : rawTitle && !isGenericSectionTitle(rawTitle)
         ? rawTitle
         : inferSectionTitle(questions, index);
 
@@ -485,15 +535,33 @@ const normalizeResearchPlan = (plan: any, mode: ResearchQuestionMode = "intervie
     })
     .filter((section: any) => section.questions.length > 0);
 
-  return ensureWarmupSection({
+  const completedSections = [...normalizedSections];
+  while (syntheticPlanning && completedSections.length < 3) {
+    const sectionIndex = completedSections.length;
+    const title = inferSyntheticSectionTitle([], sectionIndex);
+    const questions = repairGeneratedQuestions(
+      buildFallbackQuestions(title, sectionIndex + 1, mode),
+      { sectionTitle: title, sectionIndex: sectionIndex + 1, mode },
+    ).slice(0, 3);
+
+    completedSections.push({
+      id: slugifySectionId(title),
+      title,
+      questions,
+    });
+  }
+
+  const normalizedPlan = {
     ...plan,
     title: cleanText(restoreTurkishCharacters(plan.title), 'Kullanıcı Araştırması'),
-    sections: normalizedSections,
-  });
+    sections: completedSections.slice(0, MAX_RESEARCH_PLAN_SECTIONS),
+  };
+
+  return syntheticPlanning ? normalizedPlan : ensureWarmupSection(normalizedPlan);
 };
 
-const describeGuideContext = (guide: any, mode: ResearchQuestionMode = "interview") => {
-  const normalizedGuide = normalizeResearchPlan(guide, mode);
+const describeGuideContext = (guide: any, mode: ResearchQuestionMode = "interview", syntheticPlanning = false) => {
+  const normalizedGuide = normalizeResearchPlan(guide, mode, { syntheticPlanning });
 
   if (!normalizedGuide?.sections?.length) {
     return '';
@@ -542,9 +610,14 @@ const isAdditiveGuideEditRequest = (message: string) => {
     !subtractiveKeywords.some((keyword) => normalized.includes(keyword));
 };
 
-const mergeAdditiveGuideUpdate = (currentGuide: any, nextGuide: any, mode: ResearchQuestionMode = "interview") => {
-  const normalizedCurrentGuide = normalizeResearchPlan(currentGuide, mode);
-  const normalizedNextGuide = normalizeResearchPlan(nextGuide, mode);
+const mergeAdditiveGuideUpdate = (
+  currentGuide: any,
+  nextGuide: any,
+  mode: ResearchQuestionMode = "interview",
+  syntheticPlanning = false,
+) => {
+  const normalizedCurrentGuide = normalizeResearchPlan(currentGuide, mode, { syntheticPlanning });
+  const normalizedNextGuide = normalizeResearchPlan(nextGuide, mode, { syntheticPlanning });
 
   if (!normalizedCurrentGuide?.sections?.length || !normalizedNextGuide?.sections?.length) {
     return normalizedNextGuide;
@@ -862,6 +935,7 @@ serve(async (req) => {
       researchContext = null,
       guideContext = null,
       researchMode = null,
+      syntheticPlanning = false,
       forcePlan = false,
       forceGuideEditPlan = false,
       stream = false,
@@ -876,7 +950,10 @@ serve(async (req) => {
       researchMode: typeof researchMode === "string" ? researchMode : null,
       hasUsabilityContext: Boolean(researchContext?.usabilityTesting),
     });
-    const normalizedGuideContext = normalizeResearchPlan(guideContext, questionMode);
+    const isSyntheticPlanning = syntheticPlanning === true;
+    const normalizedGuideContext = normalizeResearchPlan(guideContext, questionMode, {
+      syntheticPlanning: isSyntheticPlanning,
+    });
     const shouldLoadLearningHints =
       forcePlan ||
       forceGuideEditPlan ||
@@ -888,7 +965,7 @@ serve(async (req) => {
     const learningHints = shouldLoadLearningHints
       ? await loadQuestionLearningHints(supabase, {
           mode: questionMode,
-          sectionIndex: 0,
+          sectionIndex: isSyntheticPlanning ? 1 : 0,
           limit: 4,
         })
       : [];
@@ -901,6 +978,18 @@ serve(async (req) => {
 
     if (learningHintsPrompt) {
       messages.push({ role: "system", content: learningHintsPrompt });
+    }
+
+    if (isSyntheticPlanning) {
+      messages.push({
+        role: "system",
+        content: `SENTETIK_KULLANICI_PLANLAMA_MODU:
+- Bu plan gercek katilimci gorusmesi icin degil, sentetik persona arastirma kosusu icin kullanilacak.
+- ResearchPlan icinde "${WARMUP_SECTION_TITLE}", giris, rapport veya isinma bolumu olusturma.
+- Deger ve Motivasyon gibi jenerik bolum basligi kullanma.
+- Sorular dogrudan arastirma konusuna girsin: kullanim baglami, firsat kesfi, erisim kanallari, karar kriterleri, guven, risk, engeller ve iyilestirme firsatlari.
+- Kullanici "hazirla" dediginde net baglam varsa action=PLAN don; researchPlan null olmasin.`,
+      });
     }
 
     if (summary) {
@@ -946,7 +1035,7 @@ ${usableScreens || 'Screen bilgisi yok'}`;
       messages.push({
         role: 'system',
         content: forceGuideEditPlan
-          ? `${describeGuideContext(normalizedGuideContext, questionMode)}
+          ? `${describeGuideContext(normalizedGuideContext, questionMode, isSyntheticPlanning)}
 
 Kurallar:
 - Eger kullanici mevcut arastirma plani, bolumleri veya sorulari uzerinde bir degisiklik istiyorsa action=PLAN don.
@@ -1013,10 +1102,17 @@ Bu plan uzerinde degisiklik acikca istenmedikce action=CHAT tercih et.`,
       const isResearchPlan = parsed.action === 'PLAN' && parsed.researchPlan !== null;
 
       if (isResearchPlan) {
-        parsed.researchPlan = normalizeResearchPlan(parsed.researchPlan, questionMode);
+        parsed.researchPlan = normalizeResearchPlan(parsed.researchPlan, questionMode, {
+          syntheticPlanning: isSyntheticPlanning,
+        });
 
         if (forceGuideEditPlan && isAdditiveGuideEditRequest(normalizedMessage) && normalizedGuideContext?.sections?.length) {
-          parsed.researchPlan = mergeAdditiveGuideUpdate(normalizedGuideContext, parsed.researchPlan, questionMode);
+          parsed.researchPlan = mergeAdditiveGuideUpdate(
+            normalizedGuideContext,
+            parsed.researchPlan,
+            questionMode,
+            isSyntheticPlanning,
+          );
         }
       }
 

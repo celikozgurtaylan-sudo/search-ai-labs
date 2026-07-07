@@ -69,6 +69,7 @@ const getPlanAckMessage = (hasExistingGuide: boolean) =>
 const THINKING_LABEL_DELAY_MS = 400;
 const THINKING_DOT_DELAY_MS = 1400;
 const MIN_THINKING_VISIBLE_MS = 900;
+const MIN_GUIDE_LOADING_VISIBLE_MS = 600;
 
 const isInlineImageUrl = (value?: string) => typeof value === "string" && value.startsWith("data:image/");
 
@@ -171,6 +172,7 @@ const ChatPanel = ({
   const hasTriggeredInitialMessageRef = useRef(initialMessages.length > 0 || initialConversationHistory.length > 0);
   const assistantStageTimersRef = useRef<Record<string, number[]>>({});
   const assistantStreamStateRef = useRef<Record<string, { createdAt: number; pending: string; revealTimerId?: number }>>({});
+  const guideLoadingStartedAtRef = useRef<number | null>(null);
 
   const clearAssistantStageTimers = useCallback((messageId: string) => {
     const timers = assistantStageTimersRef.current[messageId];
@@ -369,6 +371,7 @@ const ChatPanel = ({
     const shouldShowGuideSkeleton = currentStep === 'guide';
 
     if (shouldShowGuideSkeleton) {
+      guideLoadingStartedAtRef.current = performance.now();
       onResearchPlanLoadingChange?.(true);
     }
 
@@ -402,6 +405,7 @@ const ChatPanel = ({
           researchContext,
           guideContext: discussionGuide,
           researchMode: projectData?.analysis?.researchMode ?? "structured",
+          syntheticPlanning: Boolean(projectData?.analysis?.syntheticUsers?.enabled),
           forcePlan: options.forcePlan === true,
           forceGuideEditPlan: options.forceGuideEditPlan === true,
         },
@@ -453,7 +457,12 @@ const ChatPanel = ({
       }
       
       if (shouldShowGuideSkeleton) {
+        const elapsed = guideLoadingStartedAtRef.current ? performance.now() - guideLoadingStartedAtRef.current : MIN_GUIDE_LOADING_VISIBLE_MS;
+        if (elapsed < MIN_GUIDE_LOADING_VISIBLE_MS) {
+          await new Promise((resolve) => window.setTimeout(resolve, MIN_GUIDE_LOADING_VISIBLE_MS - elapsed));
+        }
         onResearchPlanLoadingChange?.(false);
+        guideLoadingStartedAtRef.current = null;
       }
       
       // Check if conversation became research-related (for future plan generation)
@@ -464,6 +473,7 @@ const ChatPanel = ({
     } catch (error) {
       console.error('Error sending message to LLM:', error);
       onResearchPlanLoadingChange?.(false);
+      guideLoadingStartedAtRef.current = null;
       clearAssistantStageTimers(assistantMessageId);
       clearAssistantStreamState(assistantMessageId);
 
@@ -646,7 +656,7 @@ const ChatPanel = ({
 
   if (isCenteredLayout) {
     return (
-      <div className="h-full overflow-hidden bg-[rgba(121,76,255,0.045)]">
+      <div className="h-full min-h-0 overflow-hidden bg-[rgba(121,76,255,0.045)]">
         <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 py-8">
           <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto min-h-0 scroll-smooth scrollbar-hide">
@@ -656,7 +666,7 @@ const ChatPanel = ({
               </div>
             </div>
 
-            <div className="border-t border-border-light bg-white/88 pt-4 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm">
+            <div className="sticky bottom-0 z-20 flex-shrink-0 border-t border-border-light bg-white/88 pt-4 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm">
               <div className="rounded-3xl border border-border-light bg-surface/30 p-3 shadow-sm">
                 <div className="flex items-end space-x-3">
                   <textarea
@@ -687,8 +697,8 @@ const ChatPanel = ({
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-[rgba(121,76,255,0.045)]">
-      <div className="border-b border-border-light p-4">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-[rgba(121,76,255,0.045)]">
+      <div className="flex-shrink-0 border-b border-border-light p-4">
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <h2 className="text-lg font-semibold text-text-primary">Searcho AI Asistan</h2>
@@ -697,12 +707,12 @@ const ChatPanel = ({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 scroll-smooth space-y-4 scrollbar-hide">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 scroll-smooth space-y-4 scrollbar-hide">
         {renderMessages(false)}
         <div ref={endRef} />
       </div>
 
-      <div className="flex-shrink-0 bg-white/88 border-t border-border-light pb-[env(safe-area-inset-bottom)] backdrop-blur-sm">
+      <div className="sticky bottom-0 z-20 flex-shrink-0 border-t border-border-light bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgba(15,23,42,0.04)] backdrop-blur-sm">
         <div className="p-4">
           <div className="flex items-end space-x-3">
             <textarea

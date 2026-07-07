@@ -16,6 +16,7 @@ dist-ssr
 CLI_HANDOFF*.md
 supabase/.temp/
 *.local
+.serena/
 
 # Editor directories and files
 .vscode/*
