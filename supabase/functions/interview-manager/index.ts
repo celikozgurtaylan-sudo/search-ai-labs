@@ -60,6 +60,8 @@ type ResponsePayload = {
 const AUDIO_BUCKET = 'interview-audio';
 const SCREEN_RECORDINGS_BUCKET = 'interview-screen-recordings';
 const VIDEO_UPLOAD_DISABLED_CODE = 'video_upload_disabled';
+const OPTIONAL_RESPONSE_COLUMN_ERROR_PATTERN =
+  /audio_mime_type|audio_privacy_transform|transcript_segments|schema cache|column .* does not exist|could not find .* column/i;
 
 const decodeBase64 = (value: string) => {
   const normalized = value.trim();
@@ -168,9 +170,19 @@ async function findLatestResponse(sessionId: string, questionId: string) {
   return data;
 }
 
+const isOptionalResponseColumnError = (error: unknown) => {
+  const message = error instanceof Error
+    ? error.message
+    : isRecord(error) && typeof error.message === 'string'
+      ? error.message
+      : String(error ?? '');
+
+  return OPTIONAL_RESPONSE_COLUMN_ERROR_PATTERN.test(message);
+};
+
 async function saveOrUpdateResponse(sessionId: string, responseData: ResponsePayload) {
   const existingResponse = await findLatestResponse(sessionId, responseData.questionId);
-  const payload = {
+  const basePayload = {
     session_id: sessionId,
     question_id: responseData.questionId,
     participant_id: responseData.participantId ?? existingResponse?.participant_id ?? null,
@@ -178,10 +190,6 @@ async function saveOrUpdateResponse(sessionId: string, responseData: ResponsePay
     response_text: responseData.responseText ?? existingResponse?.response_text ?? null,
     video_url: null,
     video_duration_ms: null,
-    audio_url: existingResponse?.audio_url ?? null,
-    audio_mime_type: existingResponse?.audio_mime_type ?? null,
-    audio_privacy_transform: existingResponse?.audio_privacy_transform ?? null,
-    transcript_segments: existingResponse?.transcript_segments ?? null,
     audio_duration_ms: responseData.audioDuration ?? existingResponse?.audio_duration_ms ?? null,
     confidence_score: responseData.confidenceScore ?? existingResponse?.confidence_score ?? null,
     is_complete: responseData.isComplete ?? existingResponse?.is_complete ?? false,
@@ -190,34 +198,54 @@ async function saveOrUpdateResponse(sessionId: string, responseData: ResponsePay
       ...(responseData.metadata ?? {}),
     },
   };
+  const payload = {
+    ...basePayload,
+    audio_url: existingResponse?.audio_url ?? null,
+    audio_mime_type: existingResponse?.audio_mime_type ?? null,
+    audio_privacy_transform: existingResponse?.audio_privacy_transform ?? null,
+    transcript_segments: existingResponse?.transcript_segments ?? null,
+  };
 
-  if (existingResponse?.id) {
+  const writeResponse = async (nextPayload: Record<string, unknown>) => {
+    if (existingResponse?.id) {
+      const { data, error } = await supabase
+        .from('interview_responses')
+        .update(nextPayload)
+        .eq('id', existingResponse.id)
+        .eq('session_id', sessionId)
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(`Failed to update response: ${error.message}`);
+      }
+
+      return data;
+    }
+
     const { data, error } = await supabase
       .from('interview_responses')
-      .update(payload)
-      .eq('id', existingResponse.id)
-      .eq('session_id', sessionId)
+      .insert(nextPayload)
       .select()
       .single();
 
     if (error) {
-      throw new Error(`Failed to update response: ${error.message}`);
+      throw new Error(`Failed to save response: ${error.message}`);
     }
 
     return data;
+  };
+
+  try {
+    return await writeResponse(payload);
+  } catch (error) {
+    if (!isOptionalResponseColumnError(error)) {
+      throw error;
+    }
+
+    console.warn('Response save retried without optional audio evidence columns.');
+    return await writeResponse(basePayload);
   }
-
-  const { data, error } = await supabase
-    .from('interview_responses')
-    .insert(payload)
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to save response: ${error.message}`);
-  }
-
-  return data;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -1255,6 +1283,117 @@ async function advanceAIEnhancedInterview(
   return updatedResponse;
 }
 
+async function advanceAIEnhancedInterviewFallback(
+  sessionId: string,
+  response: Record<string, unknown>,
+) {
+  const questionId = asString(response.question_id);
+  const currentQuestion = await getQuestionRecord(questionId);
+  if (!currentQuestion || isConversationalWarmupQuestion(currentQuestion)) {
+    return;
+  }
+
+  const { data: session, error: sessionError } = await supabase
+    .from("study_sessions")
+    .select("id, project_id, metadata")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (sessionError || !session) {
+    console.warn("AI enhanced fallback skipped because session could not be loaded.");
+    return;
+  }
+
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select("analysis")
+    .eq("id", session.project_id)
+    .maybeSingle();
+
+  if (projectError) {
+    console.warn("AI enhanced fallback skipped because project analysis could not be loaded.");
+    return;
+  }
+
+  const analysis = isRecord(project?.analysis) ? project.analysis : {};
+  const brief = normalizeAIEnhancedBrief(analysis.aiEnhancedBrief);
+  if (!brief || brief.anchorQuestions.length === 0) {
+    return;
+  }
+
+  const currentMetadata = getQuestionMetadata(currentQuestion);
+  const source = asString(currentMetadata.source);
+  if (source !== "anchor" && source !== "follow_up") {
+    return;
+  }
+
+  const allQuestions = await getSessionQuestionRows(sessionId);
+  if (allQuestions.some((question) => Number(question.question_order) > Number(currentQuestion.question_order))) {
+    return;
+  }
+
+  const sessionMetadata = isRecord(session.metadata) ? session.metadata : {};
+  const aiState = getAIEnhancedSessionState(sessionMetadata);
+  const currentAnchorId = asString(currentMetadata.anchorId);
+  const currentAnchorIndex = typeof currentMetadata.anchorIndex === "number"
+    ? currentMetadata.anchorIndex
+    : brief.anchorQuestions.findIndex((anchor) => anchor.id === currentAnchorId);
+  const currentAnchor = brief.anchorQuestions[currentAnchorIndex] ?? null;
+
+  if (!currentAnchor) {
+    return;
+  }
+
+  const nextAnchorIndex = currentAnchorIndex + 1;
+  const nextAnchor = brief.anchorQuestions[nextAnchorIndex] ?? null;
+
+  if (nextAnchor) {
+    const alreadyInserted = allQuestions.some((question) => {
+      const metadata = getQuestionMetadata(question);
+      return metadata.source === "anchor" && metadata.anchorId === nextAnchor.id;
+    });
+
+    if (!alreadyInserted) {
+      await insertAIEnhancedQuestion({
+        projectId: session.project_id,
+        sessionId,
+        questionText: nextAnchor.text,
+        questionOrder: allQuestions.length + 1,
+        section: findThemeById(brief, nextAnchor.themeId)?.title || "AI Enhanced",
+        questionType: "anchor",
+        isFollowUp: false,
+        metadata: {
+          interviewMode: "ai_enhanced",
+          source: "anchor",
+          anchorId: nextAnchor.id,
+          anchorIndex: nextAnchorIndex,
+          themeId: nextAnchor.themeId,
+          turnIndex: aiState.turnIndex + 1,
+          prompt_version: ADAPTIVE_PROBE_PROMPT_VERSION,
+          fallbackReason: "adaptive_probe_advance_failed",
+        },
+      });
+    }
+  }
+
+  const coveredAnchorIds = aiState.coveredAnchorIds.includes(currentAnchor.id)
+    ? aiState.coveredAnchorIds
+    : [...aiState.coveredAnchorIds, currentAnchor.id];
+  const anchorsCompleted = aiState.anchorsCompleted.includes(currentAnchor.id)
+    ? aiState.anchorsCompleted
+    : [...aiState.anchorsCompleted, currentAnchor.id];
+
+  await updateSessionMetadata(sessionId, withAIEnhancedSessionState(sessionMetadata, {
+    currentAnchorIndex: nextAnchor ? nextAnchorIndex : currentAnchorIndex,
+    turnIndex: aiState.turnIndex + 1,
+    coveredAnchorIds,
+    anchorsCompleted,
+    maxFollowUpsPerAnchor: aiState.maxFollowUpsPerAnchor,
+    maxTotalFollowUpsPerSession: aiState.maxTotalFollowUpsPerSession,
+    briefSnapshotId: brief.readyAt || brief.updatedAt || aiState.briefSnapshotId,
+  }));
+}
+
 async function buildInterviewState(sessionId: string) {
   const { data: questions, error } = await supabase
     .from('interview_questions')
@@ -1660,10 +1799,30 @@ async function submitResponse(sessionId: string, responseData: ResponsePayload) 
       ...(responseData.metadata ?? {}),
     },
   });
-  response = await advanceConversationalWarmup(sessionId, response);
-  response = await advanceAIEnhancedInterview(sessionId, response) ?? response;
+
+  try {
+    response = await advanceConversationalWarmup(sessionId, response);
+  } catch (error) {
+    console.warn('Conversational warmup advance failed after response save:', error instanceof Error ? error.message : 'unknown_error');
+  }
+
+  try {
+    response = await advanceAIEnhancedInterview(sessionId, response) ?? response;
+  } catch (error) {
+    console.warn('AI enhanced advance failed after response save:', error instanceof Error ? error.message : 'unknown_error');
+    try {
+      await advanceAIEnhancedInterviewFallback(sessionId, response);
+    } catch (fallbackError) {
+      console.warn('AI enhanced deterministic fallback failed:', fallbackError instanceof Error ? fallbackError.message : 'unknown_error');
+    }
+  }
+
   const state = await buildInterviewState(sessionId);
-  await finalizeCompletedSession(sessionId, state);
+  try {
+    await finalizeCompletedSession(sessionId, state);
+  } catch (error) {
+    console.warn('Session finalization failed after response save:', error instanceof Error ? error.message : 'unknown_error');
+  }
 
   return new Response(
     JSON.stringify({ success: true, response, ...state }),
@@ -1684,10 +1843,30 @@ async function skipQuestion(sessionId: string, questionId: string, metadata: Rec
       ...metadata,
     },
   });
-  response = await advanceConversationalWarmup(sessionId, response);
-  response = await advanceAIEnhancedInterview(sessionId, response) ?? response;
+
+  try {
+    response = await advanceConversationalWarmup(sessionId, response);
+  } catch (error) {
+    console.warn('Conversational warmup advance failed after skip save:', error instanceof Error ? error.message : 'unknown_error');
+  }
+
+  try {
+    response = await advanceAIEnhancedInterview(sessionId, response) ?? response;
+  } catch (error) {
+    console.warn('AI enhanced advance failed after skip save:', error instanceof Error ? error.message : 'unknown_error');
+    try {
+      await advanceAIEnhancedInterviewFallback(sessionId, response);
+    } catch (fallbackError) {
+      console.warn('AI enhanced deterministic fallback failed after skip:', fallbackError instanceof Error ? fallbackError.message : 'unknown_error');
+    }
+  }
+
   const state = await buildInterviewState(sessionId);
-  await finalizeCompletedSession(sessionId, state);
+  try {
+    await finalizeCompletedSession(sessionId, state);
+  } catch (error) {
+    console.warn('Session finalization failed after skip save:', error instanceof Error ? error.message : 'unknown_error');
+  }
 
   return new Response(
     JSON.stringify({ success: true, response, ...state }),
