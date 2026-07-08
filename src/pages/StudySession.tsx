@@ -550,6 +550,7 @@ const StudySession = () => {
 
       const hasMetadata = await waitForVideoMetadata(previewElement);
       if (hasMetadata) {
+        setCameraPreviewReady(true);
         const hasRenderedPreview = await waitForRenderedPreview(previewElement);
         if (hasRenderedPreview) {
           return {
@@ -1625,7 +1626,7 @@ const StudySession = () => {
                 ) : null}
               </div>
 
-              <div className="relative overflow-hidden rounded-[28px] border border-border/70 bg-slate-950 shadow-[0_20px_50px_rgba(15,23,42,0.24)]">
+              <div className="relative aspect-[4/3] overflow-hidden rounded-[28px] border border-border/70 bg-slate-950 shadow-[0_20px_50px_rgba(15,23,42,0.24)]">
                 <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 py-3">
                   <div className="rounded-full bg-black/45 px-3 py-1 text-xs font-medium text-white backdrop-blur">
                     {participantName || 'Katılımcı'}
@@ -1643,18 +1644,22 @@ const StudySession = () => {
                       muted
                       playsInline
                       onLoadedData={() => {
-                        if (cameraStreamVerified) {
-                          setCameraPreviewReady(true);
-                        }
+                        setCameraPreviewReady(true);
                       }}
                       onPlaying={() => {
-                        if (cameraStreamVerified) {
-                          setCameraPreviewReady(true);
+                        setCameraPreviewReady(true);
+                      }}
+                      onEmptied={() => {
+                        if (!cameraStreamVerified) {
+                          setCameraPreviewReady(false);
                         }
                       }}
-                      onEmptied={() => setCameraPreviewReady(false)}
-                      onStalled={() => setCameraPreviewReady(false)}
-                      className={`aspect-[4/3] h-full w-full object-cover transition-opacity duration-300 ${
+                      onStalled={() => {
+                        if (!cameraStreamVerified) {
+                          setCameraPreviewReady(false);
+                        }
+                      }}
+                      className={`h-full w-full object-cover transition-opacity duration-300 ${
                         cameraPreviewReady ? 'opacity-100' : 'opacity-0'
                       }`}
                     />
@@ -1673,7 +1678,7 @@ const StudySession = () => {
                     )}
                   </>
                 ) : (
-                  <div className="flex aspect-[4/3] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_45%),linear-gradient(180deg,_#1f2937_0%,_#0f172a_100%)]">
+                  <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_45%),linear-gradient(180deg,_#1f2937_0%,_#0f172a_100%)]">
                     <div className="space-y-3 text-center text-white/80">
                       <Camera className="mx-auto h-12 w-12" />
                       <p className="text-sm">Kamera önizlemesi burada görünecek</p>

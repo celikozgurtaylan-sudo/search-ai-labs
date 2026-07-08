@@ -9,6 +9,36 @@ const corsHeaders = {
 const HEALTHCHECK_TIMEOUT_MS = 5_000;
 const TRANSCRIPTION_TIMEOUT_MS = 20_000;
 
+const normalizeSegments = (segments: unknown) => {
+  if (!Array.isArray(segments)) {
+    return [];
+  }
+
+  return segments
+    .map((segment, index) => {
+      if (!segment || typeof segment !== 'object') {
+        return null;
+      }
+
+      const candidate = segment as Record<string, unknown>;
+      const text = typeof candidate.text === 'string' ? candidate.text.trim() : '';
+      const start = typeof candidate.start === 'number' ? candidate.start : null;
+      const end = typeof candidate.end === 'number' ? candidate.end : null;
+
+      if (!text || start === null || end === null || end < start) {
+        return null;
+      }
+
+      return {
+        id: `segment-${index + 1}`,
+        text,
+        startMs: Math.max(0, Math.round(start * 1000)),
+        endMs: Math.max(0, Math.round(end * 1000)),
+      };
+    })
+    .filter(Boolean);
+};
+
 const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(payload), {
     status,
@@ -122,6 +152,8 @@ serve(async (req) => {
     formData.append('file', blob, 'audio.webm');
     formData.append('model', 'whisper-1');
     formData.append('language', language);
+    formData.append('response_format', 'verbose_json');
+    formData.append('timestamp_granularities[]', 'segment');
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TRANSCRIPTION_TIMEOUT_MS);
@@ -149,7 +181,11 @@ serve(async (req) => {
 
       const result = await response.json();
       const transcript = typeof result?.text === 'string' ? result.text.trim() : '';
-      console.log('Transcription successful:', transcript);
+      const segments = normalizeSegments(result?.segments);
+      console.log('Transcription successful:', {
+        textLength: transcript.length,
+        segmentCount: segments.length,
+      });
 
       if (!transcript) {
         return jsonResponse({
@@ -159,7 +195,7 @@ serve(async (req) => {
         }, 502);
       }
 
-      return jsonResponse({ text: transcript, code: 'ok' });
+      return jsonResponse({ text: transcript, segments, code: 'ok' });
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         return jsonResponse({

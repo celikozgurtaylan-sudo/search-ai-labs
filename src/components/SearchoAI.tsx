@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { AudioTranscriber, AudioTranscriberMetrics } from '@/utils/AudioTranscriber';
+import { AudioTranscriber, AudioTranscriberMetrics, type AudioTranscriptSegment, type AudioTranscriptionResult } from '@/utils/AudioTranscriber';
 import { interviewService, InterviewProgress, InterviewQuestion, setInterviewSessionToken } from '@/services/interviewService';
 import { prefetchTextToSpeech, resetTextToSpeechSessionState } from '@/services/textToSpeechService';
 import {
@@ -32,7 +32,6 @@ const RECOVERY_GRACE_SECONDS = 30;
 const AUTO_SAVE_MIN_CHARACTERS = 8;
 const AUTO_SAVE_MIN_WORDS = 2;
 const TRANSCRIPTION_HEALTHCHECK_TTL_MS = 30_000;
-const TRANSCRIPTION_HEALTHCHECK_INTERVAL_MS = 10_000;
 const PROCESSING_PHASE_TIMEOUT_MS = 20_000;
 
 type ResponseRecordingResult = {
@@ -168,6 +167,54 @@ const buildTranscriptSegments = (text: string, durationMs: number) => {
   });
 };
 
+const offsetTranscriptSegments = (segments: AudioTranscriptSegment[], offsetMs: number) =>
+  segments.map((segment, index) => ({
+    id: segment.id ?? `segment-${index + 1}`,
+    text: segment.text,
+    startMs: Math.max(0, Math.round(segment.startMs + offsetMs)),
+    endMs: Math.max(0, Math.round(segment.endMs + offsetMs)),
+  }));
+
+const mergeTranscriptSegmentLists = (
+  baseSegments: AudioTranscriptSegment[],
+  nextSegments: AudioTranscriptSegment[],
+  nextOffsetMs: number,
+  fallbackText: string,
+  totalDurationMs: number,
+) => {
+  const mergedSegments = [
+    ...baseSegments,
+    ...offsetTranscriptSegments(nextSegments, nextOffsetMs),
+  ].filter((segment) => segment.text.trim());
+
+  if (mergedSegments.length > 0) {
+    return mergedSegments.map((segment, index) => ({
+      ...segment,
+      id: `segment-${index + 1}`,
+    }));
+  }
+
+  return buildTranscriptSegments(fallbackText, totalDurationMs);
+};
+
+const scaleTranscriptSegments = (
+  segments: AudioTranscriptSegment[],
+  sourceDurationMs: number,
+  targetDurationMs: number,
+) => {
+  if (segments.length === 0 || sourceDurationMs <= 0 || targetDurationMs <= 0) {
+    return segments;
+  }
+
+  const scale = targetDurationMs / sourceDurationMs;
+  return segments.map((segment) => ({
+    ...segment,
+    startMs: Math.max(0, Math.round(segment.startMs * scale)),
+    endMs: Math.max(0, Math.round(segment.endMs * scale)),
+  }));
+};
+
+
 const normalizeWarmupLabel = (value: unknown) =>
   String(value ?? '')
     .toLocaleLowerCase('tr-TR')
@@ -252,6 +299,7 @@ const SearchoAI = ({
   const [showTurkishPreamble, setShowTurkishPreamble] = useState(true);
   const [showEndSessionConfirmation, setShowEndSessionConfirmation] = useState(false);
   const [draftTranscript, setDraftTranscript] = useState('');
+  const [draftTranscriptSegments, setDraftTranscriptSegments] = useState<AudioTranscriptSegment[]>([]);
   const [draftAudioDurationMs, setDraftAudioDurationMs] = useState(0);
   const [responseRecoveryMessage, setResponseRecoveryMessage] = useState<string | null>(null);
   const [resumeAfterFailure, setResumeAfterFailure] = useState(false);
@@ -361,17 +409,6 @@ const SearchoAI = ({
       transcriptionHealthCheckInFlightRef.current = false;
     }
   }, []);
-
-  const startTranscriptionHealthMonitor = useCallback(() => {
-    clearTranscriptionHealthMonitor();
-    transcriptionHealthMonitorRef.current = window.setInterval(() => {
-      void ensureTranscriptionPipelineHealthy(true).then((isHealthy) => {
-        if (!isHealthy) {
-          audioTranscriberRef.current?.reportHealthIssue('TRANSCRIPTION_SERVICE_UNAVAILABLE');
-        }
-      });
-    }, TRANSCRIPTION_HEALTHCHECK_INTERVAL_MS);
-  }, [clearTranscriptionHealthMonitor, ensureTranscriptionPipelineHealthy]);
 
   const stopResponseRecording = useCallback((discard = false): Promise<ResponseRecordingResult> => {
     const recorder = responseRecorderRef.current;
@@ -565,7 +602,13 @@ const SearchoAI = ({
     setHasDetectedSpeechForCurrentAttempt(false);
   }, [clearTranscriptionHealthMonitor, invalidateCaptureAttempt, stopResponseRecording]);
 
-  const uploadResponseMedia = useCallback(async (responseId: string, questionId: string, media: PendingResponseMedia, transcript: string) => {
+  const uploadResponseMedia = useCallback(async (
+    responseId: string,
+    questionId: string,
+    media: PendingResponseMedia,
+    transcript: string,
+    transcriptSegments: AudioTranscriptSegment[],
+  ) => {
     if (!projectContext?.sessionId || !media.blob) {
       return;
     }
@@ -574,6 +617,9 @@ const SearchoAI = ({
       const shiftedAudio = await pitchShiftAudioForEvidence(media.blob);
       const base64Audio = await blobToBase64(shiftedAudio.blob);
       const audioDuration = Math.round(shiftedAudio.durationMs || media.durationMs);
+      const alignedTranscriptSegments = transcriptSegments.length > 0
+        ? scaleTranscriptSegments(transcriptSegments, media.durationMs, audioDuration)
+        : buildTranscriptSegments(transcript, audioDuration);
       await interviewService.attachResponseMedia(projectContext.sessionId, responseId, {
         audioDuration,
         metadata: {
@@ -584,7 +630,7 @@ const SearchoAI = ({
         audioBase64: base64Audio,
         audioMimeType: shiftedAudio.mimeType,
         audioPrivacyTransform: shiftedAudio.transform,
-        transcriptSegments: buildTranscriptSegments(transcript, audioDuration),
+        transcriptSegments: alignedTranscriptSegments,
         questionId,
       });
     } catch (error) {
@@ -707,6 +753,7 @@ const SearchoAI = ({
     setUserTranscript('');
     setEditableTranscript('');
     setDraftTranscript('');
+    setDraftTranscriptSegments([]);
     setDraftAudioDurationMs(0);
     setResponseRecoveryMessage(null);
     setResumeAfterFailure(false);
@@ -954,11 +1001,16 @@ const SearchoAI = ({
       });
 
       setDraftTranscript('');
+      setDraftTranscriptSegments([]);
       setDraftAudioDurationMs(0);
       applyInterviewState(data.nextQuestion, data.progress);
 
+      const segmentsToPersist = normalizedTranscript === draftTranscript.trim()
+        ? draftTranscriptSegments
+        : buildTranscriptSegments(normalizedTranscript, Math.round(Math.max(mediaToPersist.durationMs, options.audioDurationMs ?? draftAudioDurationMs)));
+
       if (mediaToPersist.blob && data.response?.id) {
-        void uploadResponseMedia(data.response.id, activeQuestion.id, mediaToPersist, normalizedTranscript);
+        void uploadResponseMedia(data.response.id, activeQuestion.id, mediaToPersist, normalizedTranscript, segmentsToPersist);
       }
     } catch (error) {
       console.error('Failed to submit response:', error);
@@ -995,7 +1047,7 @@ const SearchoAI = ({
     } finally {
       setIsSubmittingResponse(false);
     }
-  }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, enterRecoveryState, persistResponseDiagnostic, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, toast, uploadResponseMedia]);
+  }, [applyInterviewState, currentQuestion, draftAudioDurationMs, draftTranscript, draftTranscriptSegments, enterRecoveryState, persistResponseDiagnostic, projectContext?.participantId, projectContext?.sessionId, stopResponseRecording, toast, uploadResponseMedia]);
 
   const requestMediaRecovery = useCallback((reason: MicFailureCode, message?: string | null) => {
     onMediaRecoveryRequested?.(reason);
@@ -1032,6 +1084,7 @@ const SearchoAI = ({
 
     if (resetDuration || !preserveDraft) {
       setDraftTranscript('');
+      setDraftTranscriptSegments([]);
       setDraftAudioDurationMs(0);
     }
 
@@ -1111,7 +1164,7 @@ const SearchoAI = ({
           console.debug('Audio transcriber metrics:', metrics);
         }
       };
-      transcriber.onComplete = async (finalText: string) => {
+      transcriber.onComplete = async (result: AudioTranscriptionResult) => {
         if (captureAttemptRef.current !== attemptId) {
           return;
         }
@@ -1131,9 +1184,17 @@ const SearchoAI = ({
           return;
         }
 
-        const normalizedTranscript = mergeTranscriptSegments(draftTranscript, finalText.trim());
         const totalDurationMs = draftAudioDurationMs + recording.durationMs;
+        const normalizedTranscript = mergeTranscriptSegments(draftTranscript, result.text.trim());
+        const normalizedSegments = mergeTranscriptSegmentLists(
+          draftTranscriptSegments,
+          result.segments,
+          draftAudioDurationMs,
+          normalizedTranscript,
+          totalDurationMs,
+        );
         setDraftTranscript(normalizedTranscript);
+        setDraftTranscriptSegments(normalizedSegments);
         setDraftAudioDurationMs(totalDurationMs);
         setUserTranscript(normalizedTranscript);
 
@@ -1141,32 +1202,6 @@ const SearchoAI = ({
         await persistDraftResponse(normalizedTranscript, totalDurationMs);
 
         if (captureAttemptRef.current !== attemptId) {
-          return;
-        }
-
-        if (isConversationalWarmupQuestion(currentQuestion)) {
-          if (!normalizedTranscript.trim()) {
-            setEditableTranscript('');
-            enterRecoveryState('Isınma yanıtı net algılanamadı. Aynı soruda yeniden deneyebilirsiniz.', {
-              resume: false,
-              allowGraceIfNeeded: false,
-            });
-            toast({
-              title: 'Yanıt algılanamadı',
-              description: 'Isınma akışı aynı soruda kaldı. Mikrofonu kontrol edip tekrar deneyin.',
-              variant: 'destructive',
-            });
-            return;
-          }
-
-          await submitCurrentResponse(normalizedTranscript, {
-            audioDurationMs: totalDurationMs,
-            skipReviewOnFailure: true,
-            metadata: {
-              autoSubmittedWarmup: true,
-              transcriptReviewSkipped: true,
-            },
-          });
           return;
         }
 
@@ -1192,7 +1227,10 @@ const SearchoAI = ({
         setShowSilentMicWarning(false);
         setHasDetectedSpeechForCurrentAttempt(false);
 
-        await discardPendingResponseMedia();
+        const recording = await stopResponseRecording(false);
+        if (currentQuestion?.id) {
+          pendingResponseMediaRef.current = { ...recording, questionId: currentQuestion.id };
+        }
         if (captureAttemptRef.current !== attemptId) {
           return;
         }
@@ -1205,20 +1243,6 @@ const SearchoAI = ({
           failureCode: error,
           error,
         });
-
-        if (error === 'PREP_TIMEOUT') {
-          setUserTranscript(nextDraftTranscript);
-          setEditableTranscript(nextDraftTranscript);
-          enterRecoveryState('Kayıt otomatik başlatıldı ancak ses algılanamadı. Aynı soruda yeniden deneyebilirsiniz.', {
-            resume: false,
-            allowGraceIfNeeded: false,
-          });
-          toast({
-            title: 'Ses algılanamadı',
-            description: 'Kayıt açıktı ancak belirgin bir konuşma yakalanamadı. Mikrofonu kontrol edip tekrar deneyin.',
-          });
-          return;
-        }
 
         if (error === 'MICROPHONE_SILENT') {
           const recoveryMessage = requestMediaRecovery('track_silent');
@@ -1236,21 +1260,9 @@ const SearchoAI = ({
           return;
         }
 
-        if (error === 'NO_SPEECH_DETECTED') {
-          setUserTranscript(nextDraftTranscript);
-          setEditableTranscript(nextDraftTranscript);
-          enterRecoveryState('Ses net algılanamadı. Aynı soruda yeniden kayıt alabilirsiniz.', {
-            resume: false,
-            allowGraceIfNeeded: false,
-          });
-          toast({
-            title: 'Ses algılanamadı',
-            description: 'Yanıtınız net algılanmadı. Mikrofonu kontrol edip tekrar deneyin.',
-          });
-          return;
-        }
-
         const isSystemFailure = [
+          'PREP_TIMEOUT',
+          'NO_SPEECH_DETECTED',
           'TRANSCRIPTION_FAILED',
           'TRANSCRIPTION_TIMEOUT',
           'TRANSCRIPTION_EMPTY',
@@ -1278,19 +1290,12 @@ const SearchoAI = ({
         if (isSystemFailure) {
           setUserTranscript(nextDraftTranscript);
           setEditableTranscript(nextDraftTranscript);
-          enterRecoveryState(
-            responseTimeRemaining <= 0 && !hasUsedRecoveryGrace
-              ? 'Kayıt ya da transcript zincirinde sorun algılandı. Aynı soruda devam etmeniz için 30 saniyelik ek süre tanındı.'
-              : 'Kayıt ya da transcript zincirinde sorun algılandı. Yanıtınızın boşa gitmemesi için aynı soruda kurtarma moduna alındınız.',
-            {
-              resume: true,
-              allowGraceIfNeeded: true,
-            },
-          );
+          setInterviewPhase('review');
           toast({
-            title: 'Yanıt kurtarma moduna alındı',
-            description: 'Aynı soruda kaldığınız yerden devam edebilir veya yeniden kayıt alabilirsiniz.',
-            variant: 'destructive',
+            title: 'Yanıtı gözden geçirin',
+            description: nextDraftTranscript.trim()
+              ? 'Transkript otomatik tamamlanamadı. Kaydedilen metni kontrol edip onaylayın.'
+              : 'Transkript otomatik tamamlanamadı. Duyduğunuz yanıtı yazıp onaylayabilir veya yeniden kayıt alabilirsiniz.',
           });
           return;
         }
@@ -1307,7 +1312,6 @@ const SearchoAI = ({
       };
 
       audioTranscriberRef.current = transcriber;
-      startTranscriptionHealthMonitor();
       await transcriber.start(microphoneStream, {
         requireSpeechWithinMs: null,
         emitAudioLevels: true,
@@ -1348,10 +1352,10 @@ const SearchoAI = ({
     discardPendingResponseMedia,
     draftAudioDurationMs,
     draftTranscript,
+    draftTranscriptSegments,
     ensureMicrophoneStream,
     ensureTranscriptionPipelineHealthy,
     enterRecoveryState,
-    hasUsedRecoveryGrace,
     interviewPhase,
     invalidateCaptureAttempt,
     isStartingCapture,
@@ -1360,11 +1364,8 @@ const SearchoAI = ({
     mergeTranscriptSegments,
     persistResponseDiagnostic,
     persistDraftResponse,
-    responseTimeRemaining,
     startResponseRecording,
-    startTranscriptionHealthMonitor,
     stopResponseRecording,
-    submitCurrentResponse,
     toast,
   ]);
 
@@ -1374,6 +1375,7 @@ const SearchoAI = ({
     setResponseRecoveryMessage(null);
     setResumeAfterFailure(false);
     setDraftTranscript('');
+    setDraftTranscriptSegments([]);
     setDraftAudioDurationMs(0);
     setResponseTimeRemaining(RESPONSE_TIME_LIMIT_SECONDS);
     setResponseTimerExpired(false);

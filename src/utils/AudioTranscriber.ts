@@ -10,7 +10,6 @@ const MIN_RECORDING_MS = 750;
 const MIN_AUDIO_BLOB_SIZE = 6000;
 const MIN_SPEECH_FRAMES = 2;
 const SOFT_STAY_THRESHOLD_RATIO = 0.72;
-const CHUNK_STALL_AFTER_SPEECH_MS = 2500;
 const HALLUCINATION_PATTERNS = [
   /abone ol/i,
   /yorum yap/i,
@@ -67,6 +66,18 @@ export interface AudioTranscriberMetrics {
   stopReason: 'manual' | 'no-speech' | 'cancelled' | 'health-failure';
 }
 
+export interface AudioTranscriptSegment {
+  id?: string;
+  text: string;
+  startMs: number;
+  endMs: number;
+}
+
+export interface AudioTranscriptionResult {
+  text: string;
+  segments: AudioTranscriptSegment[];
+}
+
 export class AudioTranscriber {
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
@@ -98,7 +109,7 @@ export class AudioTranscriber {
   onTranscriptionUpdate: (text: string) => void = () => {};
   onSpeechDetected: () => void = () => {};
   onAudioLevel: (level: number) => void = () => {};
-  onComplete: (text: string) => void = () => {};
+  onComplete: (result: AudioTranscriptionResult) => void = () => {};
   onError: (error: string) => void = () => {};
   onDebugMetrics: (metrics: AudioTranscriberMetrics) => void = () => {};
 
@@ -291,11 +302,6 @@ export class AudioTranscriber {
         return;
       }
 
-      if (this.speechDetected && now - this.lastChunkAt >= CHUNK_STALL_AFTER_SPEECH_MS) {
-        this.reportHealthIssue('RECORDING_HEALTH_FAILURE');
-        return;
-      }
-
       if (this.isRecording) {
         this.analysisFrameId = window.requestAnimationFrame(sample);
       }
@@ -359,7 +365,7 @@ export class AudioTranscriber {
     }
 
     if (this.audioChunks.length === 0) {
-      this.onError('NO_SPEECH_DETECTED');
+      this.onComplete({ text: '', segments: [] });
       return;
     }
 
@@ -374,7 +380,7 @@ export class AudioTranscriber {
         this.peakLevel < Math.max(2.2, getTranscriberEnterThreshold(this.lastCalibrationLevel) * 0.8) ||
         averageLevel < Math.max(1.1, this.lastCalibrationLevel + 0.35)
       ) {
-        this.onError('NO_SPEECH_DETECTED');
+        this.onComplete({ text: '', segments: [] });
         return;
       }
 
@@ -396,20 +402,53 @@ export class AudioTranscriber {
       }
 
       const transcript = typeof data?.text === 'string' ? data.text.trim() : '';
+      const segments = Array.isArray(data?.segments)
+        ? data.segments
+            .map((segment: unknown, index: number) => {
+              if (!segment || typeof segment !== 'object') {
+                return null;
+              }
+
+              const candidate = segment as Record<string, unknown>;
+              const text = typeof candidate.text === 'string' ? candidate.text.trim() : '';
+              const startMs = typeof candidate.startMs === 'number'
+                ? candidate.startMs
+                : typeof candidate.start === 'number'
+                  ? Math.round(candidate.start * 1000)
+                  : null;
+              const endMs = typeof candidate.endMs === 'number'
+                ? candidate.endMs
+                : typeof candidate.end === 'number'
+                  ? Math.round(candidate.end * 1000)
+                  : null;
+
+              if (!text || startMs === null || endMs === null || endMs < startMs) {
+                return null;
+              }
+
+              return {
+                id: typeof candidate.id === 'string' ? candidate.id : `segment-${index + 1}`,
+                text,
+                startMs,
+                endMs,
+              };
+            })
+            .filter((segment): segment is AudioTranscriptSegment => Boolean(segment))
+        : [];
 
       if (!transcript) {
-        this.onError(errorCode === 'empty_transcript' ? 'TRANSCRIPTION_EMPTY' : 'TRANSCRIPTION_FAILED');
+        this.onComplete({ text: '', segments: [] });
         return;
       }
 
       const isHallucination = HALLUCINATION_PATTERNS.some((pattern) => pattern.test(transcript));
       if (isHallucination) {
-        console.warn('Ignoring likely hallucinated transcription:', transcript);
+        console.warn('Ignoring likely hallucinated transcription');
         this.onError('TRANSCRIPTION_FAILED');
         return;
       }
 
-      this.onComplete(transcript);
+      this.onComplete({ text: transcript, segments });
     } catch (error) {
       console.error('Error processing audio:', error);
       this.onError(error instanceof Error ? error.message : 'Failed to process audio');

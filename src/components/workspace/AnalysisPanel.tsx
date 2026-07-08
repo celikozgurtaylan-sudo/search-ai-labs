@@ -201,6 +201,70 @@ const ScreenRecordingPlayer = ({
   );
 };
 
+const normalizeQuoteText = (value: string) =>
+  value
+    .toLocaleLowerCase("tr-TR")
+    .replace(/[“”"'.!,?;:()[\]\n\r]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+type QuoteTranscriptSegment = NonNullable<ProjectReportQuote["transcriptSegments"]>[number];
+
+const findQuoteAudioSegment = (quote: ProjectReportQuote) => {
+  const quoteText = normalizeQuoteText(quote.text);
+  if (!quoteText || !quote.transcriptSegments?.length) {
+    return null;
+  }
+
+  const directMatch = quote.transcriptSegments.find((segment) => {
+    const segmentText = normalizeQuoteText(segment.text);
+    return segmentText.includes(quoteText) || quoteText.includes(segmentText);
+  });
+
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const quoteWords = new Set(quoteText.split(" ").filter((word) => word.length > 2));
+  let bestMatch: QuoteTranscriptSegment | null = null;
+  let bestScore = 0;
+
+  quote.transcriptSegments.forEach((segment) => {
+    const segmentWords = normalizeQuoteText(segment.text).split(" ").filter((word) => word.length > 2);
+    const score = segmentWords.filter((word) => quoteWords.has(word)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = segment;
+    }
+  });
+
+  return bestScore >= 3 ? bestMatch : null;
+};
+
+const waitForAudioMetadata = (audio: HTMLAudioElement) =>
+  new Promise<void>((resolve) => {
+    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      resolve();
+      return;
+    }
+
+    let timeoutId: number | null = null;
+    const handleLoadedMetadata = () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      resolve();
+    };
+
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata, { once: true });
+    timeoutId = window.setTimeout(() => {
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      resolve();
+    }, 2_000);
+    audio.load();
+  });
+
 const EvidenceQuotes = ({
   title,
   quotes,
@@ -217,18 +281,31 @@ const EvidenceQuotes = ({
   const [loadingQuoteId, setLoadingQuoteId] = useState<string | null>(null);
   const [playingQuoteId, setPlayingQuoteId] = useState<string | null>(null);
   const [signedAudioUrls, setSignedAudioUrls] = useState<Record<string, string>>({});
+  const quotePlaybackStopAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     const clearPlaying = () => setPlayingQuoteId(null);
+    const stopAtSegmentEnd = () => {
+      if (quotePlaybackStopAtRef.current === null) {
+        return;
+      }
+
+      if (audio.currentTime >= quotePlaybackStopAtRef.current) {
+        audio.pause();
+        quotePlaybackStopAtRef.current = null;
+      }
+    };
     audio.addEventListener("ended", clearPlaying);
     audio.addEventListener("pause", clearPlaying);
+    audio.addEventListener("timeupdate", stopAtSegmentEnd);
 
     return () => {
       audio.removeEventListener("ended", clearPlaying);
       audio.removeEventListener("pause", clearPlaying);
+      audio.removeEventListener("timeupdate", stopAtSegmentEnd);
     };
   }, []);
 
@@ -263,6 +340,16 @@ const EvidenceQuotes = ({
 
       if (audioRef.current.src !== signedUrl) {
         audioRef.current.src = signedUrl;
+      }
+
+      const segment = findQuoteAudioSegment(quote);
+      await waitForAudioMetadata(audioRef.current);
+      if (segment) {
+        audioRef.current.currentTime = Math.max(0, segment.startMs / 1000);
+        quotePlaybackStopAtRef.current = Math.max(segment.startMs + 800, segment.endMs) / 1000;
+      } else {
+        audioRef.current.currentTime = 0;
+        quotePlaybackStopAtRef.current = null;
       }
 
       setActiveQuoteId(quote.quoteId);
