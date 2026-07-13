@@ -491,6 +491,20 @@
   border-color: hsl(42 82% 76% / 0.42);
 }
 
+.landing-input-card--dynamic-hover {
+  border-color: hsl(272 68% 82% / 0.42);
+  box-shadow:
+    0 18px 36px hsl(278 72% 70% / 0.08),
+    0 0 0 1px hsl(272 82% 74% / 0.08);
+}
+
+.landing-input-card--synthetic-hover {
+  border-color: hsl(27 88% 63% / 0.42);
+  box-shadow:
+    0 18px 36px hsl(28 88% 62% / 0.1),
+    0 0 0 1px hsl(28 88% 62% / 0.08);
+}
+
 .landing-input-card--agent-smash {
   transform: translateY(4px) scale(0.968);
   box-shadow:
@@ -525,6 +539,13 @@
   box-shadow:
     0 0 0 1px hsl(42 86% 74% / 0.05),
     0 0 14px hsl(42 92% 68% / 0.06);
+}
+
+.landing-agent-border-overlay--orange::before {
+  border-color: hsl(27 88% 63% / 0.34);
+  box-shadow:
+    0 0 0 1px hsl(28 88% 62% / 0.06),
+    0 0 14px hsl(28 92% 58% / 0.07);
 }
 
 .landing-agent-border-overlay--active {
@@ -565,6 +586,17 @@
   );
 }
 
+.landing-agent-border-overlay--orange.landing-agent-border-overlay--card::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(28 88% 66% / 0.08) 18%,
+    hsl(36 100% 97% / 0.92) 50%,
+    hsl(28 88% 58% / 0.24) 78%,
+    transparent 100%
+  );
+}
+
 .landing-agent-border-overlay--active::after {
   opacity: 1;
   animation:
@@ -592,10 +624,30 @@
 
 .landing-input-card--usability-active:hover {
   border-color: hsl(42 84% 74% / 0.48);
+  box-shadow:
+    0 18px 36px hsl(42 72% 70% / 0.08),
+    0 0 0 1px hsl(42 82% 74% / 0.08);
 }
 
 .landing-input-card--usability-hover:hover {
   border-color: hsl(42 82% 76% / 0.42);
+  box-shadow:
+    0 18px 36px hsl(42 72% 70% / 0.08),
+    0 0 0 1px hsl(42 82% 74% / 0.08);
+}
+
+.landing-input-card--dynamic-hover:hover {
+  border-color: hsl(272 68% 82% / 0.42);
+  box-shadow:
+    0 18px 36px hsl(278 72% 70% / 0.08),
+    0 0 0 1px hsl(272 82% 74% / 0.08);
+}
+
+.landing-input-card--synthetic-hover:hover {
+  border-color: hsl(27 88% 63% / 0.42);
+  box-shadow:
+    0 18px 36px hsl(28 88% 62% / 0.1),
+    0 0 0 1px hsl(28 88% 62% / 0.08);
 }
 
 .landing-action-row {
@@ -645,6 +697,7 @@
   position: relative;
   z-index: 1;
   flex-shrink: 0;
+  transition: color 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .landing-mode-chip > span:not(:first-child) {
@@ -671,6 +724,123 @@
 
 .landing-mode-chip[data-active="true"]::before {
   opacity: 1;
+}
+
+.landing-dynamic-button,
+.landing-synthetic-button {
+  transition:
+    border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing-dynamic-button::before {
+  background: hsl(var(--brand-primary-light) / 0.34);
+}
+
+.landing-dynamic-button:hover,
+.landing-dynamic-button:focus-visible,
+.landing-dynamic-button[data-active="true"] {
+  border-color: hsl(272 68% 82% / 0.56) !important;
+  background-color: hsl(276 100% 99%) !important;
+  box-shadow:
+    0 8px 18px hsl(278 78% 72% / 0.1),
+    0 0 0 1px hsl(272 74% 78% / 0.08);
+}
+
+.landing-dynamic-button:hover::before,
+.landing-dynamic-button:focus-visible::before,
+.landing-dynamic-button[data-active="true"]::before {
+  opacity: 1;
+}
+
+.landing-dynamic-button[data-active="true"] {
+  border-color: hsl(272 68% 80% / 0.72) !important;
+  box-shadow:
+    0 10px 24px hsl(278 78% 72% / 0.14),
+    0 0 0 1px hsl(272 74% 78% / 0.12);
+}
+
+.landing-dynamic-button__icon,
+.landing-dynamic-button__label,
+.landing-synthetic-button__icon,
+.landing-synthetic-button__label {
+  transition:
+    border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing-dynamic-button:hover .landing-dynamic-button__icon,
+.landing-dynamic-button:focus-visible .landing-dynamic-button__icon {
+  border-color: hsl(272 68% 80% / 0.58);
+  background-color: hsl(276 100% 98%);
+  color: hsl(var(--brand-primary));
+}
+
+.landing-dynamic-button[data-active="true"] .landing-dynamic-button__icon {
+  border-color: hsl(272 68% 78% / 0.7);
+  background-color: hsl(276 100% 98%);
+  color: hsl(var(--brand-primary));
+}
+
+.landing-dynamic-button:hover .landing-dynamic-button__label,
+.landing-dynamic-button:focus-visible .landing-dynamic-button__label {
+  color: hsl(var(--brand-primary));
+}
+
+.landing-dynamic-button[data-active="true"] .landing-dynamic-button__label {
+  color: hsl(var(--brand-primary));
+}
+
+.landing-synthetic-button::before {
+  background: hsl(27 96% 88% / 0.34);
+}
+
+.landing-synthetic-button:hover,
+.landing-synthetic-button:focus-visible,
+.landing-synthetic-button[data-active="true"] {
+  border-color: hsl(27 88% 63% / 0.56) !important;
+  background-color: hsl(33 100% 97%) !important;
+  box-shadow:
+    0 8px 18px hsl(28 88% 62% / 0.12),
+    0 0 0 1px hsl(28 88% 62% / 0.08);
+}
+
+.landing-synthetic-button:hover::before,
+.landing-synthetic-button:focus-visible::before,
+.landing-synthetic-button[data-active="true"]::before {
+  opacity: 1;
+}
+
+.landing-synthetic-button[data-active="true"] {
+  border-color: hsl(27 88% 58% / 0.72) !important;
+  box-shadow:
+    0 10px 24px hsl(28 88% 62% / 0.16),
+    0 0 0 1px hsl(28 88% 62% / 0.12);
+}
+
+.landing-synthetic-button:hover .landing-synthetic-button__icon,
+.landing-synthetic-button:focus-visible .landing-synthetic-button__icon {
+  border-color: hsl(27 82% 66% / 0.58);
+  background-color: hsl(33 100% 96%);
+  color: hsl(24 72% 45%);
+}
+
+.landing-synthetic-button[data-active="true"] .landing-synthetic-button__icon {
+  border-color: hsl(27 82% 62% / 0.7);
+  background-color: hsl(33 100% 96%);
+  color: hsl(23 78% 42%);
+}
+
+.landing-synthetic-button:hover .landing-synthetic-button__label,
+.landing-synthetic-button:focus-visible .landing-synthetic-button__label {
+  color: hsl(24 72% 45%);
+}
+
+.landing-synthetic-button[data-active="true"] .landing-synthetic-button__label {
+  color: hsl(23 78% 42%);
 }
 
 .landing-usability-button {

@@ -52,6 +52,8 @@ const Index = () => {
   const [isSyntheticUsersSelected, setIsSyntheticUsersSelected] = useState(false);
   const [isAgentEnhancedPressing, setIsAgentEnhancedPressing] = useState(false);
   const [isUsabilityHovering, setIsUsabilityHovering] = useState(false);
+  const [isDynamicModeHovering, setIsDynamicModeHovering] = useState(false);
+  const [isSyntheticModeHovering, setIsSyntheticModeHovering] = useState(false);
   const [activePlaceholderIndex, setActivePlaceholderIndex] = useState(0);
   const [typedPlaceholderLength, setTypedPlaceholderLength] = useState(0);
   const [isDeletingPlaceholder, setIsDeletingPlaceholder] = useState(false);
@@ -74,7 +76,10 @@ const Index = () => {
   const isAgentEnhancedSelected = selectedResearchMode === "ai_enhanced";
   const isUsabilityModeActive = isDesignModuleOpen || hasScreenContext;
   const isUsabilityWarmActive = isUsabilityModeActive && !isAgentEnhancedSelected && !isSyntheticUsersSelected;
-  const isUsabilityWarmVisible = (isUsabilityHovering || isUsabilityWarmActive) && !isAgentEnhancedSelected;
+  const isDynamicWarmVisible = (isDynamicModeHovering || isAgentEnhancedSelected) && !isSyntheticUsersSelected;
+  const isSyntheticWarmVisible = isSyntheticModeHovering || isSyntheticUsersSelected;
+  const isUsabilityWarmVisible = (isUsabilityHovering || isUsabilityWarmActive) && !isDynamicWarmVisible && !isSyntheticWarmVisible;
+  const hasLandingInputColorGlow = isUsabilityWarmVisible || isDynamicWarmVisible || isSyntheticWarmVisible;
   const activePlaceholder = placeholderHints[activePlaceholderIndex];
   const visiblePlaceholder = activePlaceholder.slice(0, typedPlaceholderLength);
 
@@ -413,9 +418,9 @@ const Index = () => {
         </div>
 
         {/* Project Input */}
-        <div className={`landing-input-card mx-auto max-w-4xl bg-card border border-border rounded-xl p-8 mb-8 shadow-sm landing-fade-in landing-fade-in--4 ${isAgentEnhancedSelected ? "landing-input-card--agent-active" : ""} ${isUsabilityWarmActive ? "landing-input-card--usability-active" : ""} ${isUsabilityWarmVisible ? "landing-input-card--usability-hover" : ""} ${isAgentEnhancedPressing ? "landing-input-card--agent-smash" : ""}`}>
+        <div className={`landing-input-card mx-auto max-w-4xl bg-card border border-border rounded-xl p-8 mb-8 shadow-sm landing-fade-in landing-fade-in--4 ${isAgentEnhancedSelected ? "landing-input-card--agent-active" : ""} ${isUsabilityWarmActive ? "landing-input-card--usability-active" : ""} ${isUsabilityWarmVisible ? "landing-input-card--usability-hover" : ""} ${isDynamicWarmVisible ? "landing-input-card--dynamic-hover" : ""} ${isSyntheticWarmVisible ? "landing-input-card--synthetic-hover" : ""} ${isAgentEnhancedPressing ? "landing-input-card--agent-smash" : ""}`}>
           <div
-            className={`landing-agent-border-overlay landing-agent-border-overlay--card ${isAgentEnhancedSelected || isUsabilityWarmVisible ? "landing-agent-border-overlay--active" : ""} ${isUsabilityWarmVisible ? "landing-agent-border-overlay--warm" : ""}`}
+            className={`landing-agent-border-overlay landing-agent-border-overlay--card ${hasLandingInputColorGlow ? "landing-agent-border-overlay--active" : ""} ${isUsabilityWarmVisible ? "landing-agent-border-overlay--warm" : ""} ${isSyntheticWarmVisible ? "landing-agent-border-overlay--orange" : ""}`}
             aria-hidden="true"
           />
 
@@ -615,6 +620,10 @@ const Index = () => {
               <Button
                 type="button"
                 variant="outline"
+                onPointerEnter={() => setIsDynamicModeHovering(true)}
+                onPointerLeave={() => setIsDynamicModeHovering(false)}
+                onFocus={() => setIsDynamicModeHovering(true)}
+                onBlur={() => setIsDynamicModeHovering(false)}
                 onPointerDown={() => {
                   if (selectedResearchMode !== "ai_enhanced") {
                     triggerAgentEnhancedPress();
@@ -631,27 +640,35 @@ const Index = () => {
                   setIsDesignModuleOpen(false);
                 }}
                 data-active={selectedResearchMode === "ai_enhanced" ? "true" : "false"}
-                className="landing-mode-chip h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm"
+                className="landing-mode-chip landing-dynamic-button h-9 rounded-full border-border-light bg-white/95 px-1.5 pr-3 hover:bg-white shadow-sm"
                 aria-label={selectedResearchMode === "ai_enhanced" ? "Dinamik Soru-Cevap modunu kapat" : "Dinamik Soru-Cevap araştırma modunu seç"}
               >
-                <Sparkles className="mr-2 h-4 w-4" />
-                <span className="text-xs font-medium sm:text-sm">Dinamik Soru-Cevap</span>
+                <span className="landing-dynamic-button__icon mr-2 flex h-6 w-6 items-center justify-center rounded-full border border-border-light bg-surface text-text-primary">
+                  <Sparkles className="h-4 w-4" />
+                </span>
+                <span className="landing-dynamic-button__label text-xs font-medium text-text-secondary sm:text-sm">Dinamik Soru-Cevap</span>
               </Button>
 
               <Button
                 type="button"
                 variant="outline"
+                onPointerEnter={() => setIsSyntheticModeHovering(true)}
+                onPointerLeave={() => setIsSyntheticModeHovering(false)}
+                onFocus={() => setIsSyntheticModeHovering(true)}
+                onBlur={() => setIsSyntheticModeHovering(false)}
                 onClick={() => {
                   setIsSyntheticUsersSelected((prev) => !prev);
                   setSelectedResearchMode("structured");
                   setIsDesignModuleOpen(false);
                 }}
                 data-active={isSyntheticUsersSelected ? "true" : "false"}
-                className="landing-mode-chip h-9 rounded-full border-border-light bg-white/95 px-3 hover:bg-white shadow-sm"
+                className="landing-mode-chip landing-synthetic-button h-9 rounded-full border-border-light bg-white/95 px-1.5 pr-3 hover:bg-white shadow-sm"
                 aria-label={isSyntheticUsersSelected ? "Sentetik kullanıcılar modunu kapat" : "Sentetik kullanıcılar modunu seç"}
               >
-                <Bot className="mr-2 h-4 w-4" />
-                <span className="text-xs font-medium sm:text-sm">Sentetik Kullanıcılar</span>
+                <span className="landing-synthetic-button__icon mr-2 flex h-6 w-6 items-center justify-center rounded-full border border-border-light bg-surface text-text-primary">
+                  <Bot className="h-4 w-4" />
+                </span>
+                <span className="landing-synthetic-button__label text-xs font-medium text-text-secondary sm:text-sm">Sentetik Kullanıcılar</span>
               </Button>
             </div>
             <Button onClick={handlePrimaryCta} disabled={!projectDescription.trim() || loading} className="w-[240px] justify-center bg-brand-primary hover:bg-brand-primary-hover text-white px-6 landing-cta-button">
