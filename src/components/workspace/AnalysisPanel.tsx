@@ -1242,7 +1242,7 @@ const AnalysisPanel = ({ projectId, sessionIds, synthetic = false, syntheticSamp
                       <p>
                         {report.interviewMode === "synthetic"
                           ? "Her bulgu yalnızca sentetik persona cevaplarından üretildi; gerçek kullanıcı davranışı veya kanıtı olarak yorumlanmamalıdır."
-                          : "Her bulgu yalnızca kaydedilmiş transcriptlerden ve tamamlanma/skip/süre verilerinden üretildi."}
+                          : "Bulgular kaydedilmiş transcriptler ve tamamlanma/skip/süre verileriyle ilişkilendirildi."}
                       </p>
                       <p>
                         Analiz üretim kaynağı: <span className="font-medium text-text-primary">{report.generatedFrom}</span>
@@ -1288,12 +1288,12 @@ const AnalysisPanel = ({ projectId, sessionIds, synthetic = false, syntheticSamp
                   <CardTitle>Önemli Bulgular</CardTitle>
                 </div>
                 <CardDescription>
-                  Ürün kararlarını yönlendirecek ana içgörüler ve bunları destekleyen alıntılar.
+                  Ürün kararlarını yönlendirecek ana içgörüler ve ilgili alıntılar.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {report.findings.length === 0 ? (
-                  <p className="text-sm text-text-secondary">Henüz yeterli kanıt oluşmadığı için bulgu çıkarılamadı.</p>
+                  <p className="text-sm text-text-secondary">Bu bölüm için henüz çıkarım oluşmadı.</p>
                 ) : (
                   report.findings.map((finding) => (
                     <FindingCard
@@ -1315,12 +1315,12 @@ const AnalysisPanel = ({ projectId, sessionIds, synthetic = false, syntheticSamp
                   <CardTitle>Temalar</CardTitle>
                 </div>
                 <CardDescription>
-                  Farklı görüşmelerde tekrar eden, kanıtlanmış örüntüler.
+                  Görüşme yanıtlarında öne çıkan tema ve sinyaller.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 lg:grid-cols-2">
                 {report.themes.length === 0 ? (
-                  <p className="text-sm text-text-secondary">Tema çıkarımı için yeterli tekrar eden kanıt bulunamadı.</p>
+                  <p className="text-sm text-text-secondary">Bu bölüm için henüz tema oluşmadı.</p>
                 ) : (
                   report.themes.map((theme) => (
                     <ThemeCard
@@ -1342,12 +1342,12 @@ const AnalysisPanel = ({ projectId, sessionIds, synthetic = false, syntheticSamp
                   <CardTitle>Öneriler</CardTitle>
                 </div>
                 <CardDescription>
-                  Kanıtla ilişkilendirilmiş, önceliklendirilmiş ürün aksiyonları.
+                  Yanıtlarla ilişkilendirilmiş, önceliklendirilmiş ürün aksiyonları.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {report.recommendations.length === 0 ? (
-                  <p className="text-sm text-text-secondary">Öneri üretmek için yeterli kanıt bulunamadı.</p>
+                  <p className="text-sm text-text-secondary">Bu bölüm için henüz öneri oluşmadı.</p>
                 ) : (
                   report.recommendations.map((recommendation) => (
                     <RecommendationCard

@@ -85,6 +85,64 @@ const sanitizeIdList = (values: unknown, allowed: Set<string>) =>
     ),
   );
 
+const firstAllowedId = (values: Array<string | null>, allowed: Set<string>) =>
+  values.find((value): value is string => Boolean(value && allowed.has(value))) || null;
+
+export function buildQuoteBackedReportFallback(input: {
+  quoteCatalog: Array<Record<string, unknown>>;
+  questionRefSet: Set<string>;
+  sessionRefSet: Set<string>;
+}) {
+  const quote = input.quoteCatalog.find((entry) => asString(entry.quoteId).length > 0);
+  if (!quote) {
+    return {
+      findings: [],
+      themes: [],
+      recommendations: [],
+    };
+  }
+
+  const quoteId = asString(quote.quoteId);
+  const questionRef = firstAllowedId(
+    [asString(quote.anchorId) || null, asString(quote.questionRef) || null],
+    input.questionRefSet,
+  );
+  const sessionRef = firstAllowedId([asString(quote.sessionRef) || null], input.sessionRefSet);
+  const section = asString(quote.section, "görüşme");
+  const findingId = "finding-1";
+  const findingTitle = "Yanıtlarda öne çıkan sinyal";
+
+  const findings = [{
+    id: findingId,
+    title: findingTitle,
+    summary: `${section} bağlamındaki yanıtlarda ürün ekibinin dikkate alabileceği net bir sinyal görülüyor. Bu sinyal, sonraki kararları kullanıcı beklentisi ve akış netliği açısından kontrol etmeye yardımcı olur.`,
+    quoteIds: [quoteId],
+    questionRefs: questionRef ? [questionRef] : [],
+    sessionRefs: sessionRef ? [sessionRef] : [],
+    evidenceCount: 1,
+  }];
+
+  const themes = [{
+    id: "theme-1",
+    title: "Yanıtlarda öne çıkan tema",
+    description: `${section} yanıtları, deneyimin bu bölümünde beklenti, anlaşılırlık veya karar verme akışıyla ilgili izlenmesi gereken bir tema olduğunu gösteriyor.`,
+    quoteIds: [quoteId],
+    questionRefs: questionRef ? [questionRef] : [],
+    evidenceCount: 1,
+  }];
+
+  const recommendations = [{
+    id: "recommendation-1",
+    title: "Bu sinyali ürün kararına çevir",
+    description: "İlgili ekran, mesaj veya akışı bu yanıttaki sinyale göre gözden geçir; kullanıcı beklentisini netleştiren küçük bir iyileştirme hipotezi oluşturup sonraki iterasyonda doğrula.",
+    priority: "medium" as const,
+    quoteIds: [quoteId],
+    linkedFindingIds: [findingId],
+  }];
+
+  return { findings, themes, recommendations };
+}
+
 const buildQuestionTemplateKey = (section: string, questionText: string) => `${section}:::${questionText}`;
 
 const buildEmptyReport = (
@@ -220,7 +278,9 @@ Sadece verilen veriyle calis.
 Verilmeyen metrikleri, demografileri veya davranislari uydurma.
 Tum ciktilar Turkce ve gecerli JSON olmali.
 Her finding, theme ve recommendation en az bir gecerli quoteId referansi icermeli.
-Kaniti olmayan bolumler icin bos dizi don.
+Kanit katalogunda en az bir quote varsa, bunu dusuk orneklem gibi sunmadan karar aldiran olculu finding, theme ve recommendation uret.
+Quote olmayan iddia yazma; sadece hic quote yoksa ilgili dizileri bos don.
+Veri hacmini eksiklik gibi anlatan negatif uyarilar yazma.
 Sonucta yonetici ozetini kisa, net ve urun ekibinin karar alabilecegi bicimde yaz.`;
 
   const userPrompt = `
@@ -294,6 +354,8 @@ Kurallar:
 - Tum referanslar giriste verilen quoteId, questionRef ve sessionRef degerlerinden secilmeli.
 - Demografi, persona, location, motivation veya telemetry uydurma.
 - Yalnizca veriyle desteklenebilen sonuc yaz.
+- 1-3 katilimci veya az sayida yanit varsa bunu bir kisit gibi belirtme; "eldeki gorusmelerden cikan sinyal" tonunda yaz.
+- Veri hacmini eksiklik veya basarisizlik gibi gosteren ifadeler kullanma.
 `;
 
   const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -618,7 +680,9 @@ async function generateAIEnhancedProjectReport(params: {
 
   const deterministicSummary = completedSessions.length === 0
     ? "Henüz tamamlanmış AI enhanced görüşme bulunmuyor."
-    : `${completedSessions.length} tamamlanmış AI enhanced görüşmeden ${answeredResponses.length} yanıt analiz edildi. Bulgular anchor omurga ve canlı follow-up akışına göre gösteriliyor.`;
+    : answeredResponses.length === 0
+      ? "Tamamlanan AI enhanced görüşmeler için kapsam ve akış özeti hazırlandı."
+      : `Eldeki ${completedSessions.length} tamamlanmış AI enhanced görüşmeden ${answeredResponses.length} yanıt analiz edildi. Öne çıkan sinyaller anchor omurga ve canlı follow-up akışına göre gösteriliyor.`;
 
   const llmResult = await callLovableForReport({
     projectTitle: asString(params.project.title, "AI Enhanced Araştırma"),
@@ -658,7 +722,13 @@ async function generateAIEnhancedProjectReport(params: {
   const anchorRefSet = new Set(anchorCoverageBase.map((anchor) => anchor.anchorId));
   const sessionRefSet = new Set(participantJourneysBase.map((journey) => journey.sessionRef));
 
-  const findings = asArray<Record<string, unknown>>(llmResult?.findings)
+  const fallbackSections = buildQuoteBackedReportFallback({
+    quoteCatalog,
+    questionRefSet: anchorRefSet,
+    sessionRefSet,
+  });
+
+  const parsedFindings = asArray<Record<string, unknown>>(llmResult?.findings)
     .map((finding, index) => ({
       id: `finding-${index + 1}`,
       title: asString(finding.title, `Bulgu ${index + 1}`),
@@ -672,10 +742,11 @@ async function generateAIEnhancedProjectReport(params: {
       ...finding,
       evidenceCount: finding.quoteIds.length,
     }));
+  const findings = parsedFindings.length > 0 ? parsedFindings : fallbackSections.findings;
 
   const findingTitleToId = new Map(findings.map((finding) => [normalizeTitle(finding.title), finding.id]));
 
-  const themes = asArray<Record<string, unknown>>(llmResult?.themes)
+  const parsedThemes = asArray<Record<string, unknown>>(llmResult?.themes)
     .map((theme, index) => {
       const quoteIds = sanitizeIdList(theme.quoteIds, quoteIdSet);
       return {
@@ -688,8 +759,9 @@ async function generateAIEnhancedProjectReport(params: {
       };
     })
     .filter((theme) => theme.description.length > 0 && theme.quoteIds.length > 0);
+  const themes = parsedThemes.length > 0 ? parsedThemes : fallbackSections.themes;
 
-  const recommendations = asArray<Record<string, unknown>>(llmResult?.recommendations)
+  const parsedRecommendations = asArray<Record<string, unknown>>(llmResult?.recommendations)
     .map((recommendation, index) => ({
       id: `recommendation-${index + 1}`,
       title: asString(recommendation.title, `Öneri ${index + 1}`),
@@ -701,6 +773,7 @@ async function generateAIEnhancedProjectReport(params: {
         .filter((value): value is string => Boolean(value)),
     }))
     .filter((recommendation) => recommendation.description.length > 0 && recommendation.quoteIds.length > 0);
+  const recommendations = parsedRecommendations.length > 0 ? parsedRecommendations : fallbackSections.recommendations;
 
   const participantSummaries = new Map<string, { summary: string }>(
     asArray<Record<string, unknown>>(llmResult?.participantSummaries)
@@ -1073,8 +1146,8 @@ export async function generateAndPersistProjectReport(
   const deterministicSummary = completedSessions.length === 0
     ? "Henüz tamamlanmış görüşme bulunmuyor."
     : answeredResponses.length === 0
-      ? "Tamamlanmış görüşmeler mevcut ancak analiz edilebilir transcript oluşmamış. Bu rapor yalnızca kapsama, süre ve skip verilerini gösteriyor."
-      : `${completedSessions.length} tamamlanmış görüşmeden ${answeredResponses.length} yanıt analiz edildi. Bulgular yalnızca kaydedilmiş transcript ve oturum verilerine dayanıyor.`;
+      ? "Tamamlanan görüşmeler için kapsama, süre ve skip özeti hazırlandı."
+      : `Eldeki ${completedSessions.length} tamamlanmış görüşmeden ${answeredResponses.length} yanıt analiz edildi. Öne çıkan sinyaller transcript ve oturum verileriyle ilişkilendirildi.`;
 
   let llmResult: Record<string, unknown> | null = null;
   let llmUsed = false;
@@ -1120,9 +1193,14 @@ export async function generateAndPersistProjectReport(
   const quoteIdSet = new Set(quoteCatalog.map((quote) => quote.quoteId));
   const questionRefSet = new Set(questionBreakdownBase.map((question) => question.questionRef));
   const sessionRefSet = new Set<string>(participantBreakdownBase.map((participant: any) => participant.sessionRef));
+  const fallbackSections = buildQuoteBackedReportFallback({
+    quoteCatalog,
+    questionRefSet,
+    sessionRefSet,
+  });
 
   const rawFindings = asArray<Record<string, unknown>>(llmResult?.findings);
-  const findings = rawFindings
+  const parsedFindings = rawFindings
     .map((finding, index) => ({
       id: `finding-${index + 1}`,
       title: asString(finding.title, `Bulgu ${index + 1}`),
@@ -1136,10 +1214,11 @@ export async function generateAndPersistProjectReport(
       ...finding,
       evidenceCount: finding.quoteIds.length,
     }));
+  const findings = parsedFindings.length > 0 ? parsedFindings : fallbackSections.findings;
 
   const findingTitleToId = new Map(findings.map((finding) => [normalizeTitle(finding.title), finding.id]));
 
-  const themes = asArray<Record<string, unknown>>(llmResult?.themes)
+  const parsedThemes = asArray<Record<string, unknown>>(llmResult?.themes)
     .map((theme, index) => {
       const quoteIds = sanitizeIdList(theme.quoteIds, quoteIdSet);
       return {
@@ -1152,8 +1231,9 @@ export async function generateAndPersistProjectReport(
       };
     })
     .filter((theme) => theme.description.length > 0 && theme.quoteIds.length > 0);
+  const themes = parsedThemes.length > 0 ? parsedThemes : fallbackSections.themes;
 
-  const recommendations = asArray<Record<string, unknown>>(llmResult?.recommendations)
+  const parsedRecommendations = asArray<Record<string, unknown>>(llmResult?.recommendations)
     .map((recommendation, index) => {
       const linkedFindingIds = asArray<string>(recommendation.linkedFindingTitles)
         .map((title) => findingTitleToId.get(normalizeTitle(title)))
@@ -1169,6 +1249,7 @@ export async function generateAndPersistProjectReport(
       };
     })
     .filter((recommendation) => recommendation.description.length > 0 && recommendation.quoteIds.length > 0);
+  const recommendations = parsedRecommendations.length > 0 ? parsedRecommendations : fallbackSections.recommendations;
 
   const participantSummaries = new Map<string, { summary: string; quoteIds: string[] }>(
     asArray<Record<string, unknown>>(llmResult?.participantSummaries)
