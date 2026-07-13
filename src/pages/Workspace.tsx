@@ -464,6 +464,14 @@ const Workspace = () => {
   const isAIEnhancedMode = researchMode === "ai_enhanced";
   const syntheticUsersEnabled = Boolean(projectData?.analysis?.syntheticUsers?.enabled);
   const hasSyntheticReport = Boolean(projectData?.analysis?.syntheticUsers?.report);
+  const hasResearchStarted = useMemo(
+    () =>
+      currentStep === "run" ||
+      currentStep === "analyze" ||
+      sessions.length > 0 ||
+      participants.some((participant) => participant.status === "joined" || participant.status === "completed" || Boolean(participant.joined_at)),
+    [currentStep, participants, sessions.length],
+  );
   const aiEnhancedDisplayGuide = useMemo(
     () => buildAIEnhancedDisplayGuide(aiEnhancedBrief),
     [aiEnhancedBrief],
@@ -809,11 +817,15 @@ const Workspace = () => {
           ? nextGuideOrUpdater(currentGuide)
           : nextGuideOrUpdater;
 
-      setQuestionSetState((currentQuestionSet) => createNextQuestionSetState(currentQuestionSet, resolvedGuide, source));
+      setQuestionSetState((currentQuestionSet) =>
+        createNextQuestionSetState(currentQuestionSet, resolvedGuide, source, {
+          createVersion: hasResearchStarted,
+        }),
+      );
       return resolvedGuide;
     });
     setIsResearchRelated(true);
-  }, []);
+  }, [hasResearchStarted]);
 
   const applyAIEnhancedBrief = useCallback((nextBrief: AIEnhancedBrief) => {
     setAiEnhancedBrief(nextBrief);

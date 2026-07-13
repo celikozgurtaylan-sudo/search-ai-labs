@@ -105,6 +105,7 @@ export const createNextQuestionSetState = (
   currentQuestionSet: QuestionSetState | null,
   nextGuide: any,
   source: string,
+  options: { createVersion?: boolean } = {},
 ): QuestionSetState | null => {
   const sanitizedGuide = sanitizeDiscussionGuide(nextGuide);
   if (!sanitizedGuide) {
@@ -128,6 +129,25 @@ export const createNextQuestionSetState = (
   }
 
   const createdAt = new Date().toISOString();
+  const shouldCreateVersion = options.createVersion ?? true;
+
+  if (!shouldCreateVersion) {
+    return {
+      ...ensuredCurrentState,
+      updatedAt: createdAt,
+      versions: ensuredCurrentState.versions.map((version) =>
+        version.id === ensuredCurrentState.currentVersionId
+          ? {
+              ...version,
+              source,
+              createdAt,
+              discussionGuideSnapshot: sanitizedGuide,
+            }
+          : version,
+      ),
+    };
+  }
+
   const nextVersionNumber = ensuredCurrentState.currentVersionNumber + 1;
   const nextVersionId = buildVersionId();
 
