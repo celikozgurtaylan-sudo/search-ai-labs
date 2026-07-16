@@ -12,6 +12,8 @@ const MODEL = Deno.env.get("ORCHESTRATOR_MODEL") || "gpt-4.1";
 
 export const CONVERSATIONAL_WARMUP_TURN_COUNT = 3;
 
+const OPENAI_WARMUP_TIMEOUT_MS = 8_000; // mirrors adaptive-probe-engine OPENAI_*_TIMEOUT_MS
+
 const RESPONSE_FORMAT = {
   type: "json_schema",
   json_schema: {
@@ -304,6 +306,9 @@ export async function generateConversationalWarmupQuestion(
     };
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), OPENAI_WARMUP_TIMEOUT_MS);
+
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -311,6 +316,7 @@ export async function generateConversationalWarmupQuestion(
         Authorization: `Bearer ${openaiApiKey}`,
         "Content-Type": "application/json",
       },
+      signal: controller.signal,
       body: JSON.stringify({
         model: MODEL,
         messages: [
@@ -366,5 +372,7 @@ export async function generateConversationalWarmupQuestion(
       fallbackUsed: true,
       source: "fallback",
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
