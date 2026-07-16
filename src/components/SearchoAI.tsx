@@ -4,6 +4,7 @@ import { CheckCircle2, Loader2, Mic, PhoneOff, SkipForward, Sparkles } from 'luc
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { useLiveTranscription } from '@/hooks/useLiveTranscription';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,6 +48,7 @@ type InterviewPhase =
   | 'idle'
   | 'asking'
   | 'awaiting_audio_playback'
+  | 'ready_to_answer'
   | 'recording'
   | 'processing'
   | 'review'
@@ -308,6 +310,28 @@ const SearchoAI = ({
   const [currentAudioLevel, setCurrentAudioLevel] = useState(0);
   const [showSilentMicWarning, setShowSilentMicWarning] = useState(false);
   const [hasDetectedSpeechForCurrentAttempt, setHasDetectedSpeechForCurrentAttempt] = useState(false);
+
+  const {
+    isSupported: liveTranscriptSupported,
+    start: startLiveTranscription,
+    stop: stopLiveTranscription,
+    finalText: liveFinalText,
+    interimText: liveInterimText,
+    segments: liveSegments,
+  } = useLiveTranscription('tr-TR');
+
+  // Live captions run only while actively recording. start() resets its own
+  // state, so each answer begins with a clean live transcript.
+  useEffect(() => {
+    if (interviewPhase === 'recording') {
+      startLiveTranscription();
+    } else {
+      stopLiveTranscription();
+    }
+  }, [interviewPhase, startLiveTranscription, stopLiveTranscription]);
+
+  // Ensure the recognizer is torn down if the interview unmounts mid-recording.
+  useEffect(() => stopLiveTranscription, [stopLiveTranscription]);
 
   const audioTranscriberRef = useRef<AudioTranscriber | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
@@ -1398,8 +1422,11 @@ const SearchoAI = ({
       return;
     }
 
-    void beginAnswerCapture({ resetDuration: false, preserveDraft: true });
-  }, [beginAnswerCapture, currentQuestion?.id, interviewPhase, isStartingCapture, isSubmittingResponse]);
+    // Searcho has finished speaking. Do NOT auto-start recording (it could
+    // capture Searcho's own audio tail). Surface a clear reply button instead;
+    // recording begins only when the participant explicitly starts it.
+    setInterviewPhase('ready_to_answer');
+  }, [currentQuestion?.id, interviewPhase, isStartingCapture, isSubmittingResponse]);
 
   const handleQuestionPlaybackInterrupted = useCallback((reason: AvatarPlaybackIssueReason) => {
     setInterviewPhase('awaiting_audio_playback');
@@ -1509,8 +1536,28 @@ const SearchoAI = ({
   const isCompletedPhase = interviewPhase === 'completed' || interviewProgress.isComplete;
   const isAutoStartingPhase = interviewPhase === 'asking' && isStartingCapture;
   const isVoiceClearlyDetected = currentAudioLevel >= 8;
+  // Live caption "understood?" signal from the last finalized utterance.
+  // Chrome often reports confidence 0 (unknown) — treat that as fine, and only
+  // flag genuinely low (0 < c < 0.6) confidence as "not clearly understood".
+  const LIVE_CONFIDENCE_FLOOR = 0.6;
+  const lastLiveConfidence = liveSegments.length ? liveSegments[liveSegments.length - 1].confidence : null;
+  const liveUnderstood: boolean | null =
+    lastLiveConfidence === null
+      ? null
+      : !(lastLiveConfidence > 0 && lastLiveConfidence < LIVE_CONFIDENCE_FLOOR);
+  const liveStatusLabel =
+    liveUnderstood === null
+      ? 'Dinliyoruz…'
+      : liveUnderstood
+        ? 'Anlaşılıyor'
+        : 'Duyuyoruz ama net değil — biraz daha yüksek sesle';
+  const liveStatusTone =
+    liveUnderstood === null ? 'text-slate-500' : liveUnderstood ? 'text-green-600' : 'text-amber-600';
+  const isLowConfidenceSegment = (confidence: number) =>
+    confidence > 0 && confidence < LIVE_CONFIDENCE_FLOOR;
   const isUserResponding = isRecordingPhase || isReviewPhase || isProcessingPhase || isSubmittingResponse || Boolean(userTranscript);
-  const shouldShowSpeaker = interviewPhase === 'asking' || isAwaitingAudioPlaybackPhase;
+  const isReadyToAnswerPhase = interviewPhase === 'ready_to_answer';
+  const shouldShowSpeaker = interviewPhase === 'asking' || isReadyToAnswerPhase || isAwaitingAudioPlaybackPhase;
   const shouldUseCompactTimerRail = isRecordingPhase || isProcessingPhase || isRecoveringPhase || isReviewPhase;
 
   const responseTimerLabel = isAwaitingAudioPlaybackPhase
@@ -1521,8 +1568,10 @@ const SearchoAI = ({
     ? 'Yanıt süresi başlamadı. Önce soru sesi başarılı şekilde oynatılmalı ve tamamlanmalı.'
     : interviewPhase === 'asking'
     ? (isAutoStartingPhase
-      ? 'Soru bitti. Mikrofon hazırlanıyor ve kayıt birkaç saniye içinde otomatik başlayacak.'
-      : 'Soru seslendirmesi tamamlanınca 2 dakikalık yanıt süresi otomatik başlar.')
+      ? 'Soru bitti. Mikrofon hazırlanıyor, birazdan konuşabilirsiniz.'
+      : 'Searcho soruyu okuyor. Bittiğinde “Cevaplamaya Başla” düğmesi görünecek.')
+    : isReadyToAnswerPhase
+      ? 'Hazır olduğunuzda “Cevaplamaya Başla”ya basın. 2 dakikalık süre siz başlattığınızda başlar.'
     : isRecordingPhase
       ? 'Yanıt süresi başladı. Ses dalgası sizi duyduğumuzu gösterir.'
       : isProcessingPhase
@@ -1570,8 +1619,39 @@ const SearchoAI = ({
           <div className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             {isAutoStartingPhase
-              ? 'Soru tamamlandı. Mikrofon hazırlanıyor; kayıt otomatik olarak başlatılıyor.'
-              : 'Soru seslendiriliyor. Ses biter bitmez kayıt otomatik olarak başlayacak.'}
+              ? 'Mikrofon hazırlanıyor; birazdan konuşabilirsiniz.'
+              : 'Searcho soruyu okuyor. Lütfen dinleyin; bittiğinde cevaplamak için düğme görünecek.'}
+          </div>
+        </div>
+      );
+    }
+
+    if (isReadyToAnswerPhase) {
+      return (
+        <div className="rounded-2xl border-2 border-brand-primary/40 bg-brand-primary/5 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-3">
+            <Mic className="h-4 w-4 text-brand-primary" />
+            <span className="text-sm font-bold uppercase tracking-wide text-brand-primary">
+              Sizin sıranız
+            </span>
+          </div>
+          <p className="mb-3 text-sm leading-relaxed text-slate-700">
+            Hazır olduğunuzda mikrofonu açmak için düğmeye basın. 2 dakikalık yanıt süresi siz başlattığınızda başlar.
+          </p>
+          <div className="flex flex-wrap gap-2.5">
+            <Button
+              onClick={() => void beginAnswerCapture({ resetDuration: true, preserveDraft: true })}
+              size="default"
+              disabled={isStartingCapture}
+              className="bg-brand-primary text-white hover:bg-brand-primary-hover"
+            >
+              {isStartingCapture ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mic className="mr-2 h-4 w-4" />}
+              Cevaplamaya Başla
+            </Button>
+            <Button onClick={() => void skipQuestion()} variant="outline" size="default" disabled={isStartingCapture}>
+              <SkipForward className="mr-2 h-4 w-4" />
+              Atla
+            </Button>
           </div>
         </div>
       );
@@ -1629,6 +1709,36 @@ const SearchoAI = ({
               </div>
             </div>
           </div>
+          {liveTranscriptSupported ? (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm">
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Söyledikleriniz
+                </span>
+                <span className={`text-xs font-medium ${liveStatusTone}`}>
+                  {liveStatusLabel}
+                </span>
+              </div>
+              <p className="min-h-[2.5rem] text-sm leading-relaxed text-slate-800">
+                {liveSegments.map((segment, index) => (
+                  <span
+                    key={index}
+                    className={isLowConfidenceSegment(segment.confidence)
+                      ? 'text-amber-700 underline decoration-dotted decoration-amber-500 underline-offset-2'
+                      : undefined}
+                    title={isLowConfidenceSegment(segment.confidence) ? 'Bu kısım net anlaşılmadı' : undefined}
+                  >
+                    {segment.text}{' '}
+                  </span>
+                ))}
+                {liveInterimText ? (
+                  <span className="text-slate-400">{liveInterimText}</span>
+                ) : liveSegments.length === 0 ? (
+                  <span className="text-slate-400">Konuştuğunuzda kelimeler burada belirecek…</span>
+                ) : null}
+              </p>
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2.5">
             <Button onClick={finishCurrentAnswer} className="bg-brand-primary text-white hover:bg-brand-primary-hover" size="default">
               Yanıtı Bitir
@@ -1767,7 +1877,8 @@ const SearchoAI = ({
                           ) {
                             setInterviewPhase('asking');
                           }
-                          void ensureMicrophoneStream().catch(() => undefined);
+                          // Do not open the mic while Searcho is speaking — it is acquired
+                          // only when the participant taps "Cevaplamaya Başla".
                         }}
                         onReadyToRespond={handleQuestionReadyToRespond}
                         onPlaybackInterrupted={handleQuestionPlaybackInterrupted}
