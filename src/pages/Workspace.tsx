@@ -32,6 +32,7 @@ import { projectService } from "@/services/projectService";
 import { participantService, StudyParticipant, StudySession } from "@/services/participantService";
 import { syntheticUserService } from "@/services/syntheticUserService";
 import { applyInterviewLinkAccess, getInterviewControlState } from "@/lib/interviewControl";
+import type { CompiledPrototype, UsabilityTask } from "@/lib/prototype";
 import {
   createNextQuestionSetState,
   ensureQuestionSetState,
@@ -487,6 +488,17 @@ const Workspace = () => {
     () => Boolean(projectData?.analysis?.usabilityTesting) || usabilityDesignScreens.length > 0,
     [projectData?.analysis?.usabilityTesting, usabilityDesignScreens.length],
   );
+  // Compiled prototype + goal-screen tasks produced by figma-import. Present
+  // only once the researcher has imported; the panel falls back to the live
+  // Figma embed until then.
+  const usabilityPrototype = useMemo<CompiledPrototype | null>(
+    () => (projectData?.analysis?.usabilityTesting?.prototype as CompiledPrototype | undefined) ?? null,
+    [projectData?.analysis?.usabilityTesting?.prototype],
+  );
+  const usabilityTasks = useMemo<UsabilityTask[]>(() => {
+    const stored = projectData?.analysis?.usabilityTesting?.tasks;
+    return Array.isArray(stored) ? (stored as UsabilityTask[]) : [];
+  }, [projectData?.analysis?.usabilityTesting?.tasks]);
 
   useEffect(() => {
     setSyntheticSampleSize(clampSyntheticSampleSize(projectData?.analysis?.syntheticUsers?.sampleSize));
@@ -499,6 +511,30 @@ const Workspace = () => {
       timestamp: Date.now(),
     }));
   }, []);
+
+  /** Merge a patch into `analysis.usabilityTesting` and persist it. */
+  const patchUsabilityTesting = useCallback(async (patch: Record<string, unknown>) => {
+    if (!projectData?.id) return;
+    const analysis = { ...(projectData.analysis ?? {}) };
+    analysis.usabilityTesting = { ...(analysis.usabilityTesting ?? {}), ...patch };
+    const next = { ...projectData, analysis };
+    syncProjectData(next);
+    try {
+      await projectService.updateProject(projectData.id, { analysis });
+    } catch (error) {
+      console.error("Failed to persist usability prototype:", error);
+    }
+  }, [projectData, syncProjectData]);
+
+  const persistUsabilityPrototype = useCallback((prototype: CompiledPrototype, tasks: UsabilityTask[]) => {
+    // figma-import already wrote the prototype server-side; this syncs the local
+    // copy and stores the freshly seeded tasks alongside it.
+    void patchUsabilityTesting({ prototype, tasks });
+  }, [patchUsabilityTesting]);
+
+  const persistUsabilityTasks = useCallback((tasks: UsabilityTask[]) => {
+    void patchUsabilityTesting({ tasks });
+  }, [patchUsabilityTesting]);
 
   const workspaceChatPayload = useMemo(
     () => buildPersistedWorkspaceChatPayload(chatMessages, chatConversationHistory),
@@ -1435,7 +1471,14 @@ const Workspace = () => {
 
                   if (isUsabilityStudy && (currentStep === "guide" || currentStep === "run")) {
                     return (
-                      <UsabilityPrototypePanel designScreens={usabilityDesignScreens}>
+                      <UsabilityPrototypePanel
+                        designScreens={usabilityDesignScreens}
+                        projectId={projectData?.id ?? null}
+                        prototype={usabilityPrototype}
+                        tasks={usabilityTasks}
+                        onPrototypeImported={persistUsabilityPrototype}
+                        onTasksChange={persistUsabilityTasks}
+                      >
                         {studyPanel}
                       </UsabilityPrototypePanel>
                     );

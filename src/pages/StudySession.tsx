@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ import {
   probeMicrophoneHealth,
 } from "@/utils/microphoneHealth";
 import { FIGMA_IFRAME_ALLOW, resolveDesignScreenEmbedUrl } from "@/lib/figma";
+import type { CompiledPrototype, TaskResult, UsabilityTask } from "@/lib/prototype";
+import UsabilityTaskRunner from "@/components/usability/UsabilityTaskRunner";
 
 type CameraValidationResult = {
   verified: boolean;
@@ -117,7 +119,11 @@ type StudyProjectData = {
     discussionGuide?: unknown;
     researchMode?: string;
     aiEnhancedBrief?: unknown;
-    usabilityTesting?: unknown;
+    usabilityTesting?: {
+      prototype?: CompiledPrototype;
+      tasks?: UsabilityTask[];
+      [key: string]: unknown;
+    };
   };
 };
 
@@ -1201,6 +1207,24 @@ const StudySession = () => {
 
   const activeScreen = designScreens[activeScreenIndex] || null;
   const activeScreenEmbedUrl = resolveDesignScreenEmbedUrl(activeScreen);
+
+  // When the researcher has imported the prototype we run Searcho's own player
+  // instead of the Figma embed: it tells us which screen the participant is on,
+  // which is the only way to auto-detect task completion for anonymous viewers.
+  const compiledPrototype = (projectData?.analysis?.usabilityTesting?.prototype ?? null) as CompiledPrototype | null;
+  const prototypeTasks = useMemo<UsabilityTask[]>(() => {
+    const stored = projectData?.analysis?.usabilityTesting?.tasks;
+    return Array.isArray(stored) ? (stored as UsabilityTask[]) : [];
+  }, [projectData?.analysis?.usabilityTesting?.tasks]);
+  const canRunPrototypeTasks = Boolean(compiledPrototype?.frames?.length) && prototypeTasks.length > 0;
+
+  const handleTaskResult = useCallback((result: TaskResult) => {
+    if (!sessionId) return;
+    // Fire and forget — a failed write must never block the participant.
+    void interviewService.recordTaskResult(sessionId, result).catch((error) => {
+      console.error('Failed to record task result:', error);
+    });
+  }, [sessionId]);
   const isDeviceCheckBusy = deviceCheckState === 'requesting_permission' || deviceCheckState === 'verifying_camera' || deviceCheckState === 'verifying_microphone';
   const canContinueToInterview = cameraEnabled && cameraStreamVerified && microphoneVerified && deviceCheckState === 'ready';
   const microphoneLevelRatio = microphoneLevelThreshold > 0
@@ -1414,7 +1438,13 @@ const StudySession = () => {
                   </div>
 
                   <div className="flex min-h-[420px] flex-1 items-center justify-center bg-[radial-gradient(circle_at_top,rgba(124,77,255,0.10),transparent_38%),linear-gradient(180deg,#f8f7ff_0%,#f2f4f8_100%)] p-5 md:min-h-[520px] md:p-8 xl:min-h-0">
-                    {activeScreen.source === "figma-link" ? (
+                    {canRunPrototypeTasks ? (
+                      <UsabilityTaskRunner
+                        prototype={compiledPrototype!}
+                        tasks={prototypeTasks}
+                        onTaskResult={handleTaskResult}
+                      />
+                    ) : activeScreen.source === "figma-link" ? (
                       <div className="flex h-full w-full flex-col gap-3">
                         {activeScreenEmbedUrl ? (
                           <iframe

@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client'
+import type { TaskResult } from '@/lib/prototype'
 
 export interface InterviewQuestion {
   id: string
@@ -306,6 +307,19 @@ export const interviewService = {
       action: 'complete_question',
       sessionId,
       responseData: { questionId }
+    });
+  },
+
+  /** Store one usability task outcome from the Searcho-hosted prototype player. */
+  async recordTaskResult(sessionId: string, result: TaskResult) {
+    if (isDesignMode(sessionId)) {
+      return { success: true };
+    }
+
+    return await invokeWithSessionToken('interview-manager', {
+      action: 'record_task_result',
+      sessionId,
+      responseData: result
     });
   },
 

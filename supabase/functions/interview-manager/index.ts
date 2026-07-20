@@ -1613,6 +1613,8 @@ serve(async (req) => {
         return await prepareScreenRecordingUpload(sessionId, responseData ?? {});
       case 'finalize_screen_recording':
         return await finalizeScreenRecording(sessionId, responseData ?? {});
+      case 'record_task_result':
+        return await recordTaskResult(sessionId, responseData ?? {});
       case 'end_session_early':
         return await endSessionEarly(sessionId);
       default:
@@ -2075,6 +2077,66 @@ async function finalizeScreenRecording(
 
   return new Response(
     JSON.stringify({ success: true, session: data }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+/**
+ * Persist one usability task outcome from the Searcho-hosted prototype player.
+ * The player owns navigation, so reaching the goal frame is the completion
+ * signal — no researcher grading and no Figma events needed.
+ */
+async function recordTaskResult(
+  sessionId: string,
+  responseData: {
+    taskId?: string;
+    reached?: boolean;
+    timeMs?: number;
+    clicks?: number;
+    misclicks?: number;
+    path?: unknown;
+  } = {},
+) {
+  if (!responseData.taskId) {
+    throw new Error('Missing taskId');
+  }
+
+  const session = await resolveSessionProject(sessionId);
+  const metadata = isRecord(session.metadata) ? session.metadata : {};
+  const existing = Array.isArray(metadata.taskResults) ? metadata.taskResults : [];
+
+  const nonNegativeInt = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+
+  const result = {
+    taskId: responseData.taskId,
+    reached: responseData.reached === true,
+    timeMs: nonNegativeInt(responseData.timeMs),
+    clicks: nonNegativeInt(responseData.clicks),
+    misclicks: nonNegativeInt(responseData.misclicks),
+    path: Array.isArray(responseData.path)
+      ? responseData.path.filter((step): step is string => typeof step === 'string').slice(0, 200)
+      : [],
+    recordedAt: new Date().toISOString(),
+  };
+
+  // One row per task — a retried task overwrites its earlier attempt.
+  const taskResults = [
+    ...existing.filter((entry) => !isRecord(entry) || entry.taskId !== result.taskId),
+    result,
+  ];
+
+  const { error } = await supabase
+    .from('study_sessions')
+    .update({ metadata: { ...metadata, taskResults } })
+    .eq('id', sessionId);
+
+  if (error) {
+    throw new Error(`Failed to record task result: ${error.message}`);
+  }
+
+  return new Response(
+    JSON.stringify({ success: true, taskResults }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );
 }
