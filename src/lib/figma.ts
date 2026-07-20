@@ -4,13 +4,38 @@
 // (src/components/workspace/UsabilityPrototypePanel.tsx) all embed prototypes the
 // same way.
 
+// Prototype-URL params that hide Figma's own chrome inside the embed: the left
+// "Flows" panel and the bottom bar with the file/board name. `hide-ui` hides the
+// UI, `hotspot-hints` stops the blue click flashes, and the scaling params keep
+// the frame fitted. Applied to the inner prototype URL so the embed viewer honors
+// them.
+const FIGMA_PROTO_EMBED_PARAMS: Record<string, string> = {
+  "hide-ui": "1",
+  "hotspot-hints": "0",
+  "scaling": "scale-down",
+  "content-scaling": "fixed",
+};
+
 /**
  * Wrap a Figma prototype/design URL in the share embed host so it can render
  * inside an iframe. This is the legacy `figma.com/embed?embed_host=share` form,
- * which works for prototypes shared with "anyone with the link".
+ * which works for prototypes shared with "anyone with the link". The inner
+ * prototype URL is enriched with `hide-ui=1` etc. so the Figma chrome (flows
+ * panel + board-name bar) stays hidden from researchers and participants.
  */
-export const buildFigmaEmbedUrl = (url: string) =>
-  `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(url)}`;
+export const buildFigmaEmbedUrl = (url: string) => {
+  let inner = url.trim();
+  try {
+    const parsed = new URL(inner);
+    for (const [key, value] of Object.entries(FIGMA_PROTO_EMBED_PARAMS)) {
+      parsed.searchParams.set(key, value);
+    }
+    inner = parsed.toString();
+  } catch {
+    // Leave the raw string as-is if it can't be parsed as a URL.
+  }
+  return `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(inner)}`;
+};
 
 /**
  * True when the value looks like a Figma prototype/design/file URL.
@@ -37,17 +62,17 @@ export interface DesignScreenLike {
 }
 
 /**
- * Resolve the embeddable URL for a design screen: prefer a precomputed
- * `embedUrl`, otherwise build one for Figma-link screens. Returns null for
- * non-embeddable screens (e.g. pasted images).
+ * Resolve the embeddable URL for a design screen. For Figma-link screens we
+ * always rebuild from the raw `url` so the current embed params (hide-ui, etc.)
+ * apply even to projects whose `embedUrl` was precomputed earlier. Returns null
+ * for non-embeddable screens (e.g. pasted images).
  */
 export const resolveDesignScreenEmbedUrl = (screen: DesignScreenLike | null | undefined): string | null => {
   if (!screen) return null;
-  if (screen.embedUrl) return screen.embedUrl;
   if (screen.source === "figma-link" && screen.url) {
     return buildFigmaEmbedUrl(screen.url);
   }
-  return null;
+  return screen.embedUrl ?? null;
 };
 
 /** iframe `allow` permissions a live Figma prototype needs to be interactive. */
