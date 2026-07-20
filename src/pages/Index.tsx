@@ -10,7 +10,13 @@ import { AnimatedHeadline } from "@/components/ui/animated-headline";
 import { SearchoMark } from "@/components/icons/SearchoMark";
 import { useAuth } from "@/contexts/AuthContext";
 import { projectService, Project } from "@/services/projectService";
+import { buildFigmaEmbedUrl, isFigmaPrototypeUrl } from "@/lib/figma";
 import { toast } from "sonner";
+
+// Prefilled into the chat input when the usability-test chip opens the design
+// module, so the researcher doesn't have to scroll back up and type the intent
+// after describing the prototype below.
+const USABILITY_PROMPT_PREFILL = "Aşağıdaki detaylara göre bir kullanılabilirlik testi kurgula";
 
 const placeholderHints = [
 "Searcho AI, bu açılış sayfasında dönüşümü düşüren 3 kritik friksiyonu bulur musun?",
@@ -82,22 +88,6 @@ const Index = () => {
   const hasLandingInputColorGlow = isUsabilityWarmVisible || isDynamicWarmVisible || isSyntheticWarmVisible;
   const activePlaceholder = placeholderHints[activePlaceholderIndex];
   const visiblePlaceholder = activePlaceholder.slice(0, typedPlaceholderLength);
-
-  const buildFigmaEmbedUrl = (url: string) =>
-    `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(url)}`;
-
-  const isFigmaPrototypeUrl = (value: string) => {
-    try {
-      const url = new URL(value.trim());
-      return url.hostname.endsWith("figma.com") && (
-        url.pathname.includes("/proto/") ||
-        url.pathname.includes("/design/") ||
-        url.pathname.includes("/file/")
-      );
-    } catch {
-      return false;
-    }
-  };
 
   const triggerAgentEnhancedPress = () => {
     if (agentEnhancedPressTimeoutRef.current) {
@@ -604,7 +594,17 @@ const Index = () => {
                 onClick={() => {
                   setIsSyntheticUsersSelected(false);
                   setSelectedResearchMode("structured");
-                  setIsDesignModuleOpen((prev) => !prev);
+                  setIsDesignModuleOpen((prev) => {
+                    const opening = !prev;
+                    if (opening) {
+                      setProjectDescription((cur) =>
+                        cur.trim() === "" || cur === USABILITY_PROMPT_PREFILL ? USABILITY_PROMPT_PREFILL : cur
+                      );
+                    } else {
+                      setProjectDescription((cur) => (cur === USABILITY_PROMPT_PREFILL ? "" : cur));
+                    }
+                    return opening;
+                  });
                 }}
                 className={`landing-mode-chip landing-usability-button h-9 rounded-full border-border-light bg-white/95 px-1.5 pr-3 hover:bg-white shadow-sm ${isUsabilityWarmVisible ? "landing-usability-button--hovering" : ""} ${isUsabilityWarmActive ? "landing-usability-button--active" : ""}`}
                 aria-label={isDesignModuleOpen ? "Kullanılabilirlik testi panelini kapat" : "Kullanılabilirlik testi panelini aç"}

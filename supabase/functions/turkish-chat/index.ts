@@ -858,42 +858,34 @@ const requestStructuredResponseStream = async (
 const buildUsabilityFallbackPlan = (message: string, researchContext: any) => {
   const usability = researchContext?.usabilityTesting || {};
   const titleBase = restoreTurkishCharacters(usability.objective || message || "Kullanılabilirlik Testi");
+  const primaryTask = restoreTurkishCharacters(usability.primaryTask || "size verilen ana görevi");
 
+  // Usability plans are task-based: warmup + discrete tasks the participant
+  // performs on the prototype, each followed by a single reflection question.
   const sections = [
     {
-      id: slugifySectionId("task_flow"),
-      title: "İlk Görev Algısı ve Beklentiler",
+      id: slugifySectionId("gorev_1_kesif"),
+      title: "Görev 1: İlk Keşif ve Yönelim",
       questions: [
-        `Paylaşılan ekranlara baktığınızda ilk olarak ne yapmanız gerektiğini size hangi işaretler anlatıyor?`,
-        `Ana görevi tamamlamayı düşünürken aklınızdan nasıl bir ilerleme akışı geçiyor?`,
-        `Bu görev akışında size en az net gelen adım hangisi oluyor?`,
+        `Paylaşılan ekranlardan başlayın ve şu görevi tamamlamaya çalışın: ${primaryTask}. Lütfen sesli düşünerek ilerleyin.`,
+        `Bu görevi tamamlarken en çok nerede tereddüt ettiniz ya da takıldınız?`,
       ],
     },
     {
-      id: slugifySectionId("clarity_and_trust"),
-      title: "Karar Verme ve Ekran Netliği",
+      id: slugifySectionId("gorev_2_karar"),
+      title: "Görev 2: Karar ve Son Adım",
       questions: [
-        `Bu ekranlarda karar vermenize en çok hangi bilgi yardımcı oluyor?`,
-        `Karar vermeden önce hangi noktada biraz daha açıklama görmek istersiniz?`,
-        `Bu ekranlarda ilk bakışta size en anlaşılır gelen işaret ne oluyor?`,
-      ],
-    },
-    {
-      id: slugifySectionId("friction_and_improvements"),
-      title: "Sürtünme ve İyileştirme Fırsatları",
-      questions: [
-        `Riskli alanları düşününce dikkatinizi en çok hangi nokta çekiyor?`,
-        `Başarı hedeflerine yaklaşmak için bu deneyimde hangi değişiklik en çok fark yaratır?`,
-        `Bu görevi tamamlamayı sizin için kolaylaştıracak ilk değişiklik ne olurdu?`,
+        `Şimdi görevi bitirmek için gereken son adımı (örneğin onay, seçim veya gönderim) prototip üzerinde tamamlayın.`,
+        `Bu adımda kararınızı vermenizi en çok ne kolaylaştırdı ya da zorlaştırdı?`,
       ],
     },
   ];
 
   return {
     action: "PLAN",
-    chatResponse: "Kullanılabilirlik testi bağlamına göre araştırma planınızı oluşturdum. Sorular görev akışı, anlaşılırlık, güven ve sürtünme noktalarına odaklanıyor.",
+    chatResponse: "Kullanılabilirlik testi için görev tabanlı bir plan oluşturdum. Katılımcılar prototip üzerinde somut görevleri tamamlıyor ve her görevin ardından tek bir yansıtma sorusu yanıtlıyor.",
     researchPlan: ensureWarmupSection({
-      title: `${titleBase} Kullanılabilirlik Araştırması`,
+      title: `${titleBase} Kullanılabilirlik Testi`,
       sections,
     }),
   };
@@ -1005,12 +997,18 @@ serve(async (req) => {
         : '';
 
       const usabilityContextPrompt = `USABILITY_TESTING_CONTEXT:
-Bu proje ekran tabanli kullanilabilirlik testidir. Konusma boyunca su prensipleri uygula:
-- Belirsiz noktalarda kullaniciya netlestirici sorular sor.
-- Sorulari gorev tamamlama, anlasilirlik, guven, karar verme ve surtunme noktalarina odakla.
-- PLAN olustururken bolum ve sorulari ekran kullanilabilirligi odakli kur.
-- Elindeki gizli baglami kullan ama kullaniciya teknik readiness, skor veya sistem bilgisi gostermeden ilerle.
-- Ilk turda dogrudan plan dokmek yerine gerekiyorsa once tek kritik boslugu netlestir.
+Bu proje ekran tabanli bir kullanilabilirlik testidir. Amac cok turlu soru-cevap yapmak DEGIL; katilimciya prototip uzerinde YAPACAGI somut GOREVLER vermektir.
+
+PLAN kurallari (action=PLAN uretirken bunlara harfiyen uy):
+- Ilk bolum "${WARMUP_SECTION_TITLE}" olarak kalsin: kisa sozel isinma, gorev veya prototip etkilesimi icermez.
+- Isinmadan sonraki HER bolum TEK bir gorevdir. Bolum basligi "Gorev N: <kisa gorev adi>" formatinda olsun (N = 1, 2, 3 ...).
+- Ana kullanici gorevini, ekranlara dayali 2-5 somut alt goreve bol. Her gorevin tek ve net bir sonucu olsun.
+- Her gorev bolumu TAM OLARAK 2 madde icersin ve su sirada olsun:
+  1) Gorev yonergesi: katilimciya ne yapacagini soyleyen bir TALIMAT (soru degil). Ornek: "Ana ekrandan baslayarak sepete bir urun ekleyip odeme adimina kadar ilerleyin. Sesli dusunerek ilerleyin."
+  2) Tek kisa yansitma sorusu: gorevden hemen sonra sorulacak, deneyime dair TEK soru. Ornek: "Bu gorevi tamamlarken en cok nerede tereddut ettiniz?"
+- Yonergeler kisa, net ve eylem odakli olsun; ipucu verme, dogru yolu tarif etme, adim adim yol gosterme.
+- Elindeki gizli baglami kullan ama kullaniciya teknik readiness, skor veya sistem bilgisi gosterme.
+- Ilk turda net baglam varsa dogrudan action=PLAN don; eksik tek kritik bilgi varsa once onu netlestir.
 
 Arastirma amaci: ${researchContext.usabilityTesting.objective || 'Belirtilmedi'}
 Ana kullanici gorevi: ${researchContext.usabilityTesting.primaryTask || 'Belirtilmedi'}

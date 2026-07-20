@@ -1644,6 +1644,13 @@ async function initializeQuestions(projectId: string, sessionId: string, discuss
     throw new Error('No discussion guide available for session');
   }
 
+  // Usability studies emit warmup + discrete task sections. Every non-warmup
+  // question in such a study is part of a task, so tag it as a task question so
+  // the participant runtime can present it as a "Görev" rather than open Q&A.
+  const analysisRecord = isRecord(resolved.analysis) ? resolved.analysis : {};
+  const usabilityDesignScreens = asArray<unknown>(analysisRecord.designScreens);
+  const isUsabilityStudy = Boolean(analysisRecord.usabilityTesting) || usabilityDesignScreens.length > 0;
+
   const startedAt = resolved.session.started_at ?? new Date().toISOString();
   const nextSessionMetadata = {
     ...(isRecord(resolved.session.metadata) ? resolved.session.metadata : {}),
@@ -1722,14 +1729,17 @@ async function initializeQuestions(projectId: string, sessionId: string, discuss
         .map((question) => asString(question))
         .filter(Boolean);
 
-      for (const question of sectionQuestions) {
+      for (const [stepIndex, question] of sectionQuestions.entries()) {
         questions.push({
           project_id: projectId,
           session_id: sessionId,
           question_text: question,
           question_order: order++,
           section: sectionTitle,
-          question_type: 'open_ended',
+          question_type: isUsabilityStudy ? 'usability_task' : 'open_ended',
+          ...(isUsabilityStudy
+            ? { metadata: { sectionKind: 'task', sectionTitle, taskStepIndex: stepIndex } }
+            : {}),
         });
       }
     }

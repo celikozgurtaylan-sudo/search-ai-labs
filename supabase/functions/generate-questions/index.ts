@@ -169,7 +169,9 @@ ${usabilityContextPrompt ? `${usabilityContextPrompt}
 - Her soru tek başına anlamlı olsun; önceki soru veya cevaba yaslanan follow-up kalıpları kurma.
 - "Bu kaynakları", "bu tercihleri", "bunları", "bunlardan", "bunun nedeni" gibi önceki cevaptaki listeye referans veren soru yazma.
 - "Peki", "az önce söylediğiniz", "buna göre", "bu size nasıl hissettirdi", "bu gününüzü nasıl etkiledi" gibi ifadeleri kullanma.
-${isUsabilityMode ? `- Her soruyu somut bir ekran, görev adımı, karar anı, bilgi mesajı veya kullanıcı hareketine bağla.
+${isUsabilityMode ? `- Bu bir kullanılabilirlik görevidir. Ürettiğin maddeler, katılımcının bu görevi prototip üzerinde tamamladıktan sonra sorulacak KISA yansıtma sorularıdır.
+- Her soruyu somut bir ekran, görev adımı, karar anı, bilgi mesajı veya kullanıcı hareketine bağla.
+- Görevi baştan tarif etme veya yeni bir görev talimatı yazma; yalnızca deneyime dair tek odaklı yansıtma sorusu üret.
 - "Bu deneyim sizde nasıl bir izlenim bırakıyor?" gibi bağlamdan kopuk, jenerik soru yazma.
 - Mümkünse ana göreve, ekran listesine veya kullanıcının o adımda ne yapmaya çalıştığına yaslan.
 - Katılımcının gördüğü şeyi keşfet; ama kavramı onun adına önce sen etiketleme.` : ""}`}

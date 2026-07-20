@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { CheckCircle2, Loader2, Mic, PhoneOff, SkipForward, Sparkles } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Loader2, Mic, PhoneOff, SkipForward, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
@@ -118,6 +118,12 @@ interface SearchoAIProps {
   onQuestionChange?: (question: InterviewQuestion | null, progress: InterviewProgress) => void;
   onMediaReleaseRequested?: () => void;
   onMediaRecoveryRequested?: (reason: MicFailureCode) => void;
+  /**
+   * When true, hold at the warmup→task boundary: the first usability task is
+   * kept idle (behind the screen-recording gate) until recording starts, so the
+   * warmup runs unrecorded but every task is captured.
+   */
+  awaitingScreenRecording?: boolean;
 }
 
 const isLiveTrack = (track?: MediaStreamTrack | null) => Boolean(track && track.readyState === 'live' && track.enabled !== false);
@@ -249,6 +255,12 @@ const isConversationalWarmupQuestion = (question?: InterviewQuestion | null) => 
   );
 };
 
+const isUsabilityTaskQuestion = (question?: InterviewQuestion | null) => {
+  if (!question) return false;
+  const metadata = isRecord(question.metadata) ? question.metadata : {};
+  return question.question_type === 'usability_task' || metadata.sectionKind === 'task';
+};
+
 const getQuestionSpeechText = (question?: InterviewQuestion | null) => {
   if (!question) return "";
 
@@ -275,12 +287,17 @@ const SearchoAI = ({
   onQuestionChange,
   onMediaReleaseRequested,
   onMediaRecoveryRequested,
+  awaitingScreenRecording = false,
 }: SearchoAIProps) => {
   const { toast } = useToast();
 
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestion | null>(null);
+  // Holds the first usability task while the screen-recording gate is open, so
+  // it is presented (and spoken) only once recording has started.
+  const [heldTaskQuestion, setHeldTaskQuestion] = useState<InterviewQuestion | null>(null);
+  const awaitingScreenRecordingRef = useRef(false);
   const [interviewProgress, setInterviewProgress] = useState<InterviewProgress>({
     completed: 0,
     total: 0,
@@ -788,6 +805,17 @@ const SearchoAI = ({
     setHasDetectedSpeechForCurrentAttempt(false);
 
     if (nextQuestion?.question_text) {
+      // Hold the first post-warmup question until screen recording has started
+      // (awaitingScreenRecording is only ever true for usability sessions). The
+      // question is set (so onQuestionChange already fired and the recording
+      // gate can appear) but we stay idle — no speech, no capture — until the
+      // gate clears. Keyed on leaving warmup rather than the task marker so it
+      // holds even before the task-tagging edge function is deployed.
+      if (awaitingScreenRecordingRef.current && !isConversationalWarmupQuestion(nextQuestion)) {
+        setHeldTaskQuestion(nextQuestion);
+        setInterviewPhase('idle');
+        return;
+      }
       setInterviewPhase('asking');
       void prefetchTextToSpeech(getQuestionSpeechText(nextQuestion));
       return;
@@ -821,6 +849,22 @@ const SearchoAI = ({
     shutdownActiveResponseCapture,
     toast,
   ]);
+
+  // Mirror the awaiting-recording prop into a ref so applyInterviewState can read
+  // the current value without being recreated (and re-firing) on each change.
+  useEffect(() => {
+    awaitingScreenRecordingRef.current = awaitingScreenRecording;
+  }, [awaitingScreenRecording]);
+
+  // Once screen recording has started, present the task we were holding.
+  useEffect(() => {
+    if (!awaitingScreenRecording && heldTaskQuestion) {
+      const question = heldTaskQuestion;
+      setHeldTaskQuestion(null);
+      setInterviewPhase('asking');
+      void prefetchTextToSpeech(getQuestionSpeechText(question));
+    }
+  }, [awaitingScreenRecording, heldTaskQuestion]);
 
   const initializeInterviewQuestions = useCallback(async () => {
     const hasStructuredGuide = Boolean(projectContext?.discussionGuide);
@@ -1891,10 +1935,13 @@ const SearchoAI = ({
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">
-                            Soru {Math.min(interviewProgress.completed + 1, Math.max(interviewProgress.total, 1))} / {Math.max(interviewProgress.total, 1)}
+                            {isUsabilityTaskQuestion(currentQuestion)
+                              ? 'Görev'
+                              : `Soru ${Math.min(interviewProgress.completed + 1, Math.max(interviewProgress.total, 1))} / ${Math.max(interviewProgress.total, 1)}`}
                           </p>
                           {currentQuestion.section ? (
-                            <span className="mt-2 inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                            <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                              {isUsabilityTaskQuestion(currentQuestion) ? <ClipboardList className="h-3.5 w-3.5" /> : null}
                               {currentQuestion.section}
                             </span>
                           ) : null}

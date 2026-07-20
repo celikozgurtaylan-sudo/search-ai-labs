@@ -16,6 +16,7 @@ import {
   mapMediaAccessErrorToFailureCode,
   probeMicrophoneHealth,
 } from "@/utils/microphoneHealth";
+import { FIGMA_IFRAME_ALLOW, resolveDesignScreenEmbedUrl } from "@/lib/figma";
 
 type CameraValidationResult = {
   verified: boolean;
@@ -99,6 +100,15 @@ type DesignScreen = {
   embedUrl?: string;
 };
 
+const isWarmupInterviewQuestion = (question?: InterviewQuestion | null) =>
+  Boolean(question) && (question!.question_type === 'warmup_conversational' || question!.metadata?.sectionKind === 'warmup');
+
+// The interview has moved past the ısınma once a non-warmup question appears.
+// Keyed on leaving warmup (not on the task marker) so screen recording is still
+// requested even if the task-tagging edge function hasn't been deployed yet.
+const hasLeftWarmup = (question?: InterviewQuestion | null) =>
+  Boolean(question?.question_text) && !isWarmupInterviewQuestion(question);
+
 type StudyProjectData = {
   id?: string;
   description?: string;
@@ -155,6 +165,9 @@ const StudySession = () => {
     isComplete: false,
     percentage: 0
   });
+  // True once the interview has moved past the warmup into the usability tasks.
+  // Screen recording is requested at this point (after the ısınma rounds).
+  const [hasReachedTasks, setHasReachedTasks] = useState(false);
   const [sessionCompletionReason, setSessionCompletionReason] = useState<'manual' | 'completed' | null>(null);
   const [isOnboardingActive, setIsOnboardingActive] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(false);
@@ -1187,11 +1200,7 @@ const StudySession = () => {
   }, [currentInterviewQuestion, currentInterviewProgress.total, designScreens.length, questionsPerScreen]);
 
   const activeScreen = designScreens[activeScreenIndex] || null;
-  const activeScreenEmbedUrl = activeScreen?.embedUrl || (
-    activeScreen?.source === "figma-link"
-      ? `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(activeScreen.url)}`
-      : null
-  );
+  const activeScreenEmbedUrl = resolveDesignScreenEmbedUrl(activeScreen);
   const isDeviceCheckBusy = deviceCheckState === 'requesting_permission' || deviceCheckState === 'verifying_camera' || deviceCheckState === 'verifying_microphone';
   const canContinueToInterview = cameraEnabled && cameraStreamVerified && microphoneVerified && deviceCheckState === 'ready';
   const microphoneLevelRatio = microphoneLevelThreshold > 0
@@ -1412,6 +1421,7 @@ const StudySession = () => {
                             title={activeScreen.name || "Figma prototype"}
                             src={activeScreenEmbedUrl}
                             className="min-h-[520px] w-full flex-1 rounded-[24px] border border-border-light bg-white shadow-[0_24px_70px_rgba(15,23,42,0.10)]"
+                            allow={FIGMA_IFRAME_ALLOW}
                             allowFullScreen
                           />
                         ) : null}
@@ -1440,7 +1450,8 @@ const StudySession = () => {
             {sessionId && projectData && (
               <div className="min-w-0 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
                 <SearchoAI
-                  isActive={sessionStatus === 'active' && cameraGateCompleted && isScreenRecordingReady}
+                  isActive={sessionStatus === 'active' && cameraGateCompleted}
+                  awaitingScreenRecording={isScreenRecordingRequired && !isScreenRecordingReady}
                   cameraStream={cameraStream}
                   projectContext={{
                     description: projectData.description || '',
@@ -1459,6 +1470,9 @@ const StudySession = () => {
                   onQuestionChange={(question, progress) => {
                     setCurrentInterviewQuestion(question);
                     setCurrentInterviewProgress(progress);
+                    if (hasLeftWarmup(question)) {
+                      setHasReachedTasks(true);
+                    }
                   }}
                   onMediaReleaseRequested={() => releaseMediaDevices({ preserveGate: true })}
                   onMediaRecoveryRequested={handleMediaRecoveryRequested}
@@ -1691,7 +1705,7 @@ const StudySession = () => {
         </div>
       )}
 
-      {cameraGateCompleted && isScreenRecordingRequired && !isScreenRecordingReady && (
+      {cameraGateCompleted && isScreenRecordingRequired && !isScreenRecordingReady && hasReachedTasks && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center bg-[rgba(15,23,42,0.48)] px-4 backdrop-blur-md">
           <Card className="w-full max-w-2xl overflow-hidden rounded-[32px] border border-white/60 bg-white/95 shadow-[0_30px_80px_rgba(15,23,42,0.25)]">
             <CardContent className="space-y-6 p-6 md:p-8">

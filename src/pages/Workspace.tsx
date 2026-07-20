@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import ChatPanel, { type ChatMessage } from "@/components/workspace/ChatPanel";
 import StudyPanel from "@/components/workspace/StudyPanel";
+import UsabilityPrototypePanel from "@/components/workspace/UsabilityPrototypePanel";
 import InvitationPanel from "@/components/workspace/InvitationPanel";
 import AnalysisPanel from "@/components/workspace/AnalysisPanel";
 import AIEnhancedBriefingPanel from "@/components/workspace/AIEnhancedBriefingPanel";
@@ -478,6 +479,14 @@ const Workspace = () => {
   );
   const hasStructuredGuide = Boolean(discussionGuide?.sections?.length);
   const shouldShowCenteredGuideChat = !isAIEnhancedMode && currentStep === "guide" && !hasStructuredGuide && !syntheticUsersEnabled;
+  const usabilityDesignScreens = useMemo(() => {
+    const screens = projectData?.analysis?.designScreens;
+    return Array.isArray(screens) ? screens : [];
+  }, [projectData?.analysis?.designScreens]);
+  const isUsabilityStudy = useMemo(
+    () => Boolean(projectData?.analysis?.usabilityTesting) || usabilityDesignScreens.length > 0,
+    [projectData?.analysis?.usabilityTesting, usabilityDesignScreens.length],
+  );
 
   useEffect(() => {
     setSyntheticSampleSize(clampSyntheticSampleSize(projectData?.analysis?.syntheticUsers?.sampleSize));
@@ -868,10 +877,16 @@ const Workspace = () => {
   }, [currentStep]);
 
   useEffect(() => {
+    // Usability studies lead with the interactable prototype, so keep the
+    // Searcho chat collapsed to the rail (still expandable on demand).
+    if (isUsabilityStudy) {
+      setIsChatCollapsed(true);
+      return;
+    }
     if (currentStep === "guide" && hasStructuredGuide) {
       setIsChatCollapsed(false);
     }
-  }, [currentStep, hasStructuredGuide]);
+  }, [currentStep, hasStructuredGuide, isUsabilityStudy]);
 
   const getProjectTitle = (description: string) => {
     if (description.includes("Fibabanka.com.tr")) return "Fibabanka Açılış Sayfası Araştırması";
@@ -1387,33 +1402,47 @@ const Workspace = () => {
               ) : isGuideLoading ? (
                 <GuideLoadingPanel guide={discussionGuide} />
               ) : isResearchRelated ? (
-                <StudyPanel
-                  discussionGuide={discussionGuide}
-                  participants={participants}
-                  sessions={sessions}
-                  projectId={projectData.id || ""}
-                  projectTitle={resolvedProjectTitle}
-                  currentStep={currentStep}
-                  researchMode={researchMode}
-                  aiEnhancedBrief={null}
-                  isResearchPaused={isResearchPaused}
-                  researchPausedAt={interviewControl.pausedAt}
-                  questionSetVersionId={currentQuestionSetVersion?.id || null}
-                  questionSetVersionNumber={currentQuestionSetVersion?.number || null}
-                  questionSetUpdatedAt={currentQuestionSetVersion?.updatedAt || null}
-                  onGuideUpdate={(guide) => {
-                    applyDiscussionGuide(guide, currentStep === "run" ? "run-edit" : "manual-edit");
-                  }}
-                  onParticipantsUpdate={(nextParticipants) => {
-                    setParticipants(nextParticipants);
-                    if (nextParticipants.length > 0 && currentStep === "guide") {
-                      setCurrentStep("recruit");
-                    }
-                    void loadResearchState();
-                  }}
-                  isGuideLoading={isGuideLoading}
-                  chatMessages={chatMessages}
-                />
+                (() => {
+                  const studyPanel = (
+                    <StudyPanel
+                      discussionGuide={discussionGuide}
+                      participants={participants}
+                      sessions={sessions}
+                      projectId={projectData.id || ""}
+                      projectTitle={resolvedProjectTitle}
+                      currentStep={currentStep}
+                      researchMode={researchMode}
+                      aiEnhancedBrief={null}
+                      isResearchPaused={isResearchPaused}
+                      researchPausedAt={interviewControl.pausedAt}
+                      questionSetVersionId={currentQuestionSetVersion?.id || null}
+                      questionSetVersionNumber={currentQuestionSetVersion?.number || null}
+                      questionSetUpdatedAt={currentQuestionSetVersion?.updatedAt || null}
+                      onGuideUpdate={(guide) => {
+                        applyDiscussionGuide(guide, currentStep === "run" ? "run-edit" : "manual-edit");
+                      }}
+                      onParticipantsUpdate={(nextParticipants) => {
+                        setParticipants(nextParticipants);
+                        if (nextParticipants.length > 0 && currentStep === "guide") {
+                          setCurrentStep("recruit");
+                        }
+                        void loadResearchState();
+                      }}
+                      isGuideLoading={isGuideLoading}
+                      chatMessages={chatMessages}
+                    />
+                  );
+
+                  if (isUsabilityStudy && (currentStep === "guide" || currentStep === "run")) {
+                    return (
+                      <UsabilityPrototypePanel designScreens={usabilityDesignScreens}>
+                        {studyPanel}
+                      </UsabilityPrototypePanel>
+                    );
+                  }
+
+                  return studyPanel;
+                })()
               ) : (
                 <div className="h-full flex items-center justify-center bg-white border-l border-border-light">
                   <div className="text-center text-text-muted max-w-md px-6">
