@@ -33,3 +33,14 @@ verify_jwt = false
 
 [functions.synthetic-users]
 verify_jwt = true
+
+# Auth is verified manually inside the function (bearer token -> auth.getUser).
+[functions.figma-connect]
+verify_jwt = false
+
+# Figma redirects the researcher's browser here; there is no JWT to verify.
+[functions.figma-oauth-callback]
+verify_jwt = false
+
+[functions.figma-import]
+verify_jwt = false

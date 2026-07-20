@@ -4,13 +4,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, Bot, LogOut, X, Sparkles, Plus, Link as LinkIcon } from "lucide-react";
+import { ArrowRight, Bot, LogOut, X, Sparkles, Plus, Link as LinkIcon, CheckCircle2 } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { AnimatedHeadline } from "@/components/ui/animated-headline";
 import { SearchoMark } from "@/components/icons/SearchoMark";
 import { useAuth } from "@/contexts/AuthContext";
 import { projectService, Project } from "@/services/projectService";
 import { buildFigmaEmbedUrl, isFigmaPrototypeUrl } from "@/lib/figma";
+import { useFigmaConnection } from "@/hooks/useFigmaConnection";
 import { toast } from "sonner";
 
 // Prefilled into the chat input when the usability-test chip opens the design
@@ -76,6 +77,7 @@ const Index = () => {
   const agentEnhancedPressTimeoutRef = useRef<number | null>(null);
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const figmaConnection = useFigmaConnection();
 
   const hasScreenContext = prototypeDrafts.length > 0;
   const hasRequiredUsabilityAnswers = usabilityIntake.objective.trim().length > 0 && usabilityIntake.primaryTask.trim().length > 0;
@@ -465,6 +467,40 @@ const Index = () => {
               <p className="text-xs text-text-secondary">
                 Test etmek istediğiniz Figma prototype linkini girin. Katılımcının prototiple etkileşimi ekran kaydıyla doğrulanır.
               </p>
+
+              {/* Read-only Figma access lets Searcho import the prototype's ekranları
+                  and tıklama alanları, so görev tamamlama otomatik ölçülebilir. */}
+              {user && !figmaConnection.loading && (
+                figmaConnection.connected ? (
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2">
+                    <div className="flex items-center gap-2 text-xs text-emerald-700">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Figma hesabınız bağlı — görev tamamlanmaları otomatik ölçülür.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void figmaConnection.disconnect()}
+                      className="text-[11px] text-text-muted underline underline-offset-2 hover:text-text-secondary">
+                      Bağlantıyı kaldır
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-border-light bg-white px-3 py-2">
+                    <p className="text-[11px] leading-5 text-text-secondary">
+                      Figma hesabınızı bir kez bağlayın; Searcho prototipin ekranlarını okuyup hedef ekrana ulaşıldığını otomatik algılasın.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={figmaConnection.connecting}
+                      onClick={() => void figmaConnection.connect()}
+                      className="h-8 shrink-0 gap-2 text-xs">
+                      {figmaConnection.connecting ? "Yönlendiriliyor…" : "Figma'yı Bağla"}
+                    </Button>
+                  </div>
+                )
+              )}
 
               <div className="space-y-2">
                 <Label className="text-xs text-text-secondary">Figma Prototype Linki</Label>
