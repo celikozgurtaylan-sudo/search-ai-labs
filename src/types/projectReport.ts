@@ -211,6 +211,26 @@ export interface ProjectReportGenerationMeta {
   failureMessage?: string | null;
 }
 
+/** Per-task outcome measured by the Searcho-hosted prototype player. */
+export interface ProjectReportUsabilityTaskMetric {
+  taskId: string;
+  title: string;
+  instruction: string;
+  attemptCount: number;
+  completedCount: number;
+  successRate: number;
+  averageTimeOnTaskMs: number | null;
+  misclickRate: number;
+  averageClicks: number;
+}
+
+export interface ProjectReportUsabilityMetrics {
+  taskCount: number;
+  measuredSessionCount: number;
+  overallSuccessRate: number;
+  tasks: ProjectReportUsabilityTaskMetric[];
+}
+
 export interface ProjectInterviewReport {
   interviewMode: ProjectInterviewMode;
   status: ProjectReportStatus;
@@ -219,6 +239,8 @@ export interface ProjectInterviewReport {
   generatedFrom: "transcript-only" | "ai-enhanced-transcript" | "synthetic-personas";
   sourceStats: ProjectReportSourceStats;
   overview: ProjectReportOverview;
+  /** Present only for usability studies run through the imported prototype. */
+  usabilityMetrics?: ProjectReportUsabilityMetrics | null;
   executiveSummary: string;
   findings: ProjectReportFinding[];
   themes: ProjectReportTheme[];

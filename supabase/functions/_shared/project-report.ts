@@ -831,6 +831,60 @@ async function generateAIEnhancedProjectReport(params: {
   return report;
 }
 
+/**
+ * Per-task usability metrics from the Searcho-hosted prototype player. Sessions
+ * store one `taskResults` entry per attempted task; a task with no entry for a
+ * session counts as not completed by that participant.
+ */
+function buildUsabilityMetrics(usabilityTesting: Record<string, unknown>, sessions: any[]) {
+  const tasks = asArray<any>(usabilityTesting.tasks).filter((task) => isRecord(task) && asString(task.id));
+  if (tasks.length === 0 || sessions.length === 0) return null;
+
+  const resultsBySession = sessions.map((session: any) => {
+    const metadata = isRecord(session.metadata) ? session.metadata : {};
+    return asArray<any>(metadata.taskResults).filter(isRecord);
+  });
+  if (resultsBySession.every((results) => results.length === 0)) return null;
+
+  const taskMetrics = tasks.map((task) => {
+    const taskId = asString(task.id);
+    const attempts = resultsBySession
+      .map((results) => results.find((result) => asString(result.taskId) === taskId))
+      .filter((result): result is Record<string, unknown> => Boolean(result));
+    const successes = attempts.filter((attempt) => attempt.reached === true);
+
+    const durations = successes
+      .map((attempt) => asNumber(attempt.timeMs))
+      .filter((value): value is number => value !== null && value > 0);
+    const clickTotal = attempts.reduce((sum, attempt) => sum + (asNumber(attempt.clicks) ?? 0), 0);
+    const misclickTotal = attempts.reduce((sum, attempt) => sum + (asNumber(attempt.misclicks) ?? 0), 0);
+
+    return {
+      taskId,
+      title: asString(task.title, taskId),
+      instruction: asString(task.instruction),
+      attemptCount: attempts.length,
+      completedCount: successes.length,
+      // Out of everyone who reached the study, not just those who tried.
+      successRate: sessions.length > 0 ? roundToOneDecimal((successes.length / sessions.length) * 100) : 0,
+      averageTimeOnTaskMs: average(durations),
+      misclickRate: clickTotal > 0 ? roundToOneDecimal((misclickTotal / clickTotal) * 100) : 0,
+      averageClicks: attempts.length > 0 ? roundToOneDecimal(clickTotal / attempts.length) : 0,
+    };
+  });
+
+  const measured = taskMetrics.filter((task) => task.attemptCount > 0);
+
+  return {
+    taskCount: tasks.length,
+    measuredSessionCount: resultsBySession.filter((results) => results.length > 0).length,
+    overallSuccessRate: measured.length > 0
+      ? roundToOneDecimal(measured.reduce((sum, task) => sum + task.successRate, 0) / measured.length)
+      : 0,
+    tasks: taskMetrics,
+  };
+}
+
 export async function generateAndPersistProjectReport(
   supabase: any,
   projectId: string,
@@ -1301,6 +1355,7 @@ export async function generateAndPersistProjectReport(
     generatedFrom: "transcript-only",
     sourceStats,
     overview,
+    usabilityMetrics: buildUsabilityMetrics(usabilityTesting, completedSessions),
     executiveSummary: asString(llmResult?.executiveSummary) || deterministicSummary,
     findings,
     themes,

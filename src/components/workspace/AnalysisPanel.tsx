@@ -1200,6 +1200,36 @@ const AnalysisPanel = ({ projectId, sessionIds, synthetic = false, syntheticSamp
                   />
                 </div>
 
+                {/* Task metrics, measured by the Searcho-hosted prototype player:
+                    present only once participants have run an imported prototype. */}
+                {report.usabilityMetrics && report.usabilityMetrics.tasks.length > 0 ? (
+                  <Card className="border-border-light bg-muted/20">
+                    <CardHeader>
+                      <CardTitle className="text-base">Görev Metrikleri</CardTitle>
+                      <p className="text-xs text-text-secondary">
+                        {report.usabilityMetrics.measuredSessionCount} oturumda ölçüldü • Genel başarı{" "}
+                        {formatPercent(report.usabilityMetrics.overallSuccessRate)}
+                      </p>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {report.usabilityMetrics.tasks.map((task) => (
+                        <div key={task.taskId} className="rounded-lg border border-border-light bg-white p-3">
+                          <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <p className="text-sm font-medium text-text-primary">{task.title}</p>
+                            <Badge variant="outline">{formatPercent(task.successRate)} başarı</Badge>
+                          </div>
+                          <p className="mt-1.5 text-xs text-text-secondary">
+                            {task.completedCount}/{report.usabilityMetrics!.measuredSessionCount} tamamladı •
+                            Ort. süre {formatDuration(task.averageTimeOnTaskMs)} •
+                            Hatalı tıklama {formatPercent(task.misclickRate)} •
+                            Ort. {task.averageClicks} tıklama
+                          </p>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ) : null}
+
                 <div className="grid gap-6 lg:grid-cols-2">
                   <Card className="border-border-light bg-muted/20">
                     <CardHeader>
